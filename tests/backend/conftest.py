@@ -51,8 +51,8 @@ def token_factory(
     private_key, _ = rsa_jwks
 
     def create_token(
-        provider: str,
-        verified: bool,
+        first_provider: str,
+        authentication_method: str,
         subject: UUID,
         *,
         expires_in: timedelta = timedelta(minutes=5),
@@ -73,15 +73,17 @@ def token_factory(
             "session_id": "00000000-0000-4000-8000-000000000001",
             "phone": "",
             "is_anonymous": False,
-            "app_metadata": {"provider": provider, "providers": [provider]},
+            "app_metadata": {
+                "provider": first_provider,
+                "providers": [first_provider],
+            },
             "user_metadata": {"provider": "untrusted-client-value"},
             "amr": [
                 {
-                    "method": "oauth" if provider == "google" else "password",
+                    "method": authentication_method,
                     "timestamp": int(now.timestamp()),
                 }
             ],
-            "email_verified": verified,
         }
         if payload_overrides:
             payload.update(payload_overrides)

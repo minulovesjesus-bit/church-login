@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import time
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
@@ -23,6 +24,7 @@ GOOGLE_AUTH_REQUIRED = (
 )
 
 JwksFetcher = Callable[[], Awaitable[dict[str, Any]]]
+AuthUserFetcher = Callable[[str], Awaitable[dict[str, Any]]]
 TimeSource = Callable[[], float]
 
 
@@ -39,6 +41,7 @@ class JwksVerifier:
         jwks_url: str | None = None,
         cache_ttl_seconds: int = 300,
         max_cached_keys: int = 16,
+        failed_refresh_backoff_seconds: int = 5,
         fetch_jwks: JwksFetcher | None = None,
         time_source: TimeSource = time.monotonic,
     ) -> None:
@@ -48,10 +51,14 @@ class JwksVerifier:
         self.audience = audience
         self.cache_ttl_seconds = min(max(cache_ttl_seconds, 1), 600)
         self.max_cached_keys = min(max(max_cached_keys, 1), 32)
+        self.failed_refresh_backoff_seconds = min(
+            max(failed_refresh_backoff_seconds, 1), 30
+        )
         self._fetch_jwks = fetch_jwks or self._fetch_remote_jwks
         self._time_source = time_source
         self._keys: OrderedDict[str, jwt.PyJWK] = OrderedDict()
         self._cache_expires_at = 0.0
+        self._refresh_failed_until = 0.0
         self._cache_lock = asyncio.Lock()
 
     @property
@@ -134,12 +141,22 @@ class JwksVerifier:
             if now < self._cache_expires_at:
                 raise ValueError("Unknown signing key")
 
-            jwks = await self._fetch_jwks()
-            self._replace_cached_keys(
-                jwks,
-                requested_kid=kid,
-                requested_algorithm=algorithm,
-            )
+            if now < self._refresh_failed_until:
+                raise ValueError("JWKS refresh is temporarily unavailable")
+
+            try:
+                jwks = await self._fetch_jwks()
+                self._replace_cached_keys(
+                    jwks,
+                    requested_kid=kid,
+                    requested_algorithm=algorithm,
+                )
+            except (httpx.HTTPError, jwt.PyJWTError, KeyError, TypeError, ValueError):
+                self._refresh_failed_until = (
+                    self._time_source() + self.failed_refresh_backoff_seconds
+                )
+                raise
+            self._refresh_failed_until = 0.0
             key = self._keys.get(kid)
             if key is None or key.algorithm_name != algorithm:
                 raise ValueError("Unknown signing key")
@@ -170,14 +187,165 @@ class JwksVerifier:
             raise _api_error(AUTH_REQUIRED) from None
 
 
-def extract_current_provider(claims: Mapping[str, Any]) -> str:
-    app_metadata = claims.get("app_metadata")
-    if not isinstance(app_metadata, Mapping):
+class SupabaseAuthUserResolver:
+    def __init__(
+        self,
+        *,
+        supabase_url: str,
+        publishable_key: str | None,
+        timeout_seconds: float = 5,
+        cache_ttl_seconds: int = 30,
+        max_cached_users: int = 512,
+        failed_request_backoff_seconds: int = 5,
+        fetch_auth_user: AuthUserFetcher | None = None,
+        http_client: httpx.AsyncClient | None = None,
+        time_source: TimeSource = time.monotonic,
+    ) -> None:
+        self.auth_user_url = f"{supabase_url.rstrip('/')}/auth/v1/user"
+        self.publishable_key = publishable_key
+        self.timeout_seconds = min(max(float(timeout_seconds), 0.5), 10.0)
+        self.cache_ttl_seconds = min(max(cache_ttl_seconds, 1), 60)
+        self.max_cached_users = min(max(max_cached_users, 1), 2048)
+        self.failed_request_backoff_seconds = min(
+            max(failed_request_backoff_seconds, 1), 30
+        )
+        self._fetch_auth_user = fetch_auth_user or self._fetch_remote_auth_user
+        self._http_client = http_client
+        self._time_source = time_source
+        self._users: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+        self._inflight: dict[str, asyncio.Task[dict[str, Any]]] = {}
+        self._network_failed_until = 0.0
+        self._cache_lock = asyncio.Lock()
+
+    async def _request_auth_user(
+        self, client: httpx.AsyncClient, token: str
+    ) -> dict[str, Any]:
+        if not self.publishable_key:
+            raise ValueError("Supabase publishable key is not configured")
+        response = await client.get(
+            self.auth_user_url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "apikey": self.publishable_key,
+            },
+            timeout=httpx.Timeout(self.timeout_seconds),
+        )
+        response.raise_for_status()
+        if response.status_code != 200:
+            raise ValueError("Supabase Auth returned an unexpected response")
+        data = response.json()
+        if not isinstance(data, dict):
+            raise TypeError("Supabase Auth user must be an object")
+        return data
+
+    async def _fetch_remote_auth_user(self, token: str) -> dict[str, Any]:
+        if self._http_client is not None:
+            return await self._request_auth_user(self._http_client, token)
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            return await self._request_auth_user(client, token)
+
+    async def _clear_inflight(
+        self,
+        token_digest: str,
+        task: asyncio.Task[dict[str, Any]],
+    ) -> None:
+        if not task.cancelled():
+            task.exception()
+        async with self._cache_lock:
+            if self._inflight.get(token_digest) is task:
+                del self._inflight[token_digest]
+
+    async def _cached_user_or_fetch_task(
+        self, token_digest: str, token: str
+    ) -> dict[str, Any] | asyncio.Task[dict[str, Any]]:
+        async with self._cache_lock:
+            now = self._time_source()
+            cached = self._users.get(token_digest)
+            if cached is not None:
+                expires_at, user = cached
+                if now < expires_at:
+                    self._users.move_to_end(token_digest)
+                    return dict(user)
+                del self._users[token_digest]
+
+            task = self._inflight.get(token_digest)
+            if task is not None:
+                return task
+            if now < self._network_failed_until:
+                raise ValueError("Supabase Auth is temporarily unavailable")
+            if len(self._inflight) >= self.max_cached_users:
+                raise ValueError("Too many Auth user lookups are in flight")
+
+            task = asyncio.create_task(self._fetch_auth_user(token))
+            self._inflight[token_digest] = task
+            task.add_done_callback(
+                lambda completed: asyncio.create_task(
+                    self._clear_inflight(token_digest, completed)
+                )
+            )
+            return task
+
+    async def resolve(self, token: str) -> dict[str, Any]:
+        token_digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            cached_or_task = await self._cached_user_or_fetch_task(
+                token_digest, token
+            )
+            if isinstance(cached_or_task, dict):
+                return cached_or_task
+
+            user = await asyncio.shield(cached_or_task)
+            if not isinstance(user, dict):
+                raise TypeError("Supabase Auth user must be an object")
+            async with self._cache_lock:
+                self._network_failed_until = 0.0
+                self._users[token_digest] = (
+                    self._time_source() + self.cache_ttl_seconds,
+                    dict(user),
+                )
+                self._users.move_to_end(token_digest)
+                while len(self._users) > self.max_cached_users:
+                    self._users.popitem(last=False)
+                return dict(user)
+        except ApiError:
+            raise
+        except httpx.TransportError:
+            async with self._cache_lock:
+                self._network_failed_until = (
+                    self._time_source() + self.failed_request_backoff_seconds
+                )
+            raise _api_error(AUTH_REQUIRED) from None
+        except (httpx.HTTPError, KeyError, TypeError, ValueError):
+            raise _api_error(AUTH_REQUIRED) from None
+
+
+def extract_current_provider(
+    claims: Mapping[str, Any], auth_user: Mapping[str, Any]
+) -> str:
+    amr = claims.get("amr")
+    if not isinstance(amr, list):
         raise _api_error(AUTH_REQUIRED)
-    provider = app_metadata.get("provider")
-    if not isinstance(provider, str) or not provider.strip():
+    methods = [
+        entry.get("method").strip().lower()
+        for entry in amr
+        if isinstance(entry, Mapping)
+        and isinstance(entry.get("method"), str)
+        and entry.get("method").strip()
+    ]
+    if not methods:
         raise _api_error(AUTH_REQUIRED)
-    return provider.strip().lower()
+
+    auth_user_id = auth_user.get("id")
+    identities = auth_user.get("identities")
+    has_google_identity = isinstance(identities, list) and any(
+        isinstance(identity, Mapping)
+        and identity.get("provider") == "google"
+        and identity.get("user_id") == auth_user_id
+        for identity in identities
+    )
+    if "oauth" in methods and has_google_identity:
+        return "google"
+    return methods[0]
 
 
 bearer = HTTPBearer(auto_error=False)
@@ -186,6 +354,10 @@ jwt_verifier = JwksVerifier(
     audience=settings.supabase_jwt_audience,
     jwks_url=settings.supabase_jwks_url,
     cache_ttl_seconds=settings.supabase_jwks_cache_ttl_seconds,
+)
+auth_user_resolver = SupabaseAuthUserResolver(
+    supabase_url=settings.supabase_url,
+    publishable_key=settings.supabase_publishable_key,
 )
 
 
@@ -197,23 +369,28 @@ async def get_current_user(
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise _api_error(AUTH_REQUIRED)
 
-    claims = await jwt_verifier.verify(credentials.credentials)
+    token = credentials.credentials
+    claims = await jwt_verifier.verify(token)
+    auth_user = await auth_user_resolver.resolve(token)
     try:
         user_id = UUID(claims["sub"])
-        email = claims["email"]
+        if UUID(auth_user["id"]) != user_id:
+            raise ValueError("Auth user does not match JWT subject")
+        email = auth_user["email"]
         if not isinstance(email, str) or not email.strip():
             raise ValueError("Email claim is invalid")
-        provider = extract_current_provider(claims)
+        provider = extract_current_provider(claims, auth_user)
     except (KeyError, TypeError, ValueError):
         raise _api_error(AUTH_REQUIRED) from None
+
+    email_confirmed_at = auth_user.get("email_confirmed_at")
 
     return AuthenticatedUser(
         user_id=user_id,
         email=email.strip().lower(),
         provider=provider,
-        email_verified=bool(
-            claims.get("email_confirmed_at") or claims.get("email_verified") is True
-        ),
+        email_verified=isinstance(email_confirmed_at, str)
+        and bool(email_confirmed_at.strip()),
     )
 
 
