@@ -11,7 +11,6 @@ from backend.attendance.models import Direction, Source
 from backend.attendance.repository import AttendanceRepository
 from backend.attendance.schemas import (
     TeacherAttendanceItem,
-    TeacherAttendancePage,
     TeacherStatisticsView,
 )
 from backend.core.auth import get_current_user
@@ -56,7 +55,7 @@ def _recent(index: int, *, excluded: bool = False) -> TeacherAttendanceItem:
 class FakeAttendanceRepository:
     def __init__(self) -> None:
         self.statistics_calls = []
-        self.history_calls = []
+        self.recent_calls = 0
 
     async def teacher_statistics(self, filters, **boundaries):
         self.statistics_calls.append((filters, boundaries))
@@ -76,14 +75,9 @@ class FakeAttendanceRepository:
             as_of_date=boundaries["as_of_date"],
         )
 
-    async def teacher_history(self, filters):
-        self.history_calls.append(filters)
-        return TeacherAttendancePage(
-            items=[_recent(index, excluded=index == 10) for index in range(10, 0, -1)],
-            total=11,
-            page=filters.page,
-            page_size=filters.page_size,
-        )
+    async def recent_teacher_attendance(self):
+        self.recent_calls += 1
+        return [_recent(index, excluded=index == 10) for index in range(10, 0, -1)]
 
 
 class FakeStudentRepository:
@@ -218,8 +212,35 @@ async def test_service_reuses_bounded_attendance_reads_at_seoul_week_boundary() 
         "week_start": date(2026, 8, 24),
         "month_start": date(2026, 8, 1),
     }
-    assert attendance.history_calls[0].page_size == 10
-    assert attendance.history_calls[0].page == 1
+    assert attendance.recent_calls == 1
+
+
+class _RowsCursor:
+    async def fetchall(self):
+        return []
+
+
+class _RecordingConnection:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    async def execute(self, query: str, parameters: object):
+        self.calls.append((query, parameters))
+        return _RowsCursor()
+
+
+async def test_recent_attendance_read_is_one_count_free_bounded_query() -> None:
+    connection = _RecordingConnection()
+
+    result = await AttendanceRepository(connection).recent_teacher_attendance()
+
+    assert result == []
+    assert len(connection.calls) == 1
+    query, parameters = connection.calls[0]
+    normalized_query = " ".join(query.split()).lower()
+    assert "count(" not in normalized_query
+    assert "order by scan.scanned_at desc, scan.id desc limit %(limit)s" in normalized_query
+    assert parameters == {"limit": 10}
 
 
 async def test_dashboard_dependencies_share_the_function_connection() -> None:
@@ -241,6 +262,12 @@ def _loopback_database_url() -> str:
 async def test_live_dashboard_excludes_flagged_aggregates_but_keeps_recent_detail() -> None:
     database_url = _loopback_database_url()
     included_id, excluded_id, recorder_id = uuid4(), uuid4(), uuid4()
+    historical_scan_ids = [
+        UUID(f"10000000-0000-4000-8000-{index:012d}") for index in range(1, 13)
+    ]
+    current_scan_ids = [
+        UUID(f"20000000-0000-4000-8000-{index:012d}") for index in range(1, 4)
+    ]
     connection = await psycopg.AsyncConnection.connect(database_url)
     try:
         before_cursor = await connection.execute(
@@ -277,25 +304,47 @@ async def test_live_dashboard_excludes_flagged_aggregates_but_keeps_recent_detai
             "insert into app.staff_memberships (user_id, role) values (%s, 'teacher')",
             (recorder_id,),
         )
-        for student_id, direction, scanned_at in (
-            (included_id, "IN", datetime(2026, 8, 24, 0, 0, tzinfo=UTC)),
-            (excluded_id, "IN", datetime(2026, 8, 24, 0, 30, tzinfo=UTC)),
-            (excluded_id, "OUT", datetime(2026, 8, 24, 1, 0, tzinfo=UTC)),
+        historical_at = datetime(2031, 1, 1, 0, 0, tzinfo=UTC)
+        for index, scan_id in enumerate(historical_scan_ids):
+            await connection.execute(
+                """
+                insert into app.attendance_scans (
+                  id, student_id, attendance_date, direction, scanned_at,
+                  request_id, source, recorded_by
+                ) values (%s, %s, '2031-01-01', 'IN', %s, %s, 'MANUAL', %s)
+                """,
+                (
+                    scan_id,
+                    excluded_id if index % 2 else included_id,
+                    historical_at,
+                    uuid4(),
+                    recorder_id,
+                ),
+            )
+
+        history_only = await AttendanceRepository(connection).recent_teacher_attendance()
+        assert [item.id for item in history_only] == list(reversed(historical_scan_ids[-10:]))
+        assert all(item.scanned_at < datetime(2031, 8, 24, tzinfo=UTC) for item in history_only)
+
+        for scan_id, student_id, direction, scanned_at in (
+            (current_scan_ids[0], included_id, "IN", datetime(2032, 8, 24, 0, 0, tzinfo=UTC)),
+            (current_scan_ids[1], excluded_id, "IN", datetime(2032, 8, 24, 0, 30, tzinfo=UTC)),
+            (current_scan_ids[2], excluded_id, "OUT", datetime(2032, 8, 24, 1, 0, tzinfo=UTC)),
         ):
             await connection.execute(
                 """
                 insert into app.attendance_scans (
-                  student_id, attendance_date, direction, scanned_at,
+                  id, student_id, attendance_date, direction, scanned_at,
                   request_id, source, recorded_by
-                ) values (%s, '2026-08-24', %s, %s, %s, 'MANUAL', %s)
+                ) values (%s, %s, '2032-08-24', %s, %s, %s, 'MANUAL', %s)
                 """,
-                (student_id, direction, scanned_at, uuid4(), recorder_id),
+                (scan_id, student_id, direction, scanned_at, uuid4(), recorder_id),
             )
 
         service = DashboardService(
             AttendanceRepository(connection),
             StudentRepository(connection),
-            clock=FrozenClock(datetime(2026, 8, 24, 3, 0, tzinfo=UTC)),
+            clock=FrozenClock(datetime(2032, 8, 24, 3, 0, tzinfo=UTC)),
         )
         dashboard = await service.teacher_dashboard()
 
@@ -304,6 +353,12 @@ async def test_live_dashboard_excludes_flagged_aggregates_but_keeps_recent_detai
         assert dashboard.currently_inside == 1
         assert dashboard.statistics_target_students == before + 1
         assert {item.student_id for item in dashboard.recent_attendance} >= {included_id, excluded_id}
+        assert [item.id for item in dashboard.recent_attendance] == [
+            current_scan_ids[2],
+            current_scan_ids[1],
+            current_scan_ids[0],
+            *reversed(historical_scan_ids[-7:]),
+        ]
         excluded_rows = [item for item in dashboard.recent_attendance if item.student_id == excluded_id]
         assert excluded_rows and all(item.excluded_from_statistics for item in excluded_rows)
         assert [item.scanned_at for item in dashboard.recent_attendance] == sorted(

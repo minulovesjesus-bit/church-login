@@ -27,6 +27,10 @@ id, student_id, attendance_date, direction::text, scanned_at,
 kiosk_session_id, request_id, qr_issued_at, source::text, recorded_by,
 voided_at, voided_by, void_reason
 """
+TEACHER_ATTENDANCE_PROJECTION = f"""
+{', '.join(f'scan.{column.strip()}' for column in SCAN_COLUMNS.split(','))},
+profile.name, profile.email, student.include_in_statistics
+"""
 
 
 class AttendanceRepository:
@@ -194,8 +198,7 @@ class AttendanceRepository:
         total = int(count_row[0]) if count_row is not None else 0
         cursor = await self.connection.execute(
             f"""
-            select {', '.join(f'scan.{column.strip()}' for column in SCAN_COLUMNS.split(','))},
-                   profile.name, profile.email, student.include_in_statistics
+            select {TEACHER_ATTENDANCE_PROJECTION}
             from app.attendance_scans scan
             join app.student_profiles student on student.user_id = scan.student_id
             join app.user_profiles profile on profile.user_id = scan.student_id
@@ -205,25 +208,27 @@ class AttendanceRepository:
             """,
             parameters,
         )
-        items: list[TeacherAttendanceItem] = []
-        for row in await cursor.fetchall():
-            scan = self._scan(row[:13])
-            if scan is None:
-                continue
-            items.append(
-                TeacherAttendanceItem(
-                    **AttendanceScanView.model_validate(scan).model_dump(),
-                    student_name=row[13],
-                    student_email=row[14],
-                    excluded_from_statistics=not bool(row[15]),
-                )
-            )
+        items = self._teacher_attendance_items(await cursor.fetchall())
         return TeacherAttendancePage(
             items=items,
             total=total,
             page=filters.page,
             page_size=filters.page_size,
         )
+
+    async def recent_teacher_attendance(self) -> list[TeacherAttendanceItem]:
+        cursor = await self.connection.execute(
+            f"""
+            select {TEACHER_ATTENDANCE_PROJECTION}
+            from app.attendance_scans scan
+            join app.student_profiles student on student.user_id = scan.student_id
+            join app.user_profiles profile on profile.user_id = scan.student_id
+            order by scan.scanned_at desc, scan.id desc
+            limit %(limit)s
+            """,
+            {"limit": 10},
+        )
+        return self._teacher_attendance_items(await cursor.fetchall())
 
     async def teacher_statistics(
         self,
@@ -630,6 +635,23 @@ class AttendanceRepository:
             return None
         escaped = search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         return f"%{escaped}%"
+
+    @classmethod
+    def _teacher_attendance_items(cls, rows: list[Any]) -> list[TeacherAttendanceItem]:
+        items: list[TeacherAttendanceItem] = []
+        for row in rows:
+            scan = cls._scan(row[:13])
+            if scan is None:
+                continue
+            items.append(
+                TeacherAttendanceItem(
+                    **AttendanceScanView.model_validate(scan).model_dump(),
+                    student_name=row[13],
+                    student_email=row[14],
+                    excluded_from_statistics=not bool(row[15]),
+                )
+            )
+        return items
 
     @staticmethod
     def _scan(row: Any | None) -> AttendanceScan | None:

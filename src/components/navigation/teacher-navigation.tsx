@@ -23,13 +23,17 @@ function isCurrent(pathname: string, href: string): boolean {
 
 export function TeacherNavigation({ admin }: { admin: boolean }) {
   const pathname = usePathname();
-  const [openPathname, setOpenPathname] = useState<string>();
-  const open = openPathname === pathname;
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const closeTimer = window.setTimeout(() => setOpen(false), 0);
+    return () => window.clearTimeout(closeTimer);
+  }, [pathname]);
 
   useEffect(() => {
     if (!open) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenPathname(undefined);
+      if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
@@ -46,23 +50,23 @@ export function TeacherNavigation({ admin }: { admin: boolean }) {
           aria-label="교사 메뉴 열기"
           aria-expanded={open}
           aria-controls="teacher-navigation"
-          onClick={() => setOpenPathname(pathname)}
+          onClick={() => setOpen(true)}
         >
           메뉴
         </button>
       </header>
-      {open ? <button type="button" className="teacher-nav-backdrop" aria-label="교사 메뉴 닫기" onClick={() => setOpenPathname(undefined)} /> : null}
+      {open ? <button type="button" className="teacher-nav-backdrop" aria-label="교사 메뉴 닫기" onClick={() => setOpen(false)} /> : null}
       <aside id="teacher-navigation" className={`teacher-sidebar${open ? " teacher-sidebar--open" : ""}`}>
         <div className="teacher-sidebar__brand">
           <p>Church attendance</p>
           <strong>교회 출결</strong>
-          <button type="button" className="teacher-nav-close" aria-label="교사 메뉴 닫기" onClick={() => setOpenPathname(undefined)}>닫기</button>
+          <button type="button" className="teacher-nav-close" aria-label="교사 메뉴 닫기" onClick={() => setOpen(false)}>닫기</button>
         </div>
         <nav aria-label="교사 메뉴">
           <ul>
             {links.map((link) => (
               <li key={link.href}>
-                <Link href={link.href} aria-current={isCurrent(pathname, link.href) ? "page" : undefined}>{link.label}</Link>
+                <Link href={link.href} aria-current={isCurrent(pathname, link.href) ? "page" : undefined} onClick={() => setOpen(false)}>{link.label}</Link>
               </li>
             ))}
           </ul>

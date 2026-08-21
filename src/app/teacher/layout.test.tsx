@@ -63,3 +63,25 @@ it("exposes labelled drawer controls and closes with Escape", async () => {
   expect(open).toHaveAttribute("aria-expanded", "false");
   expect(screen.getAllByRole("button", { name: "교사 메뉴 닫기" })).toHaveLength(1);
 });
+
+it("closes the drawer on link activation and every pathname change including browser back", async () => {
+  mockApi.get.mockResolvedValue({ capabilities: { teacher: true, admin: false } });
+  const view = render(<TeacherLayout><h1>보호 화면</h1></TeacherLayout>);
+  const open = await screen.findByRole("button", { name: "교사 메뉴 열기" });
+
+  fireEvent.click(open);
+  const attendanceLink = screen.getByRole("link", { name: "출결 관리" });
+  attendanceLink.addEventListener("click", (event) => event.preventDefault());
+  fireEvent.click(attendanceLink);
+  expect(open).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(open);
+  navigation.pathname = "/teacher/students";
+  view.rerender(<TeacherLayout><h1>보호 화면</h1></TeacherLayout>);
+  await vi.waitFor(() => expect(open).toHaveAttribute("aria-expanded", "false"));
+
+  fireEvent.click(open);
+  navigation.pathname = "/teacher";
+  view.rerender(<TeacherLayout><h1>보호 화면</h1></TeacherLayout>);
+  await vi.waitFor(() => expect(open).toHaveAttribute("aria-expanded", "false"));
+});

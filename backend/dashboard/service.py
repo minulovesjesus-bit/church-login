@@ -2,10 +2,7 @@ from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 from backend.attendance.repository import AttendanceRepository
-from backend.attendance.schemas import (
-    TeacherAttendanceFilters,
-    TeacherStatisticsFilters,
-)
+from backend.attendance.schemas import TeacherStatisticsFilters
 from backend.core.clock import Clock, SystemClock
 from backend.dashboard.schemas import TeacherDashboardView
 from backend.students.repository import StudentRepository
@@ -41,14 +38,7 @@ class DashboardService:
             week_start=week_start,
             month_start=month_start,
         )
-        recent = await self._attendance_repository.teacher_history(
-            TeacherAttendanceFilters(
-                date_from=as_of_date - timedelta(days=365),
-                date_to=as_of_date,
-                page=1,
-                page_size=10,
-            )
-        )
+        recent = await self._attendance_repository.recent_teacher_attendance()
         target_count = await self._student_repository.count_statistics_target_students()
 
         return TeacherDashboardView(
@@ -56,6 +46,6 @@ class DashboardService:
             currently_inside=statistics.currently_inside,
             week_attendees=statistics.unique_students_this_week,
             statistics_target_students=target_count,
-            recent_attendance=recent.items,
+            recent_attendance=recent,
             as_of_date=as_of_date,
         )

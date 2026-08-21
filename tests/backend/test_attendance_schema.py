@@ -235,7 +235,8 @@ def test_attendance_indexes_have_exact_shapes(
             'attendance_scans_student_date_scanned_at_idx',
             'kiosk_sessions_active_refresh_expires_at_idx',
             'kiosk_sessions_refresh_token_hash_key',
-            'attendance_scans_non_voided_student_date_scanned_at_idx'
+            'attendance_scans_non_voided_student_date_scanned_at_idx',
+            'attendance_scans_recent_idx'
           )
         """
     ).fetchall()
@@ -276,6 +277,14 @@ def test_attendance_indexes_have_exact_shapes(
                 "WHERE (voided_at IS NULL)"
             ),
             "(voided_at IS NULL)",
+        ),
+        (
+            "attendance_scans_recent_idx",
+            (
+                "CREATE INDEX attendance_scans_recent_idx ON "
+                "app.attendance_scans USING btree (scanned_at DESC, id DESC)"
+            ),
+            None,
         ),
     }
 

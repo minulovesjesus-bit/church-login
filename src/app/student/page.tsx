@@ -12,6 +12,14 @@ import { api, ApiClientError } from "@/lib/api/client";
 
 type Me = { onboarding_completed: boolean; capabilities: { student: boolean } };
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function hasApiCode(error: unknown, code: string): boolean {
+  return error instanceof ApiClientError && error.code === code;
+}
+
 export default function StudentPage() {
   const router = useRouter();
   const [statistics, setStatistics] = useState<StudentStatistics>();
@@ -27,32 +35,38 @@ export default function StudentPage() {
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
-    Promise.all([
+    Promise.allSettled([
       api.get<Me>("/api/me", { signal: controller.signal }),
       api.get<StudentStatistics>("/api/statistics/me", { signal: controller.signal }),
     ])
-      .then(([me, nextStatistics]) => {
+      .then(([meResult, statisticsResult]) => {
         if (!active) return;
-        if (!me.onboarding_completed || !me.capabilities.student) {
-          active = false;
-          router.replace("/onboarding");
-          return;
-        }
-        setStatistics(nextStatistics);
-      })
-      .catch((caught: unknown) => {
-        if (!active || (caught instanceof DOMException && caught.name === "AbortError")) return;
-        if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
+        const failures = [meResult, statisticsResult]
+          .filter((result) => result.status === "rejected")
+          .map((result) => result.reason as unknown);
+        if (failures.some((failure) => hasApiCode(failure, "AUTH_REQUIRED"))) {
           active = false;
           router.replace("/auth/login");
           return;
         }
-        if (caught instanceof ApiClientError && caught.code === "PROFILE_REQUIRED") {
+        if (
+          (meResult.status === "fulfilled"
+            && (!meResult.value.onboarding_completed || !meResult.value.capabilities.student))
+          || failures.some((failure) => hasApiCode(failure, "PROFILE_REQUIRED"))
+        ) {
           active = false;
           router.replace("/onboarding");
           return;
         }
-        setError(caught instanceof ApiClientError ? caught.message : "학생 정보를 불러오지 못했습니다.");
+        if (failures.some(isAbortError)) return;
+        const temporaryFailure = failures[0];
+        if (temporaryFailure !== undefined) {
+          setError(temporaryFailure instanceof ApiClientError
+            ? temporaryFailure.message
+            : "학생 정보를 불러오지 못했습니다.");
+          return;
+        }
+        if (statisticsResult.status === "fulfilled") setStatistics(statisticsResult.value);
       });
     return () => {
       active = false;

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -18,6 +18,16 @@ vi.mock("@/lib/api/client", () => client);
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import StudentPage from "./page";
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
 
 const validMe = { onboarding_completed: true, capabilities: { student: true } };
 const studentStatistics = {
@@ -40,6 +50,62 @@ afterEach(() => {
 it("redirects a new student to onboarding", async () => {
   client.api.get.mockResolvedValue({ onboarding_completed: false, capabilities: { student: false } });
   render(<StudentPage />);
+
+  await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith("/onboarding"));
+});
+
+it("prioritizes incomplete student identity over an earlier temporary statistics failure", async () => {
+  const me = deferred<typeof validMe>();
+  const statistics = deferred<typeof studentStatistics>();
+  client.api.get.mockImplementation((path: string) => path === "/api/me" ? me.promise : statistics.promise);
+  render(<StudentPage />);
+
+  await act(async () => statistics.reject(new client.ApiClientError("REQUEST_FAILED", "통계 일시 실패")));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(router.replace).not.toHaveBeenCalled();
+
+  await act(async () => me.resolve({ onboarding_completed: false, capabilities: { student: false } }));
+  await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith("/onboarding"));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("prioritizes a late authentication failure over an earlier temporary statistics failure", async () => {
+  const me = deferred<typeof validMe>();
+  const statistics = deferred<typeof studentStatistics>();
+  client.api.get.mockImplementation((path: string) => path === "/api/me" ? me.promise : statistics.promise);
+  render(<StudentPage />);
+
+  await act(async () => statistics.reject(new client.ApiClientError("REQUEST_FAILED", "통계 일시 실패")));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await act(async () => me.reject(new client.ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다.")));
+
+  await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith("/auth/login"));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("prioritizes a statistics profile requirement over a temporary identity failure", async () => {
+  const me = deferred<typeof validMe>();
+  const statistics = deferred<typeof studentStatistics>();
+  client.api.get.mockImplementation((path: string) => path === "/api/me" ? me.promise : statistics.promise);
+  render(<StudentPage />);
+
+  await act(async () => me.reject(new client.ApiClientError("REQUEST_FAILED", "사용자 일시 실패")));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await act(async () => statistics.reject(new client.ApiClientError("PROFILE_REQUIRED", "프로필이 필요합니다.")));
+
+  await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith("/onboarding"));
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+});
+
+it("redirects when valid identity and statistics reports a profile requirement", async () => {
+  const me = deferred<typeof validMe>();
+  const statistics = deferred<typeof studentStatistics>();
+  client.api.get.mockImplementation((path: string) => path === "/api/me" ? me.promise : statistics.promise);
+  render(<StudentPage />);
+
+  await act(async () => me.resolve(validMe));
+  expect(router.replace).not.toHaveBeenCalled();
+  await act(async () => statistics.reject(new client.ApiClientError("PROFILE_REQUIRED", "프로필이 필요합니다.")));
 
   await vi.waitFor(() => expect(router.replace).toHaveBeenCalledWith("/onboarding"));
 });

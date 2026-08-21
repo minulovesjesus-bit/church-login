@@ -99,6 +99,39 @@ it("pauses while hidden, aborts current work, and honors the remaining success c
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
+it("keeps an aborted request in flight until its promise settles and queues one visible refresh", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const first = deferred<{ value: number }>();
+  const second = deferred<{ value: number }>();
+  const signals: AbortSignal[] = [];
+  const fetcher = vi.fn((signal: AbortSignal) => {
+    signals.push(signal);
+    return signals.length === 1 ? first.promise : second.promise;
+  });
+  const view = render(<Harness fetcher={fetcher} />);
+
+  await act(async () => setVisibility("hidden"));
+  expect(signals[0].aborted).toBe(true);
+  await act(async () => setVisibility("visible"));
+  await act(async () => setVisibility("hidden"));
+  await act(async () => setVisibility("visible"));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+
+  await act(async () => first.resolve({ value: 1 }));
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText("value:1")).not.toBeInTheDocument();
+
+  await act(async () => setVisibility("hidden"));
+  expect(signals[1].aborted).toBe(true);
+  await act(async () => setVisibility("visible"));
+  expect(fetcher).toHaveBeenCalledTimes(2);
+
+  view.unmount();
+  await act(async () => second.resolve({ value: 2 }));
+  await act(async () => vi.advanceTimersByTimeAsync(600_000));
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+
 it("manual retry is immediate, abort errors stay silent, and unmount cleans up", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const pending = deferred<{ value: number }>();
@@ -132,8 +165,9 @@ it("makes auth terminal, redirects once, and ignores an older aborted completion
 
   await act(async () => setVisibility("hidden"));
   await act(async () => setVisibility("visible"));
-  await vi.waitFor(() => expect(onAuthRequired).toHaveBeenCalledTimes(1));
+  expect(fetcher).toHaveBeenCalledTimes(1);
   await act(async () => old.resolve({ value: 99 }));
+  await vi.waitFor(() => expect(onAuthRequired).toHaveBeenCalledTimes(1));
   await act(async () => vi.advanceTimersByTimeAsync(600_000));
   expect(fetcher).toHaveBeenCalledTimes(2);
   expect(onAuthRequired).toHaveBeenCalledTimes(1);
