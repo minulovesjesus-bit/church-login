@@ -58,6 +58,12 @@ class AttendanceRepository:
             "select pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_key,)
         )
 
+    async def lock_student_request(self, student_id: UUID, request_id: UUID) -> None:
+        lock_key = f"attendance-request:{student_id}:{request_id}"
+        await self.connection.execute(
+            "select pg_advisory_xact_lock(hashtextextended(%s, 1))", (lock_key,)
+        )
+
     async def latest_non_voided_scan(
         self, student_id: UUID, attendance_date: date
     ) -> AttendanceScan | None:

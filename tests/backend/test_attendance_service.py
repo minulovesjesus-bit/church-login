@@ -21,6 +21,7 @@ from backend.kiosk.schemas import QrChallenge
 from backend.kiosk.service import (
     KioskSessionRevoked,
     QrChallengeExpired,
+    QrChallengeInvalid,
 )
 from backend.main import app
 
@@ -41,10 +42,12 @@ class FakeQrService:
 class InMemoryAttendanceRepository:
     def __init__(self, student_id: UUID, *, staff_role: str | None = None) -> None:
         self.student_id = student_id
+        self.student_ids = {student_id}
         self.staff_role_value = staff_role
         self.scans: list[AttendanceScan] = []
         self.audit_entries: list[tuple[UUID, str, UUID, dict[str, object]]] = []
         self.locked_keys: list[tuple[UUID, date]] = []
+        self.locked_request_keys: list[tuple[UUID, UUID]] = []
         self.rate_limit_allowed = True
         self.rate_limit_keys: list[str] = []
         self.simulate_insert_conflict = False
@@ -52,7 +55,7 @@ class InMemoryAttendanceRepository:
         self.locked_kiosk_sessions: list[UUID] = []
 
     async def student_exists(self, student_id: UUID) -> bool:
-        return student_id == self.student_id
+        return student_id in self.student_ids
 
     async def scan_by_request(
         self, student_id: UUID, request_id: UUID
@@ -71,6 +74,9 @@ class InMemoryAttendanceRepository:
 
     async def lock_student_date(self, student_id: UUID, attendance_date: date) -> None:
         self.locked_keys.append((student_id, attendance_date))
+
+    async def lock_student_request(self, student_id: UUID, request_id: UUID) -> None:
+        self.locked_request_keys.append((student_id, request_id))
 
     async def latest_non_voided_scan(
         self, student_id: UUID, attendance_date: date
@@ -258,18 +264,22 @@ async def test_four_accepted_scans_alternate_in_out_after_exact_cooldown(
     assert len(repository.scans) == 4
 
 
-async def test_retry_returns_original_result_even_during_cooldown(
+@pytest.mark.parametrize("later_qr_error", [QrChallengeExpired(), KioskSessionRevoked()])
+async def test_retry_returns_original_even_after_qr_or_session_becomes_invalid(
     attendance_service: tuple[
         AttendanceService, InMemoryAttendanceRepository, FakeQrService
     ],
     student: AuthenticatedUser,
+    later_qr_error: ApiError,
 ) -> None:
-    service, repository, _ = attendance_service
+    service, repository, qr_service = attendance_service
     request_id = uuid4()
 
     first = await service.scan(student, "qr-token", request_id)
     repository.rate_limit_allowed = False
-    retry = await service.scan(student, "qr-token", request_id)
+    repository.kiosk_session_active = False
+    qr_service.error = later_qr_error
+    retry = await service.scan(student, "expired-or-revoked", request_id)
 
     assert retry.scan_id == first.scan_id
     assert retry.direction == first.direction
@@ -278,6 +288,35 @@ async def test_retry_returns_original_result_even_during_cooldown(
     assert retry.cooldown_remaining is None
     assert len(repository.scans) == 1
     assert len(repository.rate_limit_keys) == 1
+    assert qr_service.tokens == ["qr-token"]
+
+
+async def test_same_request_id_cannot_read_another_students_scan(
+    attendance_service: tuple[
+        AttendanceService, InMemoryAttendanceRepository, FakeQrService
+    ],
+    student: AuthenticatedUser,
+) -> None:
+    service, repository, qr_service = attendance_service
+    request_id = uuid4()
+    first = await service.scan(student, "valid", request_id)
+    other_student = AuthenticatedUser(
+        user_id=uuid4(),
+        email="other-student@example.com",
+        provider="password",
+        email_verified=True,
+    )
+    repository.student_ids.add(other_student.user_id)
+    qr_service.error = QrChallengeExpired()
+
+    with pytest.raises(QrChallengeExpired):
+        await service.scan(other_student, "expired", request_id)
+
+    assert first.duplicate is False
+    assert len(repository.scans) == 1
+    assert repository.scans[0].student_id == student.user_id
+    assert qr_service.tokens == ["valid", "expired"]
+    assert len(repository.rate_limit_keys) == 2
 
 
 async def test_unique_conflict_fallback_returns_committed_original_result(
@@ -357,6 +396,8 @@ async def test_scan_requires_existing_student_profile_and_preserves_qr_errors(
     with pytest.raises(ApiError) as missing_profile:
         await service.scan(other_user, "qr-token", uuid4())
     assert missing_profile.value.code == "PROFILE_REQUIRED"
+    assert qr_service.tokens == []
+    assert repository.rate_limit_keys == []
 
     qr_service.error = QrChallengeExpired()
     with pytest.raises(QrChallengeExpired):
@@ -364,6 +405,27 @@ async def test_scan_requires_existing_student_profile_and_preserves_qr_errors(
     qr_service.error = KioskSessionRevoked()
     with pytest.raises(KioskSessionRevoked):
         await service.scan(student, "revoked", uuid4())
+    assert repository.scans == []
+    assert len(repository.rate_limit_keys) == 2
+
+
+async def test_invalid_qr_consumes_rate_limit_before_verification(
+    attendance_service: tuple[
+        AttendanceService, InMemoryAttendanceRepository, FakeQrService
+    ],
+    student: AuthenticatedUser,
+) -> None:
+    service, repository, qr_service = attendance_service
+    qr_service.error = QrChallengeInvalid()
+
+    request_id = uuid4()
+    with pytest.raises(QrChallengeInvalid):
+        await service.scan(student, "malformed", request_id)
+
+    assert len(repository.rate_limit_keys) == 1
+    assert repository.locked_request_keys == [(student.user_id, request_id)]
+    assert repository.locked_keys == []
+    assert repository.locked_kiosk_sessions == []
     assert repository.scans == []
 
 
@@ -382,7 +444,9 @@ async def test_scan_rechecks_and_locks_durable_kiosk_before_insert(
     assert repository.locked_kiosk_sessions == [
         qr_service.challenge.kiosk_session_id
     ]
-    assert repository.rate_limit_keys == []
+    assert len(repository.rate_limit_keys) == 1
+    assert len(repository.locked_request_keys) == 1
+    assert repository.locked_keys == [(student.user_id, date(2026, 8, 21))]
     assert repository.scans == []
 
 
@@ -682,12 +746,18 @@ async def test_scan_api_preserves_stable_safe_domain_errors(
 ) -> None:
     service = FakeAttendanceApiService(clock.now())
     service.scan_error = error
+    dependency_finished = False
 
     async def current_student() -> AuthenticatedUser:
         return student
 
+    async def transactional_service():
+        nonlocal dependency_finished
+        yield service
+        dependency_finished = True
+
     app.dependency_overrides[get_current_user] = current_student
-    app.dependency_overrides[get_attendance_service] = lambda: service
+    app.dependency_overrides[get_attendance_service] = transactional_service
     try:
         response = await client.post(
             "/api/attendance/scan",
@@ -700,6 +770,7 @@ async def test_scan_api_preserves_stable_safe_domain_errors(
     assert response.json()["error"]["code"] == code
     assert response.json()["error"]["request_id"]
     assert "Traceback" not in response.text
+    assert dependency_finished is True
 
 
 async def test_scan_transaction_finishes_before_success_response(

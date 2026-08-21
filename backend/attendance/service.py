@@ -52,7 +52,6 @@ class AttendanceService:
     async def scan(
         self, user: AuthenticatedUser, qr_token: str, request_id: UUID
     ) -> ScanResult:
-        challenge = await self._qr_service.verify_qr_challenge(qr_token)
         if not await self._repository.student_exists(user.user_id):
             raise ApiError(
                 "PROFILE_REQUIRED",
@@ -65,19 +64,28 @@ class AttendanceService:
             return ScanResult.accepted(duplicate, duplicate=True)
 
         now = self._clock.now().astimezone(UTC)
-        if not await self._repository.lock_active_kiosk_session(
-            challenge.kiosk_session_id, now
-        ):
-            raise KioskSessionRevoked
+        await self._repository.lock_student_request(user.user_id, request_id)
+
+        duplicate = await self._repository.scan_by_request(user.user_id, request_id)
+        if duplicate is not None:
+            return ScanResult.accepted(duplicate, duplicate=True)
+
         rate_limit_key = self._rate_limit_key(user.user_id)
         if not await self._repository.consume_scan_rate_limit(rate_limit_key, now):
             raise ScanRateLimited
+
+        challenge = await self._qr_service.verify_qr_challenge(qr_token)
         attendance_date = now.astimezone(self.BUSINESS_TIMEZONE).date()
         await self._repository.lock_student_date(user.user_id, attendance_date)
 
         duplicate = await self._repository.scan_by_request(user.user_id, request_id)
         if duplicate is not None:
             return ScanResult.accepted(duplicate, duplicate=True)
+
+        if not await self._repository.lock_active_kiosk_session(
+            challenge.kiosk_session_id, now
+        ):
+            raise KioskSessionRevoked
 
         latest = await self._repository.latest_non_voided_scan(
             user.user_id, attendance_date

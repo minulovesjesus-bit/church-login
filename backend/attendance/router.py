@@ -14,7 +14,7 @@ from backend.attendance.service import AttendanceService, ScanRateLimited
 from backend.core.auth import get_current_user
 from backend.core.config import settings
 from backend.core.db import application_transaction
-from backend.core.errors import safe_error_response
+from backend.core.errors import ApiError, safe_error_response
 from backend.identity.models import AuthenticatedUser
 from backend.identity.router import require_teacher
 from backend.kiosk.repository import KioskRepository
@@ -71,13 +71,15 @@ async def scan_attendance(
 ) -> ScanResult | Response:
     try:
         return await service.scan(user, scan_input.qr_token, scan_input.request_id)
-    except ScanRateLimited as error:
+    except ApiError as error:
         return safe_error_response(
             request,
             code=error.code,
             message=error.message,
             status_code=error.status_code,
-            headers={"Retry-After": "60"},
+            headers={"Retry-After": "60"}
+            if isinstance(error, ScanRateLimited)
+            else None,
         )
 
 
