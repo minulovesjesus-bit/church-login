@@ -174,3 +174,99 @@ The sole backend warning is the pre-existing Starlette deprecation warning for i
 - No known Task 6 functional or security concern remains.
 - The pre-existing Starlette/httpx deprecation warning remains outside this task.
 - Task 7 still owns final authenticated real-browser flow/screenshots; Task 6 provides production-build and semantic interaction coverage but does not deploy or run that later fixture/documentation work.
+
+## Fix round 1 — reviewer findings
+
+### Changes
+
+- Replaced the rejection `window.confirm`/`window.prompt` sequence with a page-owned accessible dialog. It identifies the applicant, initially focuses a labelled textarea, preserves the exact draft across transient/API failures, submits only a trimmed 1–500 character reason in the POST body, and uses a target-specific `김교사 님 신청 거절 확정` action.
+- Opening the rejection dialog disables every competing application action. A ref-backed lock prevents duplicate submits before React renders. Cancel clears without a request; success, terminal authorization, or a successful queue reconciliation that proves the target disappeared are the only other draft-clearing paths. A reconciliation that still contains the applicant preserves the dialog and exact draft.
+- Approval confirmation and already-reviewed reconciliation remain intact. Rejection conflicts never present duplicate success.
+- Extended the live kiosk administrator regression with a real pre-revocation refresh token. After the idempotent administrator revoke, refresh raises stable `KIOSK_SESSION_REVOKED`; the total session count, revoked row's refresh hash/state, and sole metadata-only revoke audit remain unchanged. Existing access-cookie and already-issued-QR invalidation assertions remain beside it.
+
+### RED evidence
+
+The dialog lifecycle tests were written before changing the prompt implementation and failed on the real missing behavior:
+
+```text
+$ npm test -- src/app/teacher/applications/page.test.tsx
+Test Files  1 failed (1)
+Tests       5 failed | 5 passed (10)
+
+Unable to find role="dialog" and name="김교사 님 신청 거절"
+Unable to find role="textbox" and name="거절 사유"
+Window confirm() / prompt() not implemented
+```
+
+After the controlled form existed, an accessibility regression was added before autofocus and failed independently:
+
+```text
+$ npm test -- src/app/teacher/applications/page.test.tsx -t "opens an accessible"
+Expected element with focus: labelled rejection textarea
+Received element with focus: body
+1 failed | 10 skipped
+```
+
+The retained-conflict feedback assertion was also RED before the final reconciliation branch surfaced its stable API message:
+
+```text
+$ npm test -- src/app/teacher/applications/page.test.tsx -t "still contains"
+Unable to find an accessible element with role="alert"
+1 failed | 10 skipped
+```
+
+The old-refresh-token backend assertion was an honest characterization test rather than a manufactured RED: the existing repository's durable `revoked_at is null` rotation predicate already enforced the intended behavior, so its first focused live run passed. This fix adds the missing direct regression and does not duplicate production revocation logic.
+
+### GREEN and final sequential verification
+
+Node commands used `v22.22.0`; both backend database variables used the local Supabase loopback URL. Commands were run sequentially with unchanged strict advisor thresholds.
+
+```text
+$ uv run pytest tests/backend/test_admin_api.py -v
+12 passed in 0.29s
+
+$ npm test -- src/app/teacher/applications/page.test.tsx src/app/admin/staff/page.test.tsx src/app/admin/kiosks/page.test.tsx
+Test Files  3 passed (3)
+Tests       20 passed (20)
+
+$ uv run pytest tests/backend -q
+411 passed, 1 warning in 25.00s
+
+$ npm test
+Test Files  32 passed (32)
+Tests       207 passed (207)
+
+$ uv run ruff check backend tests/backend
+All checks passed!
+
+$ npm run typecheck
+tsc --noEmit
+exit 0
+
+$ npm run lint
+eslint .
+exit 0
+
+$ npm run build
+Next.js 16.3.1 (Turbopack)
+Compiled successfully
+Generating static pages (22/22)
+exit 0
+
+$ ./node_modules/.bin/supabase db lint --local --schema app --level warning --fail-on warning
+No schema errors found
+exit 0
+
+$ ./node_modules/.bin/supabase db advisors --local --type security --level warn --fail-on warn
+No issues found
+exit 0
+
+$ ./node_modules/.bin/supabase db advisors --local --type performance --level warn --fail-on warn
+No issues found
+exit 0
+
+$ git diff --check
+exit 0
+```
+
+The only warning remains the pre-existing Starlette/httpx `TestClient` deprecation. No migration, push, or deploy was performed. The fix commit SHA is recorded in the final task handoff because a commit cannot embed its own final object ID.

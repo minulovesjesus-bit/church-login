@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { api, ApiClientError } from "@/lib/api/client";
@@ -11,6 +11,7 @@ type ListState =
   | { status: "ready"; applications: Application[] }
   | { status: "error"; message: string }
   | { status: "auth" };
+type RejectionDraft = { application: Application; reason: string };
 
 function authorizationDestination(error: unknown): string | undefined {
   if (!(error instanceof ApiClientError)) return undefined;
@@ -26,6 +27,7 @@ export default function TeacherApplicationsPage() {
   const [pendingId, setPendingId] = useState<string>();
   const [mutationError, setMutationError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [rejection, setRejection] = useState<RejectionDraft>();
   const mountedRef = useRef(true);
   const terminalAuthRef = useRef(false);
   const sequenceRef = useRef(0);
@@ -43,6 +45,8 @@ export default function TeacherApplicationsPage() {
     sequenceRef.current += 1;
     mutationRef.current = false;
     setPendingId(undefined);
+    setMutationError(undefined);
+    setRejection(undefined);
     setState({ status: "auth" });
     router.replace(destination);
     return true;
@@ -53,13 +57,15 @@ export default function TeacherApplicationsPage() {
     sequenceRef.current = sequence;
     try {
       const applications = await api.get<Application[]>("/api/admin/teacher-applications");
-      if (mountedRef.current && !terminalAuthRef.current && sequence === sequenceRef.current) {
-        setState({ status: "ready", applications });
-      }
+      if (!mountedRef.current || terminalAuthRef.current || sequence !== sequenceRef.current) return undefined;
+      setState({ status: "ready", applications });
+      setRejection((current) => current && applications.some((item) => item.id === current.application.id) ? current : undefined);
+      return applications;
     } catch (error) {
-      if (!mountedRef.current || sequence !== sequenceRef.current) return;
-      if (terminalAuthorization(error)) return;
+      if (!mountedRef.current || sequence !== sequenceRef.current) return undefined;
+      if (terminalAuthorization(error)) return undefined;
       setState({ status: "error", message: error instanceof ApiClientError ? error.message : "신청 목록을 불러오지 못했습니다." });
+      return undefined;
     }
   }, [terminalAuthorization]);
 
@@ -67,19 +73,9 @@ export default function TeacherApplicationsPage() {
     queueMicrotask(() => { void loadApplications(); });
   }, [attempt, loadApplications]);
 
-  async function decide(application: Application, decision: "approved" | "rejected") {
-    if (mutationRef.current || terminalAuthRef.current) return;
-    const confirmed = window.confirm(decision === "approved"
-      ? `${application.name} 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.`
-      : `${application.name} 님의 신청을 거절하시겠습니까? 신청자는 거절 상태와 사유를 확인하게 됩니다.`);
-    if (!confirmed) return;
-
-    let rejectionReason: string | undefined;
-    if (decision === "rejected") {
-      rejectionReason = window.prompt("거절 사유를 입력해 주세요.")?.trim();
-      if (!rejectionReason) { setMutationError("거절 사유를 입력해 주세요."); return; }
-      if (rejectionReason.length > 500) { setMutationError("거절 사유는 500자 이하여야 합니다."); return; }
-    }
+  async function approve(application: Application) {
+    if (mutationRef.current || terminalAuthRef.current || rejection) return;
+    if (!window.confirm(`${application.name} 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.`)) return;
 
     mutationRef.current = true;
     setPendingId(application.id);
@@ -87,18 +83,71 @@ export default function TeacherApplicationsPage() {
     setNotice(undefined);
     const sequence = sequenceRef.current;
     try {
-      const suffix = decision === "approved" ? "approve" : "reject";
-      await api.post(`/api/admin/teacher-applications/${application.id}/${suffix}`, decision === "approved" ? {} : { rejection_reason: rejectionReason });
+      await api.post(`/api/admin/teacher-applications/${application.id}/approve`, {});
       if (!mountedRef.current || terminalAuthRef.current || sequence !== sequenceRef.current) return;
       setState((current) => current.status === "ready"
         ? { status: "ready", applications: current.applications.filter((item) => item.id !== application.id) }
         : current);
-      setNotice(`${application.name} 님의 신청을 ${decision === "approved" ? "승인" : "거절"}했습니다.`);
+      setNotice(`${application.name} 님의 신청을 승인했습니다.`);
     } catch (error) {
       if (!mountedRef.current || terminalAuthRef.current) return;
       if (terminalAuthorization(error)) return;
       if (error instanceof ApiClientError && error.code === "APPLICATION_ALREADY_REVIEWED") {
-        await loadApplications();
+        const applications = await loadApplications();
+        if (applications?.some((item) => item.id === application.id)) {
+          setMutationError(error.message);
+        }
+        return;
+      }
+      setMutationError(error instanceof ApiClientError ? error.message : "신청을 처리하지 못했습니다.");
+    } finally {
+      if (mountedRef.current && !terminalAuthRef.current) { mutationRef.current = false; setPendingId(undefined); }
+    }
+  }
+
+  function openRejection(application: Application) {
+    if (mutationRef.current || terminalAuthRef.current || rejection) return;
+    setMutationError(undefined);
+    setNotice(undefined);
+    setRejection({ application, reason: "" });
+  }
+
+  function cancelRejection() {
+    if (mutationRef.current) return;
+    setMutationError(undefined);
+    setRejection(undefined);
+  }
+
+  async function reject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!rejection || mutationRef.current || terminalAuthRef.current) return;
+
+    const reason = rejection.reason.trim();
+    if (!reason) { setMutationError("거절 사유를 입력해 주세요."); return; }
+    if (reason.length > 500) { setMutationError("거절 사유는 500자 이하여야 합니다."); return; }
+
+    const application = rejection.application;
+    mutationRef.current = true;
+    setPendingId(application.id);
+    setMutationError(undefined);
+    setNotice(undefined);
+    const sequence = sequenceRef.current;
+    try {
+      await api.post(`/api/admin/teacher-applications/${application.id}/reject`, { rejection_reason: reason });
+      if (!mountedRef.current || terminalAuthRef.current || sequence !== sequenceRef.current) return;
+      setState((current) => current.status === "ready"
+        ? { status: "ready", applications: current.applications.filter((item) => item.id !== application.id) }
+        : current);
+      setRejection(undefined);
+      setNotice(`${application.name} 님의 신청을 거절했습니다.`);
+    } catch (error) {
+      if (!mountedRef.current || terminalAuthRef.current) return;
+      if (terminalAuthorization(error)) return;
+      if (error instanceof ApiClientError && error.code === "APPLICATION_ALREADY_REVIEWED") {
+        const applications = await loadApplications();
+        if (applications?.some((item) => item.id === application.id)) {
+          setMutationError(error.message);
+        }
         return;
       }
       setMutationError(error instanceof ApiClientError ? error.message : "신청을 처리하지 못했습니다.");
@@ -108,10 +157,11 @@ export default function TeacherApplicationsPage() {
   }
 
   if (state.status === "auth") return null;
+  const actionsLocked = Boolean(pendingId || rejection);
   return (
     <main className="admin-page">
       <header className="admin-page__header"><p className="eyebrow">Administrator</p><h1>교사 가입 신청 관리</h1><p className="supporting-copy">신청자의 정보를 확인한 뒤 교사 권한 승인 또는 거절을 결정합니다.</p></header>
-      {mutationError ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
+      {mutationError && !rejection ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
       {notice ? <p className="notice" role="status">{notice}</p> : null}
       {state.status === "loading" ? <p role="status">신청 목록을 불러오고 있습니다.</p> : null}
       {state.status === "error" ? <section className="admin-state"><p className="inline-alert" role="alert">{state.message}</p><button className="secondary-button" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</button></section> : null}
@@ -120,11 +170,50 @@ export default function TeacherApplicationsPage() {
         {state.applications.map((application) => <li key={application.id} className="admin-card admin-card--application">
           <div><strong>{application.name}</strong><p>{application.email}</p><p>{application.phone}</p></div>
           <div className="button-row">
-            <button className="primary-button" type="button" disabled={pendingId === application.id} onClick={() => decide(application, "approved")}>{pendingId === application.id ? "처리 중…" : "승인"}</button>
-            <button className="danger-button" type="button" disabled={pendingId === application.id} onClick={() => decide(application, "rejected")}>{pendingId === application.id ? "처리 중…" : "거절"}</button>
+            <button className="primary-button" type="button" disabled={actionsLocked} onClick={() => approve(application)}>{pendingId === application.id && !rejection ? "처리 중…" : "승인"}</button>
+            <button className="danger-button" type="button" disabled={actionsLocked} onClick={() => openRejection(application)}>{pendingId === application.id && !rejection ? "처리 중…" : "거절"}</button>
           </div>
         </li>)}
       </ul> : null}
+      {rejection ? (
+        <div className="admin-dialog-backdrop">
+          <section
+            className="admin-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rejection-dialog-title"
+            aria-describedby="rejection-dialog-description"
+          >
+            <form onSubmit={reject}>
+              <p className="eyebrow">Reject application</p>
+              <h2 id="rejection-dialog-title">{rejection.application.name} 님 신청 거절</h2>
+              <p id="rejection-dialog-description">{rejection.application.name} 님의 교사 신청을 거절합니다. 신청자는 아래 사유를 확인합니다.</p>
+              <label htmlFor="rejection-reason">거절 사유</label>
+              <textarea
+                id="rejection-reason"
+                autoFocus
+                value={rejection.reason}
+                maxLength={500}
+                aria-invalid={Boolean(mutationError)}
+                aria-describedby={mutationError ? "rejection-error rejection-count" : "rejection-count"}
+                disabled={pendingId === rejection.application.id}
+                onChange={(event) => {
+                  setMutationError(undefined);
+                  setRejection((current) => current ? { ...current, reason: event.target.value } : current);
+                }}
+              />
+              <p id="rejection-count" className="admin-dialog__count">{rejection.reason.length}/500자</p>
+              {mutationError ? <p id="rejection-error" className="inline-alert" role="alert">{mutationError}</p> : null}
+              <div className="button-row">
+                <button className="danger-button" type="submit" disabled={pendingId === rejection.application.id}>
+                  {pendingId === rejection.application.id ? "거절 처리 중…" : `${rejection.application.name} 님 신청 거절 확정`}
+                </button>
+                <button className="secondary-button" type="button" disabled={pendingId === rejection.application.id} onClick={cancelRejection}>거절 취소</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }

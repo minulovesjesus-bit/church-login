@@ -27,7 +27,7 @@ from backend.identity.router import (
 from backend.identity.schemas import StaffRole, TeacherApplicationStatus
 from backend.kiosk.repository import KioskRepository, ManagedKioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
-from backend.kiosk.security import KioskPasswordHasher
+from backend.kiosk.security import KioskPasswordHasher, hash_opaque_token
 from backend.kiosk.service import KioskSessionRevoked, KioskSessionService
 from backend.main import app
 
@@ -380,6 +380,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
     password_hash = KioskPasswordHasher().hash("church-kiosk-secret")
     cookie_secret = "c" * 64
     qr_secret = "q" * 64
+    refresh_token = "existing-refresh-token-before-admin-revoke"
 
     with psycopg.connect(database_url) as owner:
         owner.execute("insert into auth.users (id) values (%s)", (actor_id,))
@@ -401,7 +402,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 [
                 (
                     session_ids[0],
-                    "active-secret-hash",
+                    hash_opaque_token(refresh_token, cookie_secret),
                     now - timedelta(days=3),
                     now - timedelta(minutes=1),
                     now + timedelta(days=1),
@@ -482,6 +483,33 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
 
             with pytest.raises(KioskSessionRevoked):
                 await service.require_access(access_token)
+            before_failed_refresh = await connection.execute(
+                """
+                select count(*),
+                       max(refresh_token_hash) filter (where id = %s),
+                       count(*) filter (
+                         where id = %s and revoked_at is not null
+                       )
+                from app.kiosk_sessions
+                """,
+                (session_ids[0], session_ids[0]),
+            )
+            before_failed_refresh_state = await before_failed_refresh.fetchone()
+            with pytest.raises(KioskSessionRevoked) as revoked_refresh:
+                await service.refresh(refresh_token)
+            assert revoked_refresh.value.code == "KIOSK_SESSION_REVOKED"
+            after_failed_refresh = await connection.execute(
+                """
+                select count(*),
+                       max(refresh_token_hash) filter (where id = %s),
+                       count(*) filter (
+                         where id = %s and revoked_at is not null
+                       )
+                from app.kiosk_sessions
+                """,
+                (session_ids[0], session_ids[0]),
+            )
+            assert await after_failed_refresh.fetchone() == before_failed_refresh_state
             with pytest.raises(KioskSessionRevoked):
                 await service.verify_qr_challenge(issued_qr)
 
