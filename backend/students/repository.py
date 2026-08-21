@@ -41,6 +41,17 @@ class StudentRepository:
         row = await cursor.fetchone()
         return str(row[0]) if row is not None else None
 
+    async def count_statistics_target_students(self) -> int:
+        cursor = await self.connection.execute(
+            """
+            select count(*)
+            from app.student_profiles
+            where include_in_statistics = true
+            """
+        )
+        row = await cursor.fetchone()
+        return int(row[0]) if row is not None else 0
+
     async def list_students(
         self,
         filters: StudentListFilters,

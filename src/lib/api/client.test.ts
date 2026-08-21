@@ -47,3 +47,17 @@ it("sends bearer-authenticated DELETE requests and accepts an empty 204 response
   expect(new Headers(init.headers).get("authorization")).toBe("Bearer session-token");
   expect(init.credentials).toBe("omit");
 });
+
+it("propagates an AbortSignal through GET without weakening bearer guarantees", async () => {
+  getSession.mockResolvedValue({ data: { session: { access_token: "session-token" } } });
+  const fetchSpy = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+  vi.stubGlobal("fetch", fetchSpy);
+  const controller = new AbortController();
+
+  await api.get("/api/teacher/dashboard", { signal: controller.signal });
+
+  const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+  expect(init.signal).toBe(controller.signal);
+  expect(init.credentials).toBe("omit");
+  expect(new Headers(init.headers).get("authorization")).toBe("Bearer session-token");
+});

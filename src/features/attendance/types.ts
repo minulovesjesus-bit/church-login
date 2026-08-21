@@ -61,3 +61,13 @@ export type TeacherStatistics = {
   as_of_date: string;
   timezone: "Asia/Seoul";
 };
+
+export type TeacherDashboard = {
+  today_attendees: number;
+  currently_inside: number;
+  week_attendees: number;
+  statistics_target_students: number;
+  recent_attendance: TeacherAttendanceItem[];
+  as_of_date: string;
+  timezone: "Asia/Seoul";
+};

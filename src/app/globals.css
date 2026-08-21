@@ -1686,3 +1686,380 @@ a {
     animation-iteration-count: 1 !important;
   }
 }
+
+/* Responsive student and teacher dashboard shells */
+.student-layout {
+  min-height: 100dvh;
+}
+
+.student-layout__content {
+  padding-bottom: 5.4rem;
+}
+
+.student-navigation {
+  position: fixed;
+  z-index: 30;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  border-top: 1px solid #d7e2da;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 -0.8rem 2rem rgb(31 65 44 / 8%);
+  backdrop-filter: blur(0.8rem);
+}
+
+.student-navigation ul,
+.teacher-sidebar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.student-navigation ul {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.student-navigation a {
+  display: grid;
+  min-height: 3.75rem;
+  place-items: center;
+  padding: 0.5rem 0.25rem;
+  color: #53665b;
+  font-size: 0.82rem;
+  font-weight: 750;
+  text-align: center;
+  text-decoration: none;
+}
+
+.student-navigation a[aria-current="page"] {
+  color: #11653b;
+  background: #edf8f0;
+}
+
+.student-dashboard {
+  display: grid;
+  gap: 1rem;
+}
+
+.student-dashboard > * {
+  margin-block: 0;
+}
+
+.student-dashboard__header {
+  padding-block: 0.75rem 0.25rem;
+}
+
+.student-dashboard__header h1,
+.student-today-card h2,
+.student-month-card h2 {
+  margin: 0;
+  line-height: 1.18;
+}
+
+.student-dashboard__header > p:last-child,
+.student-today-card > p:last-child {
+  color: #5a6d62;
+  line-height: 1.55;
+}
+
+.student-today-card,
+.student-month-card {
+  border: 1px solid #d9e4dc;
+  border-radius: 1.2rem;
+  padding: clamp(1.15rem, 4vw, 1.5rem);
+  background: rgb(255 255 255 / 95%);
+  box-shadow: 0 1rem 3rem rgb(42 71 54 / 7%);
+}
+
+.student-today-card strong {
+  display: block;
+  margin-top: 1rem;
+  color: #176d42;
+  font-size: clamp(1.35rem, 5vw, 1.8rem);
+}
+
+.student-qr-action {
+  display: grid;
+  min-height: 5.25rem;
+  place-items: center;
+  border-radius: 1.2rem;
+  padding: 1rem;
+  color: #fff;
+  background: linear-gradient(135deg, #0f6b3c, #218b55);
+  box-shadow: 0 1.2rem 2.7rem rgb(23 109 66 / 24%);
+  font-size: clamp(1.2rem, 5vw, 1.55rem);
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.student-month-card dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0 0;
+}
+
+.student-month-card dl > div {
+  border-radius: 0.85rem;
+  padding: 0.85rem;
+  background: #f2f7f3;
+}
+
+.student-month-card dt {
+  color: #607268;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.student-month-card dd {
+  margin: 0.45rem 0 0;
+  font-size: 0.95rem;
+  font-weight: 850;
+}
+
+.teacher-layout {
+  min-height: 100dvh;
+  background: #f5f7f2;
+}
+
+.teacher-layout__content {
+  min-width: 0;
+}
+
+.teacher-mobile-header {
+  position: sticky;
+  z-index: 35;
+  top: 0;
+  display: flex;
+  min-height: 3.8rem;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #d7e2da;
+  padding: 0.55rem 0.8rem;
+  background: rgb(255 255 255 / 95%);
+  backdrop-filter: blur(0.8rem);
+}
+
+.teacher-menu-button,
+.teacher-nav-close {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  border: 1px solid #aebeb4;
+  border-radius: 0.75rem;
+  color: #173c29;
+  background: #fff;
+  font-weight: 750;
+}
+
+.teacher-nav-backdrop {
+  position: fixed;
+  z-index: 40;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: rgb(4 18 11 / 55%);
+}
+
+.teacher-sidebar {
+  position: fixed;
+  z-index: 45;
+  inset: 0 auto 0 0;
+  width: min(86vw, 18rem);
+  overflow-y: auto;
+  padding: 1.25rem;
+  color: #edf7f0;
+  background: #122d20;
+  box-shadow: 1rem 0 3rem rgb(3 17 10 / 26%);
+  translate: -102% 0;
+  visibility: hidden;
+  transition: translate 180ms ease, visibility 180ms;
+}
+
+.teacher-sidebar--open {
+  translate: 0;
+  visibility: visible;
+}
+
+.teacher-sidebar__brand {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.2rem 0.75rem;
+  align-items: start;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid rgb(255 255 255 / 12%);
+}
+
+.teacher-sidebar__brand p {
+  grid-column: 1;
+  margin: 0;
+  color: #8db09b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.teacher-sidebar__brand strong {
+  grid-column: 1;
+  font-size: 1.35rem;
+}
+
+.teacher-nav-close {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.teacher-sidebar nav {
+  margin-top: 1rem;
+}
+
+.teacher-sidebar ul {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.teacher-sidebar a {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: 0.75rem;
+  padding: 0.7rem 0.8rem;
+  color: #c7dacf;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.teacher-sidebar a:hover,
+.teacher-sidebar a[aria-current="page"] {
+  color: #fff;
+  background: rgb(110 190 142 / 18%);
+}
+
+.teacher-access-state,
+.teacher-dashboard-shell {
+  min-height: 100dvh;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background: radial-gradient(circle at 8% 2%, rgb(218 240 225 / 65%), transparent 32rem), #f5f7f2;
+}
+
+.teacher-dashboard-shell > * {
+  width: min(100%, 74rem);
+  margin-inline: auto;
+}
+
+.teacher-dashboard-shell .attendance-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.dashboard-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  padding: 0.2rem 0;
+}
+
+.dashboard-shortcuts a {
+  display: inline-grid;
+  min-height: 2.75rem;
+  place-items: center;
+  border: 1px solid #bbcdc0;
+  border-radius: 999px;
+  padding: 0.6rem 0.9rem;
+  color: #28513a;
+  background: #fff;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.dashboard-stale-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #dfc985;
+  border-radius: 0.9rem;
+  padding: 0.75rem 0.9rem;
+  color: #644f16;
+  background: #fff9e6;
+}
+
+.dashboard-stale-notice p {
+  margin: 0;
+}
+
+@media (max-width: 64rem) {
+  .teacher-dashboard-shell .attendance-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .teacher-dashboard-shell .attendance-mobile-only {
+    display: block;
+  }
+
+  .teacher-dashboard-shell .attendance-desktop-only {
+    display: none;
+  }
+}
+
+@media (max-width: 40rem) {
+  .student-month-card dl {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-dashboard-shell {
+    padding: 0.75rem;
+  }
+
+  .dashboard-stale-notice {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (min-width: 64.001rem) {
+  .student-layout__content {
+    padding-bottom: 0;
+    padding-top: 4.75rem;
+  }
+
+  .student-navigation {
+    top: 0;
+    bottom: auto;
+    border-top: 0;
+    border-bottom: 1px solid #d7e2da;
+    box-shadow: 0 0.8rem 2rem rgb(31 65 44 / 6%);
+  }
+
+  .student-navigation ul {
+    width: min(100% - 3rem, 58rem);
+    margin-inline: auto;
+  }
+
+  .student-navigation a {
+    min-height: 4rem;
+    font-size: 0.92rem;
+  }
+
+  .teacher-layout {
+    display: grid;
+    grid-template-columns: 17rem minmax(0, 1fr);
+  }
+
+  .teacher-mobile-header,
+  .teacher-nav-backdrop,
+  .teacher-nav-close {
+    display: none;
+  }
+
+  .teacher-sidebar {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    width: 17rem;
+    height: 100dvh;
+    translate: 0;
+    visibility: visible;
+    box-shadow: none;
+  }
+}

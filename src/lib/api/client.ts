@@ -49,7 +49,7 @@ function jsonRequest(method: "POST" | "PATCH") {
 }
 
 export const api = {
-  get: <T>(path: `/api/${string}`) => apiFetch<T>(path),
+  get: <T>(path: `/api/${string}`, init: RequestInit = {}) => apiFetch<T>(path, init),
   post: jsonRequest("POST"),
   patch: jsonRequest("PATCH"),
   delete: <T = void>(path: `/api/${string}`) => apiFetch<T>(path, { method: "DELETE" }),

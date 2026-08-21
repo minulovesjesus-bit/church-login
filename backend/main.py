@@ -16,6 +16,7 @@ from backend.core.errors import (
     request_validation_error_handler,
     unexpected_error_handler,
 )
+from backend.dashboard.router import router as dashboard_router
 from backend.events.router import router as events_router
 from backend.identity.router import router as identity_router
 from backend.kiosk.router import admin_router as kiosk_admin_router
@@ -40,6 +41,7 @@ app.include_router(kiosk_admin_router)
 app.include_router(attendance_router)
 app.include_router(events_router)
 app.include_router(students_router)
+app.include_router(dashboard_router)
 
 if settings.app_env == "test":
     from fixtures.identity_auth import install_identity_auth_fixtures
