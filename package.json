@@ -8,7 +8,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "APP_ENV=test playwright test",
     "vercel:dev": "vercel dev",
     "supabase:start": "supabase start",
     "supabase:reset": "supabase db reset"

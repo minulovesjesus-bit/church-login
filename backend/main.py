@@ -2,6 +2,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request
 
+from backend.core.config import settings
 from backend.core.errors import (
     REQUEST_ID_HEADER,
     ApiError,
@@ -13,6 +14,11 @@ from backend.identity.router import router as identity_router
 app = FastAPI(title="Church Attendance API")
 app.add_exception_handler(ApiError, api_error_handler)
 app.include_router(identity_router)
+
+if settings.app_env == "test":
+    from fixtures.identity_auth import install_identity_auth_fixtures
+
+    install_identity_auth_fixtures(app)
 
 
 @app.middleware("http")

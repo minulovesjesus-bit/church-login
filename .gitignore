@@ -4,10 +4,13 @@
 !.env.example
 node_modules/
 .next/
+.vercel/
 .venv/
 .pytest_cache/
 .ruff_cache/
 coverage/
+playwright-report/
+test-results/
 tsconfig.tsbuildinfo
 __pycache__/
 *.py[cod]
