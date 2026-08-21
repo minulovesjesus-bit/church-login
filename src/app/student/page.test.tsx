@@ -22,6 +22,7 @@ import StudentPage from "./page";
 afterEach(() => {
   router.replace.mockReset();
   client.api.get.mockReset();
+  vi.useRealTimers();
 });
 
 it("redirects a new student to onboarding", async () => {
@@ -69,27 +70,29 @@ it("retries a temporary API failure", async () => {
   expect(await screen.findByRole("heading", { name: "학생 출결" })).toBeInTheDocument();
 });
 
-it("shows only the next two current-week occurrences below the existing attendance content", async () => {
+it("shows only ongoing or upcoming current-week occurrences below the existing attendance content", async () => {
   client.api.get.mockImplementation((path: string) => {
     if (path === "/api/me") return Promise.resolve({ onboarding_completed: true, capabilities: { student: true } });
     if (path === "/api/events?from=2026-08-17&to=2026-08-24") {
       return Promise.resolve([
-        { occurrence_id: "third:2026-08-22", event_id: "third", title: "세 번째 일정", description: null, local_start: "2026-08-22T11:00:00+09:00", local_end: "2026-08-22T12:00:00+09:00", location: null },
-        { occurrence_id: "first:2026-08-17", event_id: "first", title: "첫 번째 일정", description: null, local_start: "2026-08-17T11:00:00+09:00", local_end: "2026-08-17T12:00:00+09:00", location: null },
-        { occurrence_id: "second:2026-08-18", event_id: "second", title: "두 번째 일정", description: null, local_start: "2026-08-18T11:00:00+09:00", local_end: "2026-08-18T12:00:00+09:00", location: null },
+        { occurrence_id: "future:2026-08-22", event_id: "future", title: "나중 일정", description: null, local_start: "2026-08-22T11:00:00+09:00", local_end: "2026-08-22T12:00:00+09:00", location: null },
+        { occurrence_id: "finished:2026-08-17", event_id: "finished", title: "끝난 일정", description: null, local_start: "2026-08-17T11:00:00+09:00", local_end: "2026-08-17T12:00:00+09:00", location: null },
+        { occurrence_id: "ongoing:2026-08-19", event_id: "ongoing", title: "진행 중 일정", description: null, local_start: "2026-08-19T11:00:00+09:00", local_end: "2026-08-19T13:00:00+09:00", location: null },
+        { occurrence_id: "upcoming:2026-08-19", event_id: "upcoming", title: "곧 시작할 일정", description: null, local_start: "2026-08-19T14:00:00+09:00", local_end: "2026-08-19T15:00:00+09:00", location: null },
       ]);
     }
     throw new Error(`Unexpected path: ${path}`);
   });
   vi.useFakeTimers({ shouldAdvanceTime: true });
-  vi.setSystemTime(new Date("2026-08-19T14:00:00Z"));
+  vi.setSystemTime(new Date("2026-08-19T03:30:00Z"));
   render(<StudentPage />);
 
   const attendanceCopy = await screen.findByText("오늘의 출결과 QR 스캔 기능을 이용할 수 있습니다.");
   const eventsHeading = await screen.findByRole("heading", { name: "이번 주 일정" });
   expect(attendanceCopy.compareDocumentPosition(eventsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByText("첫 번째 일정")).toBeInTheDocument();
-  expect(screen.getByText("두 번째 일정")).toBeInTheDocument();
-  expect(screen.queryByText("세 번째 일정")).not.toBeInTheDocument();
+  expect(screen.getByText("진행 중 일정")).toBeInTheDocument();
+  expect(screen.getByText("곧 시작할 일정")).toBeInTheDocument();
+  expect(screen.queryByText("끝난 일정")).not.toBeInTheDocument();
+  expect(screen.queryByText("나중 일정")).not.toBeInTheDocument();
   expect(client.api.get).toHaveBeenCalledWith("/api/events?from=2026-08-17&to=2026-08-24");
 });

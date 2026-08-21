@@ -74,15 +74,20 @@ it("groups sorted occurrences by Seoul date, including a cross-midnight event", 
   expect(screen.getByText("밤샘 기도").closest("li")).toHaveTextContent("오후 11:00 – 오전 1:00");
 });
 
-it("uses only the selected Monday in semantic previous, current, and next links", async () => {
+it.each([
+  ["2026-08-10", "2026-08-03", "2026-08-17"],
+  ["2026-08-24", "2026-08-17", "2026-08-31"],
+])("uses the actual current Seoul Monday for the current-week link from selected week %s", async (week, previous, next) => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-19T03:30:00Z"));
   client.api.get.mockResolvedValue([]);
-  await renderPage();
+  await renderPage(week);
 
   await screen.findByText("이번 주 등록된 일정이 없습니다.");
 
-  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", "/student/events?week=2026-08-10");
+  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", `/student/events?week=${previous}`);
   expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", "/student/events?week=2026-08-17");
-  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", "/student/events?week=2026-08-24");
+  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", `/student/events?week=${next}`);
 });
 
 it.each([undefined, "2026-02-30", "2026-08-18", ["2026-08-17", "2026-08-24"]])(
@@ -97,6 +102,21 @@ it.each([undefined, "2026-02-30", "2026-08-18", ["2026-08-17", "2026-08-24"]])(
     await vi.waitFor(() => expect(client.api.get).toHaveBeenCalledWith("/api/events?from=2026-08-17&to=2026-08-24"));
   },
 );
+
+it.each([
+  ["0001-01-01", "/api/events?from=0001-01-01&to=0001-01-08"],
+  ["0000-01-03", "/api/events?from=2026-08-17&to=2026-08-24"],
+  ["9999-12-20", "/api/events?from=9999-12-20&to=9999-12-27"],
+  ["9999-12-27", "/api/events?from=2026-08-17&to=2026-08-24"],
+])("uses only backend-compatible week bounds for %s", async (week, expectedPath) => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-19T03:30:00Z"));
+  client.api.get.mockResolvedValue([]);
+
+  await renderPage(week);
+
+  await vi.waitFor(() => expect(client.api.get).toHaveBeenCalledWith(expectedPath));
+});
 
 it("shows distinct loading, retryable error, retry, and auth redirect states", async () => {
   let rejectFirst: (error: Error) => void = () => undefined;

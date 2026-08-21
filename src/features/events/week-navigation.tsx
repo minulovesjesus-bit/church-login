@@ -1,6 +1,8 @@
 import Link from "next/link";
 
 const SEOUL = "Asia/Seoul";
+const MIN_BACKEND_YEAR = 1;
+const MAX_BACKEND_YEAR = 9999;
 
 type CalendarDate = { year: number; month: number; day: number };
 export type WeekSearchValue = string | string[] | undefined;
@@ -19,7 +21,7 @@ function parseCalendarDate(value: string): CalendarDate | undefined {
   const year = Number(matched[1]);
   const month = Number(matched[2]);
   const day = Number(matched[3]);
-  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return undefined;
+  if (year < MIN_BACKEND_YEAR || year > MAX_BACKEND_YEAR || month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return undefined;
   return { year, month, day };
 }
 
@@ -61,6 +63,12 @@ function addCalendarDays(date: CalendarDate, amount: number): CalendarDate {
   return result;
 }
 
+function isBackendCompatibleWeek(date: CalendarDate): boolean {
+  if (dayOfWeek(date) !== 1) return false;
+  const exclusiveEnd = addCalendarDays(date, 7);
+  return exclusiveEnd.year >= MIN_BACKEND_YEAR && exclusiveEnd.year <= MAX_BACKEND_YEAR;
+}
+
 function seoulCalendarDate(now: Date): CalendarDate {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: SEOUL,
@@ -80,7 +88,7 @@ export function currentSeoulMonday(now = new Date()): string {
 export function resolveSeoulMonday(value: WeekSearchValue, now = new Date()): string {
   if (typeof value === "string") {
     const parsed = parseCalendarDate(value);
-    if (parsed && dayOfWeek(parsed) === 1) return value;
+    if (parsed && isBackendCompatibleWeek(parsed)) return value;
   }
   return currentSeoulMonday(now);
 }
@@ -88,14 +96,16 @@ export function resolveSeoulMonday(value: WeekSearchValue, now = new Date()): st
 export function adjacentSeoulWeek(week: string, offset: -1 | 1): string {
   const parsed = parseCalendarDate(week);
   if (!parsed || dayOfWeek(parsed) !== 1) return currentSeoulMonday();
-  return formatCalendarDate(addCalendarDays(parsed, offset * 7));
+  const adjacent = addCalendarDays(parsed, offset * 7);
+  if (adjacent.year < MIN_BACKEND_YEAR || adjacent.year > MAX_BACKEND_YEAR) return currentSeoulMonday();
+  return formatCalendarDate(adjacent);
 }
 
-export function WeekNavigation({ week }: { week: string }) {
+export function WeekNavigation({ week, currentWeek = currentSeoulMonday() }: { week: string; currentWeek?: string }) {
   return (
     <nav className="event-week-navigation" aria-label="주간 일정 탐색">
       <Link className="secondary-button" href={`/student/events?week=${adjacentSeoulWeek(week, -1)}`}>이전 주</Link>
-      <Link className="secondary-button" href={`/student/events?week=${week}`}>이번 주</Link>
+      <Link className="secondary-button" href={`/student/events?week=${currentWeek}`}>이번 주</Link>
       <Link className="secondary-button" href={`/student/events?week=${adjacentSeoulWeek(week, 1)}`}>다음 주</Link>
     </nav>
   );

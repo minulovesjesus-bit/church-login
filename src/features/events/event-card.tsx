@@ -61,6 +61,14 @@ function sortOccurrences(events: EventOccurrence[]): EventOccurrence[] {
   });
 }
 
+function upcomingOccurrences(events: EventOccurrence[], now: Date): EventOccurrence[] {
+  const nowTime = now.getTime();
+  return events.filter((event) => {
+    const endTime = asDate(event.local_end).getTime();
+    return Number.isFinite(endTime) && endTime > nowTime;
+  });
+}
+
 export function EventCard({ event }: { event: EventOccurrence }) {
   return (
     <article className="event-card">
@@ -118,7 +126,11 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
   }, [attempt, router, week]);
 
   const isLoading = state.week !== week || state.status === "loading";
-  const events = useMemo(() => (state.week === week ? sortOccurrences(state.events).slice(0, limit) : []), [limit, state.events, state.week, week]);
+  const events = useMemo(() => {
+    if (state.week !== week) return [];
+    const sorted = sortOccurrences(state.events);
+    return limit === undefined ? sorted : upcomingOccurrences(sorted, new Date()).slice(0, limit);
+  }, [limit, state.events, state.week, week]);
   const grouped = useMemo(() => {
     const groups = new Map<string, EventOccurrence[]>();
     events.forEach((event) => {
