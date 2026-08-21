@@ -58,7 +58,7 @@ it("fetches immediately without overlap and waits 30 seconds after successful co
 });
 
 it("uses bounded exponential retries no faster than 30 seconds", async () => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   const fetcher = vi.fn().mockRejectedValue(new ApiClientError("REQUEST_FAILED", "실패"));
   render(<Harness fetcher={fetcher} />);
   await act(async () => Promise.resolve());
