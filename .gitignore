@@ -1,2 +1,11 @@
 .superpowers/
 .worktrees/
+node_modules/
+.next/
+.venv/
+.pytest_cache/
+.ruff_cache/
+coverage/
+tsconfig.tsbuildinfo
+__pycache__/
+*.py[cod]

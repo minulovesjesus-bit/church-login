@@ -1,0 +1,66 @@
+import os
+from collections.abc import AsyncIterator, Callable, Iterator
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
+
+import jwt
+import psycopg
+import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
+from httpx import ASGITransport, AsyncClient
+from jwt.algorithms import RSAAlgorithm
+
+from api.index import app
+
+
+@pytest.fixture
+async def client() -> AsyncIterator[AsyncClient]:
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as test_client:
+        yield test_client
+
+
+@pytest.fixture
+def database_transaction() -> Iterator[psycopg.Connection[Any] | None]:
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if database_url is None:
+        yield None
+        return
+
+    connection = psycopg.connect(database_url)
+    try:
+        yield connection
+    finally:
+        connection.rollback()
+        connection.close()
+
+
+@pytest.fixture
+def rsa_jwks() -> tuple[rsa.RSAPrivateKey, dict[str, Any]]:
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    jwk = RSAAlgorithm.to_jwk(private_key.public_key(), as_dict=True)
+    jwk.update({"kid": "test-key", "use": "sig", "alg": "RS256"})
+    return private_key, {"keys": [jwk]}
+
+
+@pytest.fixture
+def token_factory(
+    rsa_jwks: tuple[rsa.RSAPrivateKey, dict[str, Any]],
+) -> Callable[[str, bool, UUID], str]:
+    private_key, _ = rsa_jwks
+
+    def create_token(provider: str, verified: bool, subject: UUID) -> str:
+        now = datetime.now(UTC)
+        payload = {
+            "sub": str(subject),
+            "aud": "authenticated",
+            "exp": now + timedelta(minutes=5),
+            "iat": now,
+            "email": "student@example.com",
+            "app_metadata": {"provider": provider},
+            "email_verified": verified,
+        }
+        return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-key"})
+
+    return create_token

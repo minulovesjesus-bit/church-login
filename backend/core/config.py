@@ -1,0 +1,10 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    app_env: str = "development"
+
+
+settings = Settings()
