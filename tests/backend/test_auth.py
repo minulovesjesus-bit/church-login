@@ -451,6 +451,82 @@ async def test_auth_user_network_failure_backoff_is_shared_across_tokens() -> No
     assert fetched_tokens == ["token-a", "token-b"]
 
 
+@pytest.mark.parametrize("status_code", [429, 503], ids=["rate-limited", "outage"])
+async def test_transient_auth_http_status_uses_shared_bounded_backoff(
+    status_code: int,
+) -> None:
+    request_count = [0]
+    clock = [100.0]
+
+    async def transient_auth_response(request: httpx.Request) -> httpx.Response:
+        request_count[0] += 1
+        return httpx.Response(
+            status_code,
+            json={"message": f"upstream rejected {request.headers['Authorization']}"},
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(transient_auth_response)
+    ) as http_client:
+        resolver = auth.SupabaseAuthUserResolver(
+            supabase_url=TEST_SUPABASE_URL,
+            publishable_key="test-publishable-key",
+            http_client=http_client,
+            time_source=lambda: clock[0],
+        )
+
+        with pytest.raises(ApiError) as first_error:
+            await resolver.resolve("do-not-leak-token-a")
+        with pytest.raises(ApiError) as backoff_error:
+            await resolver.resolve("do-not-leak-token-b")
+
+        assert request_count == [1]
+        assert str(first_error.value) == "AUTH_REQUIRED"
+        assert str(backoff_error.value) == "AUTH_REQUIRED"
+
+        clock[0] += 6
+        with pytest.raises(ApiError) as retry_error:
+            await resolver.resolve("do-not-leak-token-b")
+
+    assert request_count == [2]
+    assert str(retry_error.value) == "AUTH_REQUIRED"
+
+
+async def test_auth_401_is_token_local_and_does_not_expose_upstream_details() -> None:
+    request_count = [0]
+    expected_user = auth_user_payload(
+        "00000000-0000-4000-8000-000000000001",
+        identity_providers=[],
+    )
+
+    async def token_specific_auth_response(request: httpx.Request) -> httpx.Response:
+        request_count[0] += 1
+        if request.headers["Authorization"] == "Bearer rejected-secret-token":
+            return httpx.Response(
+                401,
+                json={"message": "rejected-secret-token was revoked"},
+            )
+        return httpx.Response(200, json=expected_user)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(token_specific_auth_response)
+    ) as http_client:
+        resolver = auth.SupabaseAuthUserResolver(
+            supabase_url=TEST_SUPABASE_URL,
+            publishable_key="test-publishable-key",
+            http_client=http_client,
+        )
+
+        with pytest.raises(ApiError) as rejected_error:
+            await resolver.resolve("rejected-secret-token")
+        accepted_user = await resolver.resolve("accepted-token")
+
+    assert request_count == [2]
+    assert accepted_user == expected_user
+    assert str(rejected_error.value) == "AUTH_REQUIRED"
+    assert "rejected-secret-token" not in str(rejected_error.value)
+
+
 async def test_jwks_cache_reuses_keys_only_until_its_ttl(
     configured_auth: tuple[
         JwksVerifier, list[int], list[float], StubAuthUserResolver

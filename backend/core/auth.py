@@ -214,7 +214,7 @@ class SupabaseAuthUserResolver:
         self._time_source = time_source
         self._users: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
         self._inflight: dict[str, asyncio.Task[dict[str, Any]]] = {}
-        self._network_failed_until = 0.0
+        self._shared_failure_backoff_until = 0.0
         self._cache_lock = asyncio.Lock()
 
     async def _request_auth_user(
@@ -271,7 +271,7 @@ class SupabaseAuthUserResolver:
             task = self._inflight.get(token_digest)
             if task is not None:
                 return task
-            if now < self._network_failed_until:
+            if now < self._shared_failure_backoff_until:
                 raise ValueError("Supabase Auth is temporarily unavailable")
             if len(self._inflight) >= self.max_cached_users:
                 raise ValueError("Too many Auth user lookups are in flight")
@@ -298,7 +298,7 @@ class SupabaseAuthUserResolver:
             if not isinstance(user, dict):
                 raise TypeError("Supabase Auth user must be an object")
             async with self._cache_lock:
-                self._network_failed_until = 0.0
+                self._shared_failure_backoff_until = 0.0
                 self._users[token_digest] = (
                     self._time_source() + self.cache_ttl_seconds,
                     dict(user),
@@ -309,9 +309,17 @@ class SupabaseAuthUserResolver:
                 return dict(user)
         except ApiError:
             raise
+        except httpx.HTTPStatusError as error:
+            status_code = error.response.status_code
+            if status_code == 429 or 500 <= status_code <= 599:
+                async with self._cache_lock:
+                    self._shared_failure_backoff_until = (
+                        self._time_source() + self.failed_request_backoff_seconds
+                    )
+            raise _api_error(AUTH_REQUIRED) from None
         except httpx.TransportError:
             async with self._cache_lock:
-                self._network_failed_until = (
+                self._shared_failure_backoff_until = (
                     self._time_source() + self.failed_request_backoff_seconds
                 )
             raise _api_error(AUTH_REQUIRED) from None
