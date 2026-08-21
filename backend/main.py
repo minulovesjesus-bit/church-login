@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from backend.attendance.router import router as attendance_router
 from backend.core.config import settings
 from backend.core.errors import (
     REQUEST_ID_HEADER,
@@ -32,6 +33,7 @@ app.add_middleware(
 )
 app.include_router(identity_router)
 app.include_router(kiosk_router)
+app.include_router(attendance_router)
 
 if settings.app_env == "test":
     from fixtures.identity_auth import install_identity_auth_fixtures

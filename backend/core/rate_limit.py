@@ -16,3 +16,10 @@ KIOSK_LOGIN_RATE_LIMIT = RateLimitPolicy(
     attempt_limit=5,
     block_for=timedelta(minutes=15),
 )
+
+ATTENDANCE_SCAN_RATE_LIMIT = RateLimitPolicy(
+    action="attendance.scan",
+    window=timedelta(minutes=1),
+    attempt_limit=30,
+    block_for=timedelta(minutes=1),
+)
