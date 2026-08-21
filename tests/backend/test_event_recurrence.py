@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -99,3 +99,41 @@ def test_recurrence_rejects_invalid_or_unbounded_request_ranges() -> None:
         expand_weekly_occurrences(series, date(2026, 8, 23), date(2026, 8, 23))
     with pytest.raises(ValueError, match="42 days"):
         expand_weekly_occurrences(series, date(2026, 8, 23), date(2026, 10, 5))
+
+
+def test_event_duration_allows_exactly_seven_days() -> None:
+    starts_at = datetime(2026, 8, 23, 2, tzinfo=UTC)
+    series = event_series(starts_at=starts_at, ends_at=starts_at + timedelta(days=7))
+
+    occurrences = expand_weekly_occurrences(
+        series, date(2026, 8, 23), date(2026, 8, 24)
+    )
+
+    assert len(occurrences) == 1
+
+
+def test_event_duration_rejects_more_than_seven_days_before_expansion() -> None:
+    starts_at = datetime(2026, 8, 23, 2, tzinfo=UTC)
+    series = event_series(
+        starts_at=starts_at,
+        ends_at=starts_at + timedelta(days=7, seconds=1),
+        repeat_weekly=True,
+    )
+
+    with pytest.raises(ValueError, match="7 days"):
+        expand_weekly_occurrences(
+            series, date(2026, 8, 23), date(2026, 8, 24)
+        )
+
+
+def test_ancient_adversarial_long_duration_is_rejected_before_weekly_loop() -> None:
+    series = event_series(
+        starts_at=datetime(1, 1, 1, tzinfo=UTC),
+        ends_at=datetime(9999, 1, 1, tzinfo=UTC),
+        repeat_weekly=True,
+    )
+
+    with pytest.raises(ValueError, match="7 days"):
+        expand_weekly_occurrences(
+            series, date(9998, 1, 1), date(9998, 2, 12)
+        )

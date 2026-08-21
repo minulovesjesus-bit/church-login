@@ -22,6 +22,9 @@ create table app.events (
     or length(btrim(location)) between 1 and 200
   ),
   constraint events_positive_duration check (ends_at > starts_at),
+  constraint events_duration_bounded check (
+    ends_at <= starts_at + interval '7 days'
+  ),
   constraint events_repeat_until_weekly check (
     repeat_weekly or repeat_until is null
   )

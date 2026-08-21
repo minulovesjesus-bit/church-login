@@ -5,8 +5,14 @@ from zoneinfo import ZoneInfo
 
 from psycopg.types.json import Jsonb
 
+from backend.core.errors import ApiError
 from backend.events.models import EventSeries
-from backend.events.schemas import EventCreate, EventUpdate
+from backend.events.schemas import (
+    EventCreate,
+    EventSeriesFilters,
+    EventSeriesPage,
+    EventUpdate,
+)
 
 SEOUL = ZoneInfo("Asia/Seoul")
 EVENT_COLUMNS = """
@@ -21,6 +27,12 @@ MUTABLE_FIELDS = (
     "ends_at",
     "repeat_weekly",
     "repeat_until",
+)
+MAX_EVENT_CANDIDATES = 1000
+EVENT_RESULT_TOO_LARGE = (
+    "EVENT_RESULT_TOO_LARGE",
+    "조회할 행사가 너무 많습니다. 조회 기간을 줄여 주세요.",
+    422,
 )
 
 
@@ -80,21 +92,44 @@ class EventRepository:
                 )
               )
             order by starts_at, id
+            limit %s
             """,
-            (range_end_instant, range_start_instant, range_start_instant),
+            (
+                range_end_instant,
+                range_start_instant,
+                range_start_instant,
+                MAX_EVENT_CANDIDATES + 1,
+            ),
         )
-        return [self._series(row) for row in await cursor.fetchall()]
+        series = [self._series(row) for row in await cursor.fetchall()]
+        if len(series) > MAX_EVENT_CANDIDATES:
+            raise ApiError(*EVENT_RESULT_TOO_LARGE)
+        return series
 
-    async def list_series(self) -> list[EventSeries]:
+    async def list_series(self, filters: EventSeriesFilters) -> EventSeriesPage:
+        count_cursor = await self.connection.execute(
+            "select count(*) from app.events"
+        )
+        count_row = await count_cursor.fetchone()
+        total = int(count_row[0]) if count_row is not None else 0
         cursor = await self.connection.execute(
             f"""
             select {EVENT_COLUMNS}
             from app.events
             order by starts_at, id
-            limit 1000
-            """
+            limit %s offset %s
+            """,
+            (
+                filters.page_size,
+                (filters.page - 1) * filters.page_size,
+            ),
         )
-        return [self._series(row) for row in await cursor.fetchall()]
+        return EventSeriesPage(
+            items=[self._series(row) for row in await cursor.fetchall()],
+            total=total,
+            page=filters.page,
+            page_size=filters.page_size,
+        )
 
     async def create(self, command: EventCreate, actor_id: UUID) -> EventSeries:
         details = Jsonb({"changed_fields": list(MUTABLE_FIELDS)})

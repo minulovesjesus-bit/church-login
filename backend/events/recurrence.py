@@ -5,11 +5,23 @@ from backend.events.models import EventOccurrence, EventSeries
 
 SEOUL = ZoneInfo("Asia/Seoul")
 MAX_RANGE_DAYS = 42
+MAX_EVENT_DURATION = timedelta(days=7)
 
 
 def _require_aware_instant(value: datetime, field_name: str) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{field_name} must be offset-aware")
+
+
+def validate_event_duration(starts_at: datetime, ends_at: datetime) -> timedelta:
+    _require_aware_instant(starts_at, "starts_at")
+    _require_aware_instant(ends_at, "ends_at")
+    duration = ends_at - starts_at
+    if duration <= timedelta(0):
+        raise ValueError("ends_at must be after starts_at")
+    if duration > MAX_EVENT_DURATION:
+        raise ValueError("event duration must not exceed 7 days")
+    return duration
 
 
 def expand_weekly_occurrences(
@@ -23,11 +35,7 @@ def expand_weekly_occurrences(
     if range_days > MAX_RANGE_DAYS:
         raise ValueError("event range must not exceed 42 days")
 
-    _require_aware_instant(series.starts_at, "starts_at")
-    _require_aware_instant(series.ends_at, "ends_at")
-    duration = series.ends_at - series.starts_at
-    if duration <= timedelta(0):
-        raise ValueError("ends_at must be after starts_at")
+    duration = validate_event_duration(series.starts_at, series.ends_at)
 
     range_start_local = datetime.combine(range_start, time.min, tzinfo=SEOUL)
     range_end_local = datetime.combine(range_end, time.min, tzinfo=SEOUL)

@@ -1,11 +1,10 @@
 from datetime import date, datetime
 from typing import Annotated, Self
 from uuid import UUID
-from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SEOUL = ZoneInfo("Asia/Seoul")
+from backend.events.recurrence import SEOUL, validate_event_duration
 
 Title = Annotated[str, Field(min_length=1, max_length=120)]
 Description = Annotated[str, Field(min_length=1, max_length=2000)]
@@ -34,6 +33,13 @@ class EventRange(BaseModel):
         return self
 
 
+class EventSeriesFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page: int = Field(default=1, ge=1, le=10_000)
+    page_size: int = Field(default=100, ge=1, le=100)
+
+
 class EventCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -58,14 +64,7 @@ class EventCommand(BaseModel):
 
     @model_validator(mode="after")
     def validate_series(self) -> Self:
-        for field_name, value in (
-            ("starts_at", self.starts_at),
-            ("ends_at", self.ends_at),
-        ):
-            if value.tzinfo is None or value.utcoffset() is None:
-                raise ValueError(f"{field_name} must be offset-aware")
-        if self.ends_at <= self.starts_at:
-            raise ValueError("ends_at must be after starts_at")
+        validate_event_duration(self.starts_at, self.ends_at)
         if not self.repeat_weekly and self.repeat_until is not None:
             raise ValueError("repeat_until is only valid for weekly events")
         first_seoul_date = self.starts_at.astimezone(SEOUL).date()
@@ -96,6 +95,13 @@ class EventSeriesView(BaseModel):
     created_by: UUID
     created_at: datetime
     updated_at: datetime
+
+
+class EventSeriesPage(BaseModel):
+    items: list[EventSeriesView]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1, le=10_000)
+    page_size: int = Field(ge=1, le=100)
 
 
 class EventOccurrenceView(BaseModel):

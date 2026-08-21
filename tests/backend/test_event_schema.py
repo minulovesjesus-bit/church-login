@@ -1,6 +1,6 @@
 import os
 from collections.abc import Iterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,8 +10,9 @@ from psycopg import sql
 from psycopg.errors import CheckViolation, InsufficientPrivilege
 
 from backend.core.db import application_transaction
+from backend.core.errors import ApiError
 from backend.events.repository import EventRepository
-from backend.events.schemas import EventCreate, EventUpdate
+from backend.events.schemas import EventCreate, EventSeriesFilters, EventUpdate
 from backend.events.service import EventService
 from backend.identity.models import AuthenticatedUser
 
@@ -90,6 +91,9 @@ def test_event_table_has_exact_columns_and_constraints(
         "CHECK (((length(btrim(title)) >= 1) AND (length(btrim(title)) <= 120)))"
     )
     assert constraints["events_positive_duration"] == "CHECK ((ends_at > starts_at))"
+    assert constraints["events_duration_bounded"] == (
+        "CHECK ((ends_at <= (starts_at + '7 days'::interval)))"
+    )
     assert constraints["events_repeat_until_weekly"] == (
         "CHECK ((repeat_weekly OR (repeat_until IS NULL)))"
     )
@@ -130,6 +134,33 @@ def test_event_constraints_reject_invalid_rows(
                 """,
                 values,
             )
+
+
+def test_database_event_duration_accepts_seven_days_and_rejects_more(
+    event_connection: psycopg.Connection[tuple[Any, ...]],
+) -> None:
+    teacher_id = uuid4()
+    _seed_teacher(event_connection, teacher_id)
+    starts_at = datetime(2026, 8, 23, 2, tzinfo=UTC)
+
+    boundary_id = event_connection.execute(
+        """
+        insert into app.events (title, starts_at, ends_at, created_by)
+        values ('7일 행사', %s, %s, %s)
+        returning id
+        """,
+        (starts_at, starts_at + timedelta(days=7), teacher_id),
+    ).fetchone()[0]
+    assert isinstance(boundary_id, UUID)
+
+    with pytest.raises(CheckViolation), event_connection.transaction():
+        event_connection.execute(
+            """
+            insert into app.events (title, starts_at, ends_at, created_by)
+            values ('초과 행사', %s, %s, %s)
+            """,
+            (starts_at, starts_at + timedelta(days=7, seconds=1), teacher_id),
+        )
 
 
 def test_event_indexes_support_candidate_series_queries(
@@ -311,3 +342,63 @@ async def test_repository_crud_audits_only_metadata_and_prefilters_candidates() 
                 "delete from auth.users where id in (%s, %s)",
                 (teacher_id, student_id),
             )
+
+
+async def test_repository_pages_all_teacher_series_and_caps_student_candidates() -> None:
+    database_url = os.environ["TEST_DATABASE_URL"]
+    teacher_id = uuid4()
+    with psycopg.connect(database_url) as connection:
+        _seed_teacher(connection, teacher_id)
+        connection.execute(
+            """
+            insert into app.events (
+              title, starts_at, ends_at, repeat_weekly, created_by
+            )
+            select '행사 ' || item::text,
+                   timestamptz '2026-08-23 00:00:00+00'
+                     + item * interval '1 second',
+                   timestamptz '2026-08-23 01:00:00+00'
+                     + item * interval '1 second',
+                   false,
+                   %s
+            from generate_series(1, 1001) as item
+            """,
+            (teacher_id,),
+        )
+
+    try:
+        async with application_transaction(database_url=database_url) as connection:
+            repository = EventRepository(connection)
+            last_page = await repository.list_series(
+                EventSeriesFilters(page=11, page_size=100)
+            )
+            with pytest.raises(ApiError) as result_error:
+                await repository.candidate_series(
+                    date(2026, 8, 23), date(2026, 8, 24)
+                )
+
+        assert last_page.total == 1001
+        assert last_page.page == 11
+        assert last_page.page_size == 100
+        assert [item.title for item in last_page.items] == ["행사 1001"]
+        assert (
+            result_error.value.code,
+            result_error.value.message,
+            result_error.value.status_code,
+        ) == (
+            "EVENT_RESULT_TOO_LARGE",
+            "조회할 행사가 너무 많습니다. 조회 기간을 줄여 주세요.",
+            422,
+        )
+    finally:
+        with psycopg.connect(database_url) as connection:
+            connection.execute(
+                "delete from app.events where created_by = %s", (teacher_id,)
+            )
+            connection.execute(
+                "delete from app.staff_memberships where user_id = %s", (teacher_id,)
+            )
+            connection.execute(
+                "delete from app.user_profiles where user_id = %s", (teacher_id,)
+            )
+            connection.execute("delete from auth.users where id = %s", (teacher_id,))

@@ -1,12 +1,11 @@
-from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
 from backend.core.auth import get_current_user, require_google_user
 from backend.core.config import settings
-from backend.core.db import application_transaction
+from backend.core.db import get_database_connection
 from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
 from backend.identity.repository import IdentityRepository
@@ -27,9 +26,15 @@ from backend.identity.service import IdentityService, StaffService
 router = APIRouter(prefix="/api")
 
 
-async def get_identity_repository() -> AsyncIterator[IdentityRepository]:
-    async with application_transaction() as connection:
-        yield IdentityRepository(connection)
+DatabaseConnection = Annotated[
+    Any, Depends(get_database_connection, scope="function")
+]
+
+
+async def get_identity_repository(
+    connection: DatabaseConnection,
+) -> IdentityRepository:
+    return IdentityRepository(connection)
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]

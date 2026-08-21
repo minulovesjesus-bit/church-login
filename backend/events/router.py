@@ -1,16 +1,17 @@
-from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
 
 from backend.core.auth import get_current_user
-from backend.core.db import application_transaction
+from backend.core.db import get_database_connection
 from backend.events.repository import EventRepository
 from backend.events.schemas import (
     EventCreate,
     EventOccurrenceView,
     EventRange,
+    EventSeriesFilters,
+    EventSeriesPage,
     EventSeriesView,
     EventUpdate,
 )
@@ -21,9 +22,15 @@ from backend.identity.router import require_teacher
 router = APIRouter(prefix="/api")
 
 
-async def get_event_repository() -> AsyncIterator[EventRepository]:
-    async with application_transaction() as connection:
-        yield EventRepository(connection)
+DatabaseConnection = Annotated[
+    Any, Depends(get_database_connection, scope="function")
+]
+
+
+async def get_event_repository(
+    connection: DatabaseConnection,
+) -> EventRepository:
+    return EventRepository(connection)
 
 
 EventRepositoryDependency = Annotated[
@@ -53,12 +60,13 @@ async def list_events(
     return await service.occurrences(user, date_range.start, date_range.end)
 
 
-@router.get("/teacher/events", response_model=list[EventSeriesView])
+@router.get("/teacher/events", response_model=EventSeriesPage)
 async def list_event_series(
     teacher: TeacherUser,
     service: EventServiceDependency,
-) -> list[EventSeriesView]:
-    return await service.list_series(teacher)
+    filters: Annotated[EventSeriesFilters, Query()],
+) -> EventSeriesPage:
+    return await service.list_series(teacher, filters)
 
 
 @router.post(
