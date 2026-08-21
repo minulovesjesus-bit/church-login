@@ -115,7 +115,7 @@ def clear_kiosk_cookies(response: Response, secure: bool) -> None:
 
 
 def _cookie_secure() -> bool:
-    return settings.app_env not in {"development", "test"}
+    return settings.kiosk_cookies_secure()
 
 
 @router.post(

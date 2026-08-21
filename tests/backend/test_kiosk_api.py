@@ -190,6 +190,30 @@ async def test_production_cookies_are_secure(
     assert all("Secure" in value for value in response.headers.get_list("set-cookie"))
 
 
+@pytest.mark.parametrize(
+    ("marker", "value"),
+    [("vercel", "1"), ("vercel_env", "preview")],
+)
+async def test_vercel_markers_force_secure_response_cookies(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+    monkeypatch: pytest.MonkeyPatch,
+    marker: str,
+    value: str,
+) -> None:
+    monkeypatch.setattr(settings, "app_env", "development")
+    monkeypatch.setattr(settings, "kiosk_insecure_local_cookies", True)
+    monkeypatch.setattr(settings, marker, value)
+    response = await client.post(
+        "/api/kiosk/sessions",
+        json={"password": "church-kiosk-secret"},
+        headers={"Origin": settings.allowed_frontend_origins[0]},
+    )
+
+    assert response.status_code == 201
+    assert all("Secure" in cookie for cookie in response.headers.get_list("set-cookie"))
+
+
 async def test_logout_revokes_and_clears_both_cookies(
     client: httpx.AsyncClient, kiosk_api: FakeKioskService
 ) -> None:

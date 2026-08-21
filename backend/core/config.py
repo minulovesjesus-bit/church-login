@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     initial_admin_email: str | None = None
     kiosk_password_hash: SecretStr | None = None
     kiosk_cookie_secret: SecretStr | None = Field(default=None, min_length=32)
+    kiosk_insecure_local_cookies: bool = False
+    vercel: str | None = None
+    vercel_env: str | None = None
     allowed_frontend_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://127.0.0.1:3000",
@@ -99,6 +102,19 @@ class Settings(BaseSettings):
         if timeout_budget_ms > 8000:
             raise ValueError("Database timeout budget must not exceed 8000ms")
         return self
+
+    def kiosk_cookies_secure(self) -> bool:
+        if self.vercel or self.vercel_env:
+            return True
+        if not self.kiosk_insecure_local_cookies:
+            return True
+        if self.app_env not in {"development", "test"}:
+            return True
+        loopback_hosts = {"127.0.0.1", "localhost", "::1"}
+        return not all(
+            urlsplit(origin).hostname in loopback_hosts
+            for origin in self.allowed_frontend_origins
+        )
 
 
 settings = Settings()

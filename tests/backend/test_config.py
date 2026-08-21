@@ -165,3 +165,51 @@ def test_kiosk_secrets_are_redacted_and_validated() -> None:
         Settings(_env_file=None, kiosk_password_hash="plain-text-password")
     with pytest.raises(ValidationError):
         Settings(_env_file=None, kiosk_cookie_secret="too-short")
+
+
+def test_kiosk_cookies_are_secure_by_default_even_in_development() -> None:
+    assert Settings(_env_file=None, app_env="development").kiosk_cookies_secure()
+
+
+def test_insecure_kiosk_cookies_require_explicit_loopback_local_mode() -> None:
+    local = Settings(
+        _env_file=None,
+        app_env="development",
+        kiosk_insecure_local_cookies=True,
+        allowed_frontend_origins="http://127.0.0.1:3000,http://localhost:3000",
+    )
+    non_loopback = Settings(
+        _env_file=None,
+        app_env="development",
+        kiosk_insecure_local_cookies=True,
+        allowed_frontend_origins="https://church.example.test",
+    )
+    production = Settings(
+        _env_file=None,
+        app_env="production",
+        kiosk_insecure_local_cookies=True,
+    )
+
+    assert local.kiosk_cookies_secure() is False
+    assert non_loopback.kiosk_cookies_secure() is True
+    assert production.kiosk_cookies_secure() is True
+
+
+@pytest.mark.parametrize(
+    "vercel_marker",
+    [
+        {"vercel": "1"},
+        {"vercel_env": "preview"},
+    ],
+)
+def test_vercel_markers_force_secure_kiosk_cookies(
+    vercel_marker: dict[str, str],
+) -> None:
+    configured = Settings(
+        _env_file=None,
+        app_env="development",
+        kiosk_insecure_local_cookies=True,
+        **vercel_marker,
+    )
+
+    assert configured.kiosk_cookies_secure() is True

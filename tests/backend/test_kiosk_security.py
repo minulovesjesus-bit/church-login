@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import jwt
 import pytest
 
 from backend.core.clock import FrozenClock
@@ -58,10 +59,29 @@ def test_access_token_uses_injected_clock_and_exact_expiry() -> None:
         codec.verify(token)
 
 
-def test_access_token_rejects_tampering_and_wrong_type() -> None:
+def test_access_token_rejects_guaranteed_signature_tampering() -> None:
     clock = FrozenClock(datetime(2026, 8, 21, 1, tzinfo=UTC))
-    codec = KioskAccessTokenCodec("s" * 32, clock=clock)
+    secret = "s" * 32
+    codec = KioskAccessTokenCodec(secret, clock=clock)
     token, _ = codec.issue(uuid4())
+    header, payload, signature = token.split(".")
+    changed_first_character = "A" if signature[0] != "A" else "B"
+    tampered = ".".join(
+        (header, payload, f"{changed_first_character}{signature[1:]}")
+    )
 
     with pytest.raises(AccessTokenInvalid):
-        codec.verify(f"{token[:-1]}x")
+        codec.verify(tampered)
+
+
+def test_access_token_rejects_separately_signed_wrong_type() -> None:
+    clock = FrozenClock(datetime(2026, 8, 21, 1, tzinfo=UTC))
+    secret = "s" * 32
+    codec = KioskAccessTokenCodec(secret, clock=clock)
+    token, _ = codec.issue(uuid4())
+    claims = jwt.decode(token, options={"verify_signature": False})
+    claims["typ"] = "attendance-qr"
+    wrong_type_token = jwt.encode(claims, secret, algorithm="HS256")
+
+    with pytest.raises(AccessTokenInvalid):
+        codec.verify(wrong_type_token)

@@ -54,12 +54,16 @@ class KioskSessionService:
     async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
         policy = KIOSK_LOGIN_RATE_LIMIT
         now = self.clock.now()
-        if await self.repository.rate_limit_is_blocked(
+        blocked = await self.repository.rate_limit_is_blocked(
             rate_limit_key_hash, policy.action, now
-        ):
+        )
+        password_matches = self._password_hasher.verify(
+            self._password_hash, password
+        )
+        if blocked:
             raise KioskLoginRejected
 
-        if not self._password_hasher.verify(self._password_hash, password):
+        if not password_matches:
             await self.repository.record_rate_limit_failure(
                 rate_limit_key_hash,
                 policy.action,

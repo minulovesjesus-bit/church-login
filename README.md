@@ -36,13 +36,14 @@ INITIAL_ADMIN_EMAIL=<exact lower-case Google email>
 TEACHER_OAUTH_INTENT_SECRET=<at least 32 random bytes, server-only>
 KIOSK_PASSWORD_HASH=<Argon2 hash of the shared kiosk password>
 KIOSK_COOKIE_SECRET=<at least 32 random bytes, server-only>
+KIOSK_INSECURE_LOCAL_COOKIES=true
 ALLOWED_FRONTEND_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 APP_TIMEZONE=Asia/Seoul
 ```
 
 FastAPI loads `.env` first and `.env.local` second; explicitly supplied process environment variables take final precedence. The database connection and statement timeout budget is validated at no more than eight seconds so ordinary Function requests retain time for authentication and response handling.
 
-Generate `TEACHER_OAUTH_INTENT_SECRET` and `KIOSK_COOKIE_SECRET` locally with a cryptographically secure generator such as `openssl rand -base64 32`; never prefix either with `NEXT_PUBLIC_`. Generate `KIOSK_PASSWORD_HASH` with Argon2 and keep the shared password itself out of environment files. Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
+Generate `TEACHER_OAUTH_INTENT_SECRET` and `KIOSK_COOKIE_SECRET` locally with a cryptographically secure generator such as `openssl rand -base64 32`; never prefix either with `NEXT_PUBLIC_`. Generate `KIOSK_PASSWORD_HASH` with Argon2 and keep the shared password itself out of environment files. `KIOSK_INSECURE_LOCAL_COOKIES=true` takes effect only when `APP_ENV` is `development` or `test`, every frontend origin is loopback, and the process is not running on Vercel. Omit it everywhere else so kiosk cookies fail closed to `Secure`. Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
 
 Run Next.js and FastAPI in separate terminals:
 
@@ -88,7 +89,7 @@ The Playwright command uses bounded Next.js/FastAPI `webServer` processes, creat
 
 ## Vercel-shaped local smoke
 
-After authenticating the Vercel CLI and linking the intended project, provide the same non-secret public Auth values plus the server-only production `DATABASE_URL`, bounded database timeouts, `INITIAL_ADMIN_EMAIL`, `TEACHER_OAUTH_INTENT_SECRET`, explicit `ALLOWED_FRONTEND_ORIGINS`, and `APP_TIMEZONE=Asia/Seoul` through Vercel environment settings. Production must not set `APP_ENV=test`, and must not expose the teacher-intent secret or a Supabase secret/service-role key to `NEXT_PUBLIC_*` variables.
+After authenticating the Vercel CLI and linking the intended project, set `APP_ENV=production` and provide the same non-secret public Auth values plus the server-only production `DATABASE_URL`, bounded database timeouts, `INITIAL_ADMIN_EMAIL`, `TEACHER_OAUTH_INTENT_SECRET`, `KIOSK_PASSWORD_HASH`, `KIOSK_COOKIE_SECRET`, explicit `ALLOWED_FRONTEND_ORIGINS`, and `APP_TIMEZONE=Asia/Seoul` through Vercel environment settings. Never set `KIOSK_INSECURE_LOCAL_COOKIES=true` on Vercel; the runtime's `VERCEL` or `VERCEL_ENV` marker forces kiosk cookies to `Secure` even if `APP_ENV` is accidentally missing or left at its development default. Production must not expose the kiosk secrets, teacher-intent secret, or a Supabase secret/service-role key to `NEXT_PUBLIC_*` variables.
 
 Run the combined routing shape:
 
