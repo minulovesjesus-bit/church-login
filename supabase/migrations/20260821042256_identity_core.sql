@@ -42,6 +42,7 @@ create table app.teacher_applications (
       status = 'rejected'
       and reviewed_by is not null
       and reviewed_at is not null
+      and rejection_reason is not null
       and length(btrim(rejection_reason)) between 1 and 500
     )
   )
@@ -72,8 +73,15 @@ create table app.audit_logs (
 );
 
 do $role$
+declare
+  existing_role record;
 begin
-  if not exists (select 1 from pg_roles where rolname = 'app_backend') then
+  select rolsuper, rolreplication, rolbypassrls
+  into existing_role
+  from pg_roles
+  where rolname = 'app_backend';
+
+  if not found then
     create role app_backend
       nologin
       nosuperuser
@@ -82,6 +90,11 @@ begin
       noinherit
       noreplication
       nobypassrls;
+  elsif existing_role.rolsuper
+     or existing_role.rolreplication
+     or existing_role.rolbypassrls then
+    raise exception
+      'Refusing to reuse app_backend with SUPERUSER, REPLICATION, or BYPASSRLS';
   end if;
 end
 $role$;
@@ -91,6 +104,61 @@ alter role app_backend
   nocreatedb
   nocreaterole
   noinherit;
+
+do $role_validation$
+declare
+  role_attributes record;
+  unsafe_memberships text;
+  unexpected_members text;
+begin
+  select rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+         rolinherit, rolreplication, rolbypassrls
+  into role_attributes
+  from pg_roles
+  where rolname = 'app_backend';
+
+  if not found then
+    raise exception 'Required role app_backend does not exist';
+  end if;
+
+  if role_attributes.rolcanlogin
+     or role_attributes.rolsuper
+     or role_attributes.rolcreatedb
+     or role_attributes.rolcreaterole
+     or role_attributes.rolinherit
+     or role_attributes.rolreplication
+     or role_attributes.rolbypassrls then
+    raise exception 'Role app_backend has unsafe attributes after normalization';
+  end if;
+
+  select string_agg(granted_role.rolname, ', ' order by granted_role.rolname)
+  into unsafe_memberships
+  from pg_auth_members membership
+  join pg_roles granted_role on granted_role.oid = membership.roleid
+  join pg_roles member on member.oid = membership.member
+  where member.rolname = 'app_backend';
+
+  if unsafe_memberships is not null then
+    raise exception
+      'Role app_backend must not inherit or assume other roles: %',
+      unsafe_memberships;
+  end if;
+
+  select string_agg(member.rolname, ', ' order by member.rolname)
+  into unexpected_members
+  from pg_auth_members membership
+  join pg_roles granted_role on granted_role.oid = membership.roleid
+  join pg_roles member on member.oid = membership.member
+  where granted_role.rolname = 'app_backend'
+    and member.rolname <> 'postgres';
+
+  if unexpected_members is not null then
+    raise exception
+      'Role app_backend has unexpected members: %',
+      unexpected_members;
+  end if;
+end
+$role_validation$;
 
 grant app_backend to postgres;
 
