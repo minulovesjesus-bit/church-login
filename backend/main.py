@@ -20,6 +20,7 @@ from backend.events.router import router as events_router
 from backend.identity.router import router as identity_router
 from backend.kiosk.router import admin_router as kiosk_admin_router
 from backend.kiosk.router import router as kiosk_router
+from backend.students.router import router as students_router
 
 app = FastAPI(title="Church Attendance API")
 app.add_exception_handler(ApiError, api_error_handler)
@@ -38,6 +39,7 @@ app.include_router(kiosk_router)
 app.include_router(kiosk_admin_router)
 app.include_router(attendance_router)
 app.include_router(events_router)
+app.include_router(students_router)
 
 if settings.app_env == "test":
     from fixtures.identity_auth import install_identity_auth_fixtures
