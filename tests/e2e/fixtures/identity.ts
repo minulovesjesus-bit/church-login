@@ -6,6 +6,10 @@ export const identityFixtures = {
     id: "00000000-0000-4000-8000-000000000101",
     email: "incomplete.student@example.test",
   },
+  completeStudent: {
+    id: "00000000-0000-4000-8000-000000000102",
+    email: "complete.student@example.test",
+  },
   pendingTeacher: {
     id: "00000000-0000-4000-8000-000000000201",
     email: "pending.teacher@example.test",

@@ -6,6 +6,9 @@ from pathlib import Path
 import pytest
 
 SEED_FIXTURE_PATH = Path(__file__).parents[1] / "e2e" / "fixtures" / "identity_seed.py"
+ATTENDANCE_AUDIT_FIXTURE_PATH = (
+    Path(__file__).parents[1] / "e2e" / "fixtures" / "attendance_audit.py"
+)
 RUN_SEED_VALIDATION = (
     "import runpy; "
     f"runpy.run_path({str(SEED_FIXTURE_PATH)!r})"
@@ -412,6 +415,33 @@ def test_seed_fixture_rejects_remote_supabase_endpoint() -> None:
     assert result.returncode != 0
     assert "local Supabase stack" in result.stderr
     assert "supabase-secret" not in result.stderr
+
+
+def test_attendance_audit_fixture_refuses_production_environment() -> None:
+    result = subprocess.run(
+        [sys.executable, str(ATTENDANCE_AUDIT_FIXTURE_PATH)],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(APP_ENV="production"),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Identity browser fixtures require APP_ENV=test." in result.stderr
+
+
+@pytest.mark.parametrize("vercel_env", ["production", ""])
+def test_attendance_audit_fixture_refuses_vercel(vercel_env: str) -> None:
+    result = subprocess.run(
+        [sys.executable, str(ATTENDANCE_AUDIT_FIXTURE_PATH)],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(VERCEL_ENV=vercel_env),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Identity browser fixtures cannot load on Vercel." in result.stderr
 
 
 def test_seed_script_reaches_environment_gate_when_invoked_by_file_path() -> None:

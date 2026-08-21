@@ -1,13 +1,17 @@
 from collections.abc import AsyncIterator
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from backend.core.config import settings
 from backend.core.db import application_transaction
 from backend.core.errors import ApiError, safe_error_response
+from backend.identity.models import AuthenticatedUser
+from backend.identity.router import require_admin
 from backend.kiosk.repository import KioskRepository, KioskSessionRecord
 from backend.kiosk.schemas import (
+    AdminKioskSessionView,
     KioskLoginInput,
     KioskSessionView,
     KioskTokens,
@@ -21,6 +25,7 @@ from backend.kiosk.service import (
 )
 
 router = APIRouter(prefix="/api/kiosk")
+admin_router = APIRouter(prefix="/api/admin")
 ACCESS_COOKIE = "kiosk_access"
 REFRESH_COOKIE = "kiosk_refresh"
 ACCESS_COOKIE_MAX_AGE = 15 * 60
@@ -84,6 +89,7 @@ async def require_kiosk_session(
 AuthenticatedKioskSession = Annotated[
     KioskSessionRecord, Depends(require_kiosk_session, scope="function")
 ]
+AdminUser = Annotated[AuthenticatedUser, Depends(require_admin, scope="function")]
 
 
 def set_kiosk_cookies(response: Response, tokens: KioskTokens, secure: bool) -> None:
@@ -202,3 +208,27 @@ async def get_kiosk_qr(
     response.headers["Cache-Control"] = "no-store"
     issued = service.issue_qr_challenge(session.id)
     return QrChallengeView.from_issued(issued)
+
+
+@admin_router.get(
+    "/kiosk-sessions",
+    response_model=list[AdminKioskSessionView],
+)
+async def list_kiosk_sessions(
+    _admin: AdminUser,
+    service: KioskServiceDependency,
+) -> list[AdminKioskSessionView]:
+    sessions = await service.admin_sessions()
+    return [AdminKioskSessionView.model_validate(session) for session in sessions]
+
+
+@admin_router.delete(
+    "/kiosk-sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_kiosk_session(
+    session_id: UUID,
+    admin: AdminUser,
+    service: KioskServiceDependency,
+) -> None:
+    await service.revoke_as_admin(session_id, admin.user_id)

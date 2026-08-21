@@ -30,6 +30,10 @@ FIXTURE_USERS = {
         "incomplete.student@example.test",
         "email",
     ),
+    UUID("00000000-0000-4000-8000-000000000102"): (
+        "complete.student@example.test",
+        "email",
+    ),
     UUID("00000000-0000-4000-8000-000000000201"): (
         "pending.teacher@example.test",
         "google",

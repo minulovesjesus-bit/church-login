@@ -4,7 +4,11 @@ from uuid import UUID
 from backend.core.clock import Clock, SystemClock
 from backend.core.errors import ApiError
 from backend.core.rate_limit import KIOSK_LOGIN_RATE_LIMIT
-from backend.kiosk.repository import KioskRepository, KioskSessionRecord
+from backend.kiosk.repository import (
+    KioskRepository,
+    KioskSessionRecord,
+    ManagedKioskSessionRecord,
+)
 from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
 from backend.kiosk.security import (
     AccessTokenInvalid,
@@ -142,6 +146,21 @@ class KioskSessionService:
             raise KioskSessionRevoked from error
         if not await self.repository.revoke_session(claims.session_id, self.clock.now()):
             raise KioskSessionRevoked
+
+    async def admin_sessions(self) -> list[ManagedKioskSessionRecord]:
+        return await self.repository.active_sessions(self.clock.now(), limit=100)
+
+    async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
+        if not await self.repository.revoke_session_as_admin(
+            session_id,
+            actor_id=actor_id,
+            now=self.clock.now(),
+        ):
+            raise ApiError(
+                "KIOSK_SESSION_NOT_FOUND",
+                "활성 기기 세션을 찾을 수 없습니다.",
+                404,
+            )
 
     def issue_qr_challenge(self, kiosk_session_id: UUID) -> IssuedQrChallenge:
         token = self._qr_challenges.issue(kiosk_session_id)

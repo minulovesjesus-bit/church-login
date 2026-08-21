@@ -17,6 +17,7 @@ from backend.core.errors import (
     unexpected_error_handler,
 )
 from backend.identity.router import router as identity_router
+from backend.kiosk.router import admin_router as kiosk_admin_router
 from backend.kiosk.router import router as kiosk_router
 
 app = FastAPI(title="Church Attendance API")
@@ -33,6 +34,7 @@ app.add_middleware(
 )
 app.include_router(identity_router)
 app.include_router(kiosk_router)
+app.include_router(kiosk_admin_router)
 app.include_router(attendance_router)
 
 if settings.app_env == "test":

@@ -7,6 +7,8 @@ import pytest
 
 from backend.core.config import settings
 from backend.core.errors import ApiError
+from backend.identity.models import AuthenticatedUser
+from backend.identity.router import require_admin
 from backend.kiosk.repository import KioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
 from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
@@ -21,6 +23,7 @@ class FakeKioskService:
         self.revoke_calls: list[str] = []
         self.require_access_calls: list[str] = []
         self.issue_qr_calls: list[UUID] = []
+        self.admin_revoke_calls: list[tuple[UUID, UUID]] = []
         self.now = datetime(2026, 8, 21, 1, tzinfo=UTC)
         self.session_id = uuid4()
         self.reject_login = False
@@ -71,6 +74,20 @@ class FakeKioskService:
             nonce=uuid4(),
         )
         return IssuedQrChallenge(token="signed-attendance-qr", challenge=challenge)
+
+    async def admin_sessions(self):
+        return [
+            {
+                "session_id": self.session_id,
+                "created_at": self.now,
+                "last_seen_at": self.now,
+                "refresh_expires_at": self.now + timedelta(days=30),
+                "revoked_at": None,
+            }
+        ]
+
+    async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
+        self.admin_revoke_calls.append((session_id, actor_id))
 
 
 @pytest.fixture
@@ -344,3 +361,47 @@ async def test_transaction_teardown_failure_replaces_success_response(
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
     assert response.headers.get_list("set-cookie") == []
+
+
+async def test_admin_can_list_and_revoke_kiosk_sessions(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+) -> None:
+    admin = AuthenticatedUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        provider="google",
+        email_verified=True,
+    )
+
+    async def current_admin() -> AuthenticatedUser:
+        return admin
+
+    app.dependency_overrides[require_admin] = current_admin
+    try:
+        listed = await client.get("/api/admin/kiosk-sessions")
+        revoked = await client.delete(
+            f"/api/admin/kiosk-sessions/{kiosk_api.session_id}"
+        )
+    finally:
+        app.dependency_overrides.pop(require_admin, None)
+
+    assert listed.status_code == 200
+    assert listed.json()[0]["session_id"] == str(kiosk_api.session_id)
+    assert "refresh_token" not in listed.text
+    assert revoked.status_code == 204
+    assert kiosk_api.admin_revoke_calls == [(kiosk_api.session_id, admin.user_id)]
+
+
+async def test_kiosk_management_requires_an_administrator(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+) -> None:
+    listed = await client.get("/api/admin/kiosk-sessions")
+    revoked = await client.delete(
+        f"/api/admin/kiosk-sessions/{kiosk_api.session_id}"
+    )
+
+    assert listed.status_code == 401
+    assert revoked.status_code == 401
+    assert kiosk_api.admin_revoke_calls == []

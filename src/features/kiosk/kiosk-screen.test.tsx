@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "@/lib/api/client";
@@ -262,11 +262,13 @@ describe("QR rendering", () => {
     await unlock(client);
 
     expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" })).toBeInTheDocument();
-    expect(toCanvas).toHaveBeenCalledWith(
-      expect.any(HTMLCanvasElement),
-      "signed-attendance-qr",
-      expect.objectContaining({ errorCorrectionLevel: "M" }),
-    );
+    await waitFor(() => {
+      expect(toCanvas).toHaveBeenCalledWith(
+        expect.any(HTMLCanvasElement),
+        "signed-attendance-qr",
+        expect.objectContaining({ errorCorrectionLevel: "M" }),
+      );
+    });
     expect(document.body).not.toHaveTextContent("signed-attendance-qr");
   });
 });

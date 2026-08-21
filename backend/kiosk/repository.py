@@ -3,10 +3,21 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from psycopg.types.json import Jsonb
+
 
 @dataclass(frozen=True)
 class KioskSessionRecord:
     id: UUID
+    created_at: datetime
+    last_seen_at: datetime
+    refresh_expires_at: datetime
+    revoked_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ManagedKioskSessionRecord:
+    session_id: UUID
     created_at: datetime
     last_seen_at: datetime
     refresh_expires_at: datetime
@@ -93,6 +104,57 @@ class KioskRepository:
             (now, now, session_id),
         )
         return await cursor.fetchone() is not None
+
+    async def active_sessions(
+        self, now: datetime, *, limit: int = 100
+    ) -> list[ManagedKioskSessionRecord]:
+        cursor = await self._connection.execute(
+            """
+            select id, created_at, last_seen_at, refresh_expires_at, revoked_at
+            from app.kiosk_sessions
+            where revoked_at is null and refresh_expires_at > %s
+            order by last_seen_at desc, id desc
+            limit %s
+            """,
+            (now, limit),
+        )
+        return [ManagedKioskSessionRecord(*row) for row in await cursor.fetchall()]
+
+    async def revoke_session_as_admin(
+        self,
+        session_id: UUID,
+        *,
+        actor_id: UUID,
+        now: datetime,
+    ) -> bool:
+        cursor = await self._connection.execute(
+            """
+            with revoked as (
+              update app.kiosk_sessions
+              set revoked_at = %(now)s,
+                  revoked_by = %(actor_id)s,
+                  last_seen_at = %(now)s
+              where id = %(session_id)s and revoked_at is null
+              returning id
+            ), audit as (
+              insert into app.audit_logs (
+                actor_id, action, target_type, target_id, details
+              )
+              select %(actor_id)s, 'kiosk.session_revoked', 'kiosk_session',
+                     id::text, %(details)s
+              from revoked
+            )
+            select exists(select 1 from revoked)
+            """,
+            {
+                "session_id": session_id,
+                "actor_id": actor_id,
+                "now": now,
+                "details": Jsonb({"reason": "administrator_revocation"}),
+            },
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
 
     async def rate_limit_is_blocked(
         self, key_hash: str, action: str, now: datetime

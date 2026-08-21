@@ -36,6 +36,11 @@ function localSupabaseEnvironment(): Record<string, string> {
     DATABASE_URL: values.DB_URL,
     TEST_DATABASE_URL: values.DB_URL,
     INITIAL_ADMIN_EMAIL: "admin.identity@example.test",
+    KIOSK_PASSWORD_HASH: "$argon2id$v=19$m=19456,t=2,p=1$aEMMH8W9GQEex53UG4nLww$fhTSmRVnGfJM6PUIY07nITrbEtIOPo46ZlRGSelIsTc",
+    KIOSK_COOKIE_SECRET: "attendance-e2e-cookie-secret-2026-only-local",
+    QR_SIGNING_SECRET: "attendance-e2e-qr-signing-secret-2026-local",
+    KIOSK_INSECURE_LOCAL_COOKIES: "true",
+    ALLOWED_FRONTEND_ORIGINS: "http://127.0.0.1:3216",
   };
 }
 

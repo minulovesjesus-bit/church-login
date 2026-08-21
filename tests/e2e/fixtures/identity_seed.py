@@ -15,6 +15,7 @@ from fixtures.identity_environment import (
 
 FIXTURES = (
     ("00000000-0000-4000-8000-000000000101", "incomplete.student@example.test"),
+    ("00000000-0000-4000-8000-000000000102", "complete.student@example.test"),
     ("00000000-0000-4000-8000-000000000201", "pending.teacher@example.test"),
     ("00000000-0000-4000-8000-000000000202", "approved.teacher@example.test"),
     ("00000000-0000-4000-8000-000000000301", "admin.identity@example.test"),
@@ -50,6 +51,12 @@ def remove_users(client: httpx.Client, supabase_url: str) -> None:
 def remove_identity_rows(database_url: str) -> None:
     user_ids = [UUID(user_id) for user_id, _ in FIXTURES]
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
+        cursor.execute(
+            "delete from app.attendance_scans where student_id = any(%s::uuid[])",
+            (user_ids,),
+        )
+        cursor.execute("delete from app.kiosk_sessions")
+        cursor.execute("delete from app.rate_limit_buckets")
         cursor.execute(
             "delete from app.audit_logs where actor_id = any(%s::uuid[])",
             (user_ids,),
@@ -93,6 +100,7 @@ def seed_identity_rows(database_url: str) -> None:
             """
             insert into app.user_profiles (user_id, email, name, phone)
             values
+              (%s, %s, '완료 학생', '01011111002'),
               (%s, %s, '승인 대기 교사', '01011112001'),
               (%s, %s, '승인 교사', '01011112002'),
               (%s, %s, '초기 관리자', '01011113001')
@@ -106,14 +114,24 @@ def seed_identity_rows(database_url: str) -> None:
                 FIXTURES[2][1],
                 FIXTURES[3][0],
                 FIXTURES[3][1],
+                FIXTURES[4][0],
+                FIXTURES[4][1],
             ),
+        )
+        cursor.execute(
+            """
+            insert into app.student_profiles (
+              user_id, birth_date, guardian_phone, include_in_statistics
+            ) values (%s, '2012-04-05', '01099990002', true)
+            """,
+            (FIXTURES[1][0],),
         )
         cursor.execute(
             """
             insert into app.teacher_applications (id, user_id, status)
             values ('00000000-0000-4000-8000-000000000401', %s, 'pending')
             """,
-            (FIXTURES[1][0],),
+            (FIXTURES[2][0],),
         )
         cursor.execute(
             """
@@ -121,10 +139,10 @@ def seed_identity_rows(database_url: str) -> None:
             values (%s, 'admin', %s), (%s, 'teacher', %s)
             """,
             (
+                FIXTURES[4][0],
+                FIXTURES[4][0],
                 FIXTURES[3][0],
-                FIXTURES[3][0],
-                FIXTURES[2][0],
-                FIXTURES[3][0],
+                FIXTURES[4][0],
             ),
         )
 
