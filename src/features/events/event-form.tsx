@@ -6,9 +6,14 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import { api, ApiClientError } from "@/lib/api/client";
+import {
+  isoInstantToSeoulLocal,
+  seoulLocalToIsoInstant,
+} from "./seoul-time";
+
+export { isoInstantToSeoulLocal, seoulLocalToIsoInstant } from "./seoul-time";
 
 const MAX_DURATION_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
-const LOCAL_DATETIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export type EventSeries = {
@@ -35,64 +40,20 @@ export type EventCommand = {
   repeat_until: string | null;
 };
 
-type LocalDateTime = {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  milliseconds: number;
-};
-
-function parseSeoulLocal(value: string): LocalDateTime | null {
-  const match = LOCAL_DATETIME_PATTERN.exec(value);
-  if (!match) return null;
-  const [, yearText, monthText, dayText, hourText, minuteText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  if (year < 1 || month < 1 || month > 12 || hour > 23 || minute > 59) return null;
-
-  const instant = new Date(0);
-  instant.setUTCFullYear(year, month - 1, day);
-  instant.setUTCHours(hour - 9, minute, 0, 0);
-  const seoulCalendar = new Date(instant.getTime() + 9 * 60 * 60 * 1000);
-  if (
-    seoulCalendar.getUTCFullYear() !== year
-    || seoulCalendar.getUTCMonth() !== month - 1
-    || seoulCalendar.getUTCDate() !== day
-    || seoulCalendar.getUTCHours() !== hour
-    || seoulCalendar.getUTCMinutes() !== minute
-  ) {
-    return null;
-  }
-  return { year, month, day, hour, minute, milliseconds: instant.getTime() };
-}
-
 function isCalendarDate(value: string): boolean {
   const match = CALENDAR_DATE_PATTERN.exec(value);
   if (!match) return false;
   const [, yearText, monthText, dayText] = match;
-  return parseSeoulLocal(`${yearText}-${monthText}-${dayText}T00:00`) !== null;
-}
-
-export function seoulLocalToIsoInstant(value: string): string | null {
-  const parsed = parseSeoulLocal(value);
-  return parsed ? new Date(parsed.milliseconds).toISOString() : null;
-}
-
-export function isoInstantToSeoulLocal(value: string): string {
-  const instant = new Date(value);
-  if (Number.isNaN(instant.getTime())) return "";
-  const seoulCalendar = new Date(instant.getTime() + 9 * 60 * 60 * 1000);
-  const year = String(seoulCalendar.getUTCFullYear()).padStart(4, "0");
-  const month = String(seoulCalendar.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(seoulCalendar.getUTCDate()).padStart(2, "0");
-  const hour = String(seoulCalendar.getUTCHours()).padStart(2, "0");
-  const minute = String(seoulCalendar.getUTCMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (year < 1 || year > 9999 || month < 1 || month > 12) return false;
+  const calendar = new Date(0);
+  calendar.setUTCFullYear(year, month - 1, day);
+  calendar.setUTCHours(12, 0, 0, 0);
+  return calendar.getUTCFullYear() === year
+    && calendar.getUTCMonth() === month - 1
+    && calendar.getUTCDate() === day;
 }
 
 const eventFormSchema = z.object({
@@ -117,8 +78,8 @@ const eventFormSchema = z.object({
     context.addIssue({ code: "custom", path: ["location"], message: "장소는 200자 이하로 입력해 주세요." });
   }
 
-  const startsAt = parseSeoulLocal(values.startsAtLocal);
-  const endsAt = parseSeoulLocal(values.endsAtLocal);
+  const startsAt = seoulLocalToIsoInstant(values.startsAtLocal);
+  const endsAt = seoulLocalToIsoInstant(values.endsAtLocal);
   if (!startsAt) {
     context.addIssue({ code: "custom", path: ["startsAtLocal"], message: "존재하는 시작 날짜와 시간을 입력해 주세요." });
   }
@@ -126,7 +87,7 @@ const eventFormSchema = z.object({
     context.addIssue({ code: "custom", path: ["endsAtLocal"], message: "존재하는 종료 날짜와 시간을 입력해 주세요." });
   }
   if (startsAt && endsAt) {
-    const duration = endsAt.milliseconds - startsAt.milliseconds;
+    const duration = Date.parse(endsAt) - Date.parse(startsAt);
     if (duration <= 0) {
       context.addIssue({ code: "custom", path: ["endsAtLocal"], message: "종료 시간은 시작 시간보다 늦어야 합니다." });
     } else if (duration > MAX_DURATION_MILLISECONDS) {
@@ -145,6 +106,12 @@ const eventFormSchema = z.object({
 
 type EventFormValues = z.infer<typeof eventFormSchema>;
 type AuthorizationCode = "AUTH_REQUIRED" | "FORBIDDEN";
+
+export type EventMutationControl = {
+  begin: () => number | null;
+  isCurrent: (token: number) => boolean;
+  finish: (token: number) => void;
+};
 
 function valuesFromEvent(event?: EventSeries): EventFormValues {
   return {
@@ -167,6 +134,8 @@ type EventFormProps = {
   onSaved?: (action: "created" | "updated") => void;
   onCancel?: () => void;
   onAuthorizationError?: (code: AuthorizationCode) => void;
+  mutationControl?: EventMutationControl;
+  mutationPending?: boolean;
 };
 
 export default function EventForm({
@@ -174,6 +143,8 @@ export default function EventForm({
   onSaved,
   onCancel,
   onAuthorizationError,
+  mutationControl,
+  mutationPending = false,
 }: EventFormProps) {
   const [requestError, setRequestError] = useState<string>();
   const {
@@ -210,17 +181,24 @@ export default function EventForm({
       repeat_until: values.repeatWeekly && values.repeatUntil ? values.repeatUntil : null,
     };
 
+    const acquiredToken = mutationControl ? mutationControl.begin() : 0;
+    if (acquiredToken === null) return;
+    const mutationToken = acquiredToken;
+    const isCurrent = () => !mutationControl || mutationControl.isCurrent(mutationToken);
     setRequestError(undefined);
     try {
       if (event) {
         await api.patch<EventSeries>(`/api/teacher/events/${event.id}`, body);
+        if (!isCurrent()) return;
         onSaved?.("updated");
       } else {
         await api.post<EventSeries>("/api/teacher/events", body);
+        if (!isCurrent()) return;
         reset(valuesFromEvent());
         onSaved?.("created");
       }
     } catch (caught: unknown) {
+      if (!isCurrent()) return;
       if (
         caught instanceof ApiClientError
         && (caught.code === "AUTH_REQUIRED" || caught.code === "FORBIDDEN")
@@ -235,8 +213,12 @@ export default function EventForm({
             ? "일정을 수정하지 못했습니다."
             : "일정을 등록하지 못했습니다.",
       );
+    } finally {
+      if (mutationControl) mutationControl.finish(mutationToken);
     }
   }
+
+  const controlsDisabled = isSubmitting || mutationPending;
 
   return (
     <section className="teacher-event-form-card" aria-labelledby="event-form-title">
@@ -245,38 +227,39 @@ export default function EventForm({
           <p className="eyebrow">Event series</p>
           <h2 id="event-form-title">{event ? "일정 수정" : "새 일정 등록"}</h2>
         </div>
-        {event && onCancel ? <button className="quiet-button" type="button" onClick={onCancel}>수정 취소</button> : null}
+        {event && onCancel ? <button className="quiet-button" type="button" disabled={controlsDisabled} onClick={onCancel}>수정 취소</button> : null}
       </div>
       {event?.repeat_weekly ? <p className="event-series-warning">반복 일정 전체가 변경됩니다.</p> : null}
       <form className="teacher-event-form" noValidate onSubmit={handleSubmit(save)}>
         <label>
           제목
-          <input type="text" maxLength={121} aria-invalid={Boolean(errors.title)} {...register("title")} />
+          <input type="text" maxLength={121} disabled={controlsDisabled} aria-invalid={Boolean(errors.title)} {...register("title")} />
           {fieldError(errors.title?.message)}
         </label>
         <label className="teacher-event-form__wide">
           설명 <span>(선택)</span>
-          <textarea aria-label="설명" rows={4} maxLength={2001} aria-invalid={Boolean(errors.description)} {...register("description")} />
+          <textarea aria-label="설명" rows={4} maxLength={2001} disabled={controlsDisabled} aria-invalid={Boolean(errors.description)} {...register("description")} />
           {fieldError(errors.description?.message)}
         </label>
         <label>
           장소 <span>(선택)</span>
-          <input aria-label="장소" type="text" maxLength={201} aria-invalid={Boolean(errors.location)} {...register("location")} />
+          <input aria-label="장소" type="text" maxLength={201} disabled={controlsDisabled} aria-invalid={Boolean(errors.location)} {...register("location")} />
           {fieldError(errors.location?.message)}
         </label>
         <label>
           시작
-          <input type="datetime-local" aria-invalid={Boolean(errors.startsAtLocal)} {...register("startsAtLocal")} />
+          <input type="datetime-local" disabled={controlsDisabled} aria-invalid={Boolean(errors.startsAtLocal)} {...register("startsAtLocal")} />
           {fieldError(errors.startsAtLocal?.message)}
         </label>
         <label>
           종료
-          <input type="datetime-local" aria-invalid={Boolean(errors.endsAtLocal)} {...register("endsAtLocal")} />
+          <input type="datetime-local" disabled={controlsDisabled} aria-invalid={Boolean(errors.endsAtLocal)} {...register("endsAtLocal")} />
           {fieldError(errors.endsAtLocal?.message)}
         </label>
         <label className="teacher-event-form__checkbox">
           <input
             type="checkbox"
+            disabled={controlsDisabled}
             {...repeatRegistration}
             onChange={(changeEvent) => {
               void repeatRegistration.onChange(changeEvent);
@@ -292,7 +275,7 @@ export default function EventForm({
           <input
             aria-label="반복 종료일"
             type="date"
-            disabled={!repeatWeekly}
+            disabled={controlsDisabled || !repeatWeekly}
             aria-invalid={Boolean(errors.repeatUntil)}
             {...register("repeatUntil")}
           />
@@ -300,10 +283,10 @@ export default function EventForm({
         </label>
         {requestError ? <p className="inline-alert teacher-event-form__wide" role="alert">{requestError}</p> : null}
         <div className="button-row teacher-event-form__actions">
-          <button className="primary-button" type="submit" disabled={isSubmitting}>
+          <button className="primary-button" type="submit" disabled={controlsDisabled}>
             {isSubmitting ? "저장 중…" : "일정 저장"}
           </button>
-          {event && onCancel ? <button className="secondary-button" type="button" disabled={isSubmitting} onClick={onCancel}>취소</button> : null}
+          {event && onCancel ? <button className="secondary-button" type="button" disabled={controlsDisabled} onClick={onCancel}>취소</button> : null}
         </div>
       </form>
     </section>

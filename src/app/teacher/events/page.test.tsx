@@ -97,7 +97,7 @@ it.each([
   render(<TeacherEventsPage />);
 
   await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith(destination));
-  expect(screen.queryByRole("heading", { name: "일정 관리" })).not.toBeInTheDocument();
+  await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "일정 관리" })).not.toBeInTheDocument());
 });
 
 it("ignores stale page responses and completions after unmount", async () => {
@@ -238,4 +238,123 @@ it("refreshes the active page once after create and update successes", async () 
   expect(screen.getByRole("status")).toHaveTextContent("일정 전체를 수정했습니다.");
   expect(client.api.patch).toHaveBeenCalledTimes(1);
   expect(client.api.get).toHaveBeenCalledTimes(3);
+});
+
+it("locks every competing manager action until a pending edit succeeds", async () => {
+  let resolveUpdate: (value: ReturnType<typeof series>) => void = () => undefined;
+  client.api.get
+    .mockResolvedValueOnce(page([
+      series({ id: "event-a", title: "수정 중 일정" }),
+      series({ id: "event-b", title: "다른 일정" }),
+    ], { total: 101 }))
+    .mockResolvedValueOnce(page([series({ id: "event-a", title: "수정 완료 일정" })]));
+  client.api.patch.mockImplementation(() => new Promise((resolve) => { resolveUpdate = resolve; }));
+  vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
+  render(<TeacherEventsPage />);
+  await screen.findByText("수정 중 일정");
+
+  fireEvent.click(screen.getByRole("button", { name: "수정 중 일정 수정" }));
+  fireEvent.change(screen.getByLabelText("제목"), { target: { value: "수정 완료 일정" } });
+  fireEvent.click(screen.getByRole("button", { name: "일정 저장" }));
+  await vi.waitFor(() => expect(client.api.patch).toHaveBeenCalledTimes(1));
+
+  expect(screen.getByRole("button", { name: "새로고침" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "다른 일정 수정" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "다른 일정 삭제" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "다음 페이지" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "수정 취소" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "다른 일정 수정" }));
+  expect(screen.getByRole("heading", { name: "일정 수정" })).toBeInTheDocument();
+  expect(screen.getByLabelText("제목")).toHaveValue("수정 완료 일정");
+
+  await act(async () => {
+    resolveUpdate(series({ id: "event-a", title: "수정 완료 일정" }));
+    await Promise.resolve();
+  });
+  expect(await screen.findByText("수정 완료 일정")).toBeInTheDocument();
+  expect(client.api.patch).toHaveBeenCalledTimes(1);
+  expect(client.api.get).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a late mutation failure visible because competing form replacement stays locked", async () => {
+  let rejectCreate: (error: Error) => void = () => undefined;
+  client.api.get.mockResolvedValue(page([series({ title: "교체 대상 일정" })], { total: 101 }));
+  client.api.post.mockImplementation(() => new Promise((_, reject) => { rejectCreate = reject; }));
+  render(<TeacherEventsPage />);
+  await screen.findByText("교체 대상 일정");
+
+  fireEvent.change(screen.getByLabelText("제목"), { target: { value: "실패 보존 일정" } });
+  fireEvent.change(screen.getByLabelText("시작"), { target: { value: "2026-08-23T11:00" } });
+  fireEvent.change(screen.getByLabelText("종료"), { target: { value: "2026-08-23T12:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "일정 저장" }));
+  await vi.waitFor(() => expect(client.api.post).toHaveBeenCalledTimes(1));
+
+  expect(screen.getByRole("button", { name: "교체 대상 일정 수정" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "교체 대상 일정 수정" }));
+  expect(screen.getByRole("heading", { name: "새 일정 등록" })).toBeInTheDocument();
+
+  await act(async () => {
+    rejectCreate(new client.ApiClientError("REQUEST_FAILED", "등록 실패를 확인해 주세요."));
+    await Promise.resolve();
+  });
+  expect(await screen.findByRole("alert")).toHaveTextContent("등록 실패를 확인해 주세요.");
+  expect(screen.getByLabelText("제목")).toHaveValue("실패 보존 일정");
+  expect(screen.getByRole("button", { name: "교체 대상 일정 수정" })).toBeEnabled();
+});
+
+it("keeps mutation authorization terminal when an older list succeeds later", async () => {
+  let resolveList: (value: ReturnType<typeof page>) => void = () => undefined;
+  let rejectCreate: (error: Error) => void = () => undefined;
+  client.api.get.mockImplementation(() => new Promise((resolve) => { resolveList = resolve; }));
+  client.api.post.mockImplementation(() => new Promise((_, reject) => { rejectCreate = reject; }));
+  render(<TeacherEventsPage />);
+
+  fireEvent.change(screen.getByLabelText("제목"), { target: { value: "인증 만료 일정" } });
+  fireEvent.change(screen.getByLabelText("시작"), { target: { value: "2026-08-23T11:00" } });
+  fireEvent.change(screen.getByLabelText("종료"), { target: { value: "2026-08-23T12:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "일정 저장" }));
+  await vi.waitFor(() => expect(client.api.post).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    rejectCreate(new client.ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
+    await Promise.resolve();
+  });
+  expect(navigation.replace).toHaveBeenCalledWith("/teacher/login");
+
+  await act(async () => {
+    resolveList(page([series({ title: "늦게 도착한 보호 데이터" })]));
+    await Promise.resolve();
+  });
+  expect(navigation.replace).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "일정 관리" })).not.toBeInTheDocument());
+  expect(screen.queryByText("늦게 도착한 보호 데이터")).not.toBeInTheDocument();
+});
+
+it("ignores a late mutation success after list authorization becomes terminal", async () => {
+  let rejectList: (error: Error) => void = () => undefined;
+  let resolveCreate: (value: ReturnType<typeof series>) => void = () => undefined;
+  client.api.get.mockImplementation(() => new Promise((_, reject) => { rejectList = reject; }));
+  client.api.post.mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
+  render(<TeacherEventsPage />);
+
+  fireEvent.change(screen.getByLabelText("제목"), { target: { value: "늦은 성공 일정" } });
+  fireEvent.change(screen.getByLabelText("시작"), { target: { value: "2026-08-23T11:00" } });
+  fireEvent.change(screen.getByLabelText("종료"), { target: { value: "2026-08-23T12:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "일정 저장" }));
+  await vi.waitFor(() => expect(client.api.post).toHaveBeenCalledTimes(1));
+
+  await act(async () => {
+    rejectList(new client.ApiClientError("FORBIDDEN", "교사 권한이 필요합니다."));
+    await Promise.resolve();
+  });
+  expect(navigation.replace).toHaveBeenCalledWith("/teacher/apply");
+
+  await act(async () => {
+    resolveCreate(series({ title: "늦은 성공 일정" }));
+    await Promise.resolve();
+  });
+  expect(navigation.replace).toHaveBeenCalledTimes(1);
+  expect(client.api.get).toHaveBeenCalledTimes(1);
+  await vi.waitFor(() => expect(screen.queryByRole("heading", { name: "일정 관리" })).not.toBeInTheDocument());
+  expect(screen.queryByText("일정을 등록했습니다.")).not.toBeInTheDocument();
 });

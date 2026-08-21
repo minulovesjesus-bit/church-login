@@ -1,18 +1,5 @@
 import type { EventSeries } from "./event-form";
-
-const SEOUL_DATE_TIME = new Intl.DateTimeFormat("ko-KR", {
-  timeZone: "Asia/Seoul",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-  weekday: "long",
-  hour: "numeric",
-  minute: "2-digit",
-});
-
-function formatSeoulDateTime(value: string): string {
-  return SEOUL_DATE_TIME.format(new Date(value));
-}
+import { formatSeoulDateTime } from "./seoul-time";
 
 function recurrenceLabel(event: EventSeries): string {
   if (!event.repeat_weekly) return "한 번";
@@ -32,11 +19,12 @@ export function sortEventSeries(events: EventSeries[]): EventSeries[] {
 type EventListProps = {
   events: EventSeries[];
   deletingId?: string;
+  disabled?: boolean;
   onEdit: (event: EventSeries) => void;
   onDelete: (event: EventSeries) => void;
 };
 
-export default function EventList({ events, deletingId, onEdit, onDelete }: EventListProps) {
+export default function EventList({ events, deletingId, disabled = false, onEdit, onDelete }: EventListProps) {
   if (!events.length) return <p className="teacher-event-empty">등록된 일정이 없습니다.</p>;
 
   return (
@@ -50,8 +38,8 @@ export default function EventList({ events, deletingId, onEdit, onDelete }: Even
                 <h3>{event.title}</h3>
               </div>
               <div className="teacher-event-card__actions">
-                <button className="secondary-button" type="button" onClick={() => onEdit(event)} aria-label={`${event.title} 수정`}>수정</button>
-                <button className="danger-button" type="button" disabled={deletingId === event.id} onClick={() => onDelete(event)} aria-label={`${event.title} 삭제`}>
+                <button className="secondary-button" type="button" disabled={disabled} onClick={() => onEdit(event)} aria-label={`${event.title} 수정`}>수정</button>
+                <button className="danger-button" type="button" disabled={disabled || deletingId === event.id} onClick={() => onDelete(event)} aria-label={`${event.title} 삭제`}>
                   {deletingId === event.id ? "삭제 중…" : "삭제"}
                 </button>
               </div>

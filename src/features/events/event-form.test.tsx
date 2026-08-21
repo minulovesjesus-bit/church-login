@@ -141,6 +141,22 @@ it("converts Seoul local values and edit instants independently of the machine t
   }
 });
 
+it("uses historical Asia/Seoul offsets in both conversion directions", () => {
+  const originalTimezone = process.env.TZ;
+  process.env.TZ = "America/New_York";
+  try {
+    expect(seoulLocalToIsoInstant("1960-01-01T12:00")).toBe("1960-01-01T03:30:00.000Z");
+    expect(isoInstantToSeoulLocal("1960-01-01T03:30:00Z")).toBe("1960-01-01T12:00");
+  } finally {
+    process.env.TZ = originalTimezone;
+  }
+});
+
+it("rejects Seoul local times in a historical clock gap or repeated clock fold", () => {
+  expect(seoulLocalToIsoInstant("1960-05-01T00:30")).toBeNull();
+  expect(seoulLocalToIsoInstant("1960-09-17T23:30")).toBeNull();
+});
+
 describe("calendar and duration validation", () => {
   it.each([
     ["2026-02-30T11:00", "2026-03-01T12:00", "존재하는 시작 날짜와 시간을 입력해 주세요."],
