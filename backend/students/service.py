@@ -19,6 +19,11 @@ INVALID_CURSOR = ("INVALID_CURSOR", "페이지 위치를 확인해 주세요.", 
 STUDENT_NOT_FOUND = ("STUDENT_NOT_FOUND", "학생 정보를 찾을 수 없습니다.", 404)
 FORBIDDEN = ("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
 CURSOR_VERSION = 1
+CURSOR_FIELDS = {"v", "q", "s", "n", "i"}
+CURSOR_DIGEST_LENGTH = 64
+CURSOR_NAME_MAX_LENGTH = 80
+CURSOR_ID_LENGTH = 36
+HEX_DIGITS = frozenset("0123456789abcdef")
 
 
 class StudentService:
@@ -98,20 +103,42 @@ class StudentService:
             if len(raw) > 512:
                 raise ValueError("cursor payload is too large")
             payload: Any = json.loads(raw.decode("utf-8"))
-            if not isinstance(payload, dict) or set(payload) != {"v", "q", "s", "n", "i"}:
+            if not isinstance(payload, dict) or set(payload) != CURSOR_FIELDS:
                 raise ValueError("cursor shape is invalid")
+
+            version = payload["v"]
+            filter_digest = payload["q"]
+            statistics = payload["s"]
             cursor_name = payload["n"]
+            cursor_id = payload["i"]
+
             if (
-                payload["v"] != CURSOR_VERSION
-                or payload["q"] != self._filter_digest(filters.query)
-                or payload["s"] != filters.statistics.value
+                type(version) is not int
+                or version != CURSOR_VERSION
+                or not isinstance(filter_digest, str)
+                or len(filter_digest) != CURSOR_DIGEST_LENGTH
+                or any(character not in HEX_DIGITS for character in filter_digest)
+                or not isinstance(statistics, str)
+                or statistics not in {"all", "included", "excluded"}
                 or not isinstance(cursor_name, str)
-                or not 1 <= len(cursor_name) <= 80
+                or not 1 <= len(cursor_name) <= CURSOR_NAME_MAX_LENGTH
+                or not isinstance(cursor_id, str)
+                or len(cursor_id) != CURSOR_ID_LENGTH
+            ):
+                raise ValueError("cursor fields are invalid")
+
+            user_id = UUID(cursor_id)
+            if str(user_id) != cursor_id:
+                raise ValueError("cursor id is not canonical")
+            if (
+                filter_digest != self._filter_digest(filters.query)
+                or statistics != filters.statistics.value
             ):
                 raise ValueError("cursor filters do not match")
+
             return StudentCursorKey(
                 name=cursor_name,
-                user_id=UUID(payload["i"]),
+                user_id=user_id,
             )
         except (
             binascii.Error,

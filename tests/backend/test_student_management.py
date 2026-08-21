@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 from datetime import UTC, date, datetime
@@ -58,6 +59,13 @@ def _student(index: int, *, included: bool = True) -> TeacherStudentView:
         guardian_phone="01098765432",
         include_in_statistics=included,
     )
+
+
+def _encoded_cursor_payload(payload: object) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
 
 
 class FakeStudentRepository:
@@ -243,6 +251,107 @@ async def test_service_uses_opaque_filter_bound_keyset_without_duplicates() -> N
                 cursor=first.next_cursor,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid_value"),
+    [
+        pytest.param("v", True, id="version-bool"),
+        pytest.param("v", 1.0, id="version-number-not-int"),
+        pytest.param("v", None, id="version-null"),
+        pytest.param("v", {}, id="version-object"),
+        pytest.param("v", [], id="version-list"),
+        pytest.param("v", 2, id="wrong-version"),
+        pytest.param("q", 1, id="digest-number"),
+        pytest.param("q", None, id="digest-null"),
+        pytest.param("q", {}, id="digest-object"),
+        pytest.param("q", [], id="digest-list"),
+        pytest.param("q", True, id="digest-bool"),
+        pytest.param("q", "", id="digest-empty"),
+        pytest.param("q", "x" * 65, id="digest-oversized"),
+        pytest.param("s", 1, id="statistics-number"),
+        pytest.param("s", None, id="statistics-null"),
+        pytest.param("s", {}, id="statistics-object"),
+        pytest.param("s", [], id="statistics-list"),
+        pytest.param("s", True, id="statistics-bool"),
+        pytest.param("n", 1, id="name-number"),
+        pytest.param("n", None, id="name-null"),
+        pytest.param("n", {}, id="name-object"),
+        pytest.param("n", [], id="name-list"),
+        pytest.param("n", True, id="name-bool"),
+        pytest.param("n", "", id="name-empty"),
+        pytest.param("n", "x" * 81, id="name-oversized"),
+        pytest.param("i", 1, id="id-number"),
+        pytest.param("i", None, id="id-null"),
+        pytest.param("i", {}, id="id-object"),
+        pytest.param("i", [], id="id-list"),
+        pytest.param("i", True, id="id-bool"),
+        pytest.param("i", "", id="id-empty"),
+        pytest.param("i", "x" * 37, id="id-oversized"),
+    ],
+)
+async def test_service_rejects_type_invalid_cursor_fields(
+    field: str,
+    invalid_value: object,
+) -> None:
+    teacher = _user()
+    repository = FakeStudentRepository([_student(1)])
+    service = StudentService(repository)  # type: ignore[arg-type]
+    payload: dict[str, object] = {
+        "v": 1,
+        "q": service._filter_digest(None),
+        "s": "all",
+        "n": "학생 001",
+        "i": str(_student(1).user_id),
+    }
+    payload[field] = invalid_value
+
+    with pytest.raises(ApiError) as malformed:
+        await service.list_students(
+            teacher,
+            StudentListFilters(cursor=_encoded_cursor_payload(payload)),
+        )
+
+    assert (malformed.value.code, malformed.value.status_code) == ("INVALID_CURSOR", 422)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(None, id="root-null"),
+        pytest.param(1, id="root-number"),
+        pytest.param(True, id="root-bool"),
+        pytest.param([], id="root-list"),
+        pytest.param("cursor", id="root-string"),
+        pytest.param(
+            {"v": 1, "q": "x" * 64, "s": "all", "n": "학생 001"},
+            id="missing-field",
+        ),
+        pytest.param(
+            {
+                "v": 1,
+                "q": "x" * 64,
+                "s": "all",
+                "n": "학생 001",
+                "i": str(_student(1).user_id),
+                "unexpected": "value",
+            },
+            id="unexpected-field",
+        ),
+    ],
+)
+async def test_service_rejects_invalid_complete_cursor_shape(payload: object) -> None:
+    teacher = _user()
+    repository = FakeStudentRepository([_student(1)])
+    service = StudentService(repository)  # type: ignore[arg-type]
+
+    with pytest.raises(ApiError) as malformed:
+        await service.list_students(
+            teacher,
+            StudentListFilters(cursor=_encoded_cursor_payload(payload)),
+        )
+
+    assert (malformed.value.code, malformed.value.status_code) == ("INVALID_CURSOR", 422)
 
 
 async def test_repository_parameterizes_escaped_search_keyset_and_page_size_plus_one() -> None:
