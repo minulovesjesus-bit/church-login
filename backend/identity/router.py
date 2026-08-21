@@ -23,7 +23,9 @@ async def get_identity_service() -> AsyncIterator[IdentityService]:
 
 
 CurrentUser = Annotated[AuthenticatedUser, Depends(get_current_user)]
-IdentityServiceDependency = Annotated[IdentityService, Depends(get_identity_service)]
+IdentityServiceDependency = Annotated[
+    IdentityService, Depends(get_identity_service, scope="function")
+]
 
 
 @router.get("/me", response_model=CurrentIdentityView)

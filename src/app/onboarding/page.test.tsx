@@ -3,7 +3,10 @@ import { expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
 
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+
 vi.mock("@/lib/api/client", () => ({ api: mockApi }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import OnboardingPage from "./page";
 
@@ -25,12 +28,19 @@ it("submits normalized student profile fields", async () => {
       guardian_phone: "01098765432",
     }),
   ));
+  expect(router.push).toHaveBeenCalledWith("/student");
 });
 
 it("calculates age from birth date without submitting it", () => {
-  render(<OnboardingPage />);
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-08-21T12:00:00"));
+  try {
+    render(<OnboardingPage />);
 
-  fireEvent.change(screen.getByLabelText("생년월일"), { target: { value: "2012-04-03" } });
+    fireEvent.change(screen.getByLabelText("생년월일"), { target: { value: "2012-04-03" } });
 
-  expect(screen.getByText("만 14세")).toBeInTheDocument();
+    expect(screen.getByText("만 14세")).toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });

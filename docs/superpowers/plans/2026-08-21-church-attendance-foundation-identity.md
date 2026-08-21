@@ -6,7 +6,7 @@
 
 **Architecture:** Next.js owns responsive pages and Supabase Auth cookies; every application-data request goes to FastAPI under `/api`. FastAPI validates Supabase JWTs, reads roles from a private PostgreSQL schema, and keeps authorization out of browser-editable metadata.
 
-**Tech Stack:** Next.js 16.3.1, React 19.2.8, TypeScript 7.0.2, Tailwind CSS 4.3.3, Supabase JS 2.112.3, Supabase SSR 0.12.4, Python 3.12, FastAPI 0.141.1, Pydantic Settings 2.15.0, PyJWT 2.13.0, psycopg 3.3.4, Vitest 4.1.11, pytest 9.1.1, Playwright 1.62.1
+**Tech Stack:** Next.js 16.3.1, React 19.2.8, TypeScript 6.0.3, ESLint 9.39.5, Tailwind CSS 4.3.3, Supabase JS 2.112.3, Supabase SSR 0.12.4, Python 3.12, FastAPI 0.141.1, Pydantic Settings 2.15.0, PyJWT 2.13.0, psycopg 3.3.4, Vitest 4.1.11, pytest 9.1.1, Playwright 1.62.1
 
 **Spec:** `docs/superpowers/specs/2026-08-21-church-attendance-system-design.md`
 
@@ -155,12 +155,12 @@ Create `package.json` with these scripts and exact direct dependencies:
     "@types/node": "22.18.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "eslint": "10.8.1",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.3.1",
     "jsdom": "30.0.1",
     "supabase": "2.115.0",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vercel": "59.3.0",
     "vitest": "4.1.11"
   }

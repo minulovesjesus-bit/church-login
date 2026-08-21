@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 
 import { api, ApiClientError } from "@/lib/api/client";
 
@@ -20,6 +21,7 @@ function ageFromBirthDate(value: string): number | undefined {
 }
 
 export default function OnboardingPage() {
+  const router = useRouter();
   const [error, setError] = useState<string>();
   const [completed, setCompleted] = useState(false);
   const [birthDate, setBirthDate] = useState("");
@@ -37,6 +39,7 @@ export default function OnboardingPage() {
         guardian_phone: digitsOnly(String(form.get("guardian_phone") ?? "")),
       });
       setCompleted(true);
+      router.push("/student");
     } catch (caught) {
       setError(caught instanceof ApiClientError ? caught.message : "가입을 완료하지 못했습니다.");
     }

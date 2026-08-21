@@ -33,12 +33,12 @@
     "@types/node": "22.18.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
-    "eslint": "10.8.1",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.3.1",
     "jsdom": "30.0.1",
     "supabase": "2.115.0",
     "tailwindcss": "4.3.3",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vercel": "59.3.0",
     "vitest": "4.1.11"
   }

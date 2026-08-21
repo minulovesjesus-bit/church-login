@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from backend.core.auth import get_current_user
+from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
 from backend.identity.router import get_identity_service
 from backend.identity.schemas import StudentProfileView
@@ -134,6 +135,37 @@ async def test_profile_patch_uses_the_same_authenticated_user(
             },
         )
     ]
+
+
+async def test_profile_returns_error_when_transaction_teardown_fails(
+    client: httpx.AsyncClient, api_user: AuthenticatedUser
+) -> None:
+    service = FakeIdentityService()
+
+    async def current_user() -> AuthenticatedUser:
+        return api_user
+
+    async def failing_transaction_service():
+        yield service
+        raise ApiError("DATABASE_UNAVAILABLE", "잠시 후 다시 시도해 주세요.", 503)
+
+    app.dependency_overrides[get_current_user] = current_user
+    app.dependency_overrides[get_identity_service] = failing_transaction_service
+    try:
+        response = await client.post(
+            "/api/students/profile",
+            json={
+                "name": "김민준",
+                "birth_date": "2012-04-03",
+                "phone": "010-1234-5678",
+                "guardian_phone": "010-9876-5432",
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
 
 
 async def test_me_exposes_only_current_users_capabilities(

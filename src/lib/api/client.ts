@@ -28,12 +28,13 @@ export async function apiFetch<T>(
   const supabase = createBrowserSupabaseClient();
   const { data } = await supabase.auth.getSession();
   if (!data.session) throw new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다.");
+  const headers = new Headers(init.headers);
+  headers.delete("cookie");
+  headers.set("Authorization", `Bearer ${data.session.access_token}`);
   const response = await fetch(path, {
     ...init,
-    headers: {
-      ...init.headers,
-      Authorization: `Bearer ${data.session.access_token}`,
-    },
+    credentials: "omit",
+    headers,
   });
   return parseApiResponse<T>(response);
 }

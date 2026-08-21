@@ -14,7 +14,7 @@ export default function StudentSignupPage() {
     const { error } = await createBrowserSupabaseClient().auth.signUp({
       email: String(form.get("email") ?? ""),
       password: String(form.get("password") ?? ""),
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding` },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/student` },
     });
     setMessage(error?.message ?? "인증 이메일을 확인한 뒤 계속해 주세요.");
   }

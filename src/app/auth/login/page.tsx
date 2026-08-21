@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export default function StudentLoginPage() {
+  const router = useRouter();
   const [error, setError] = useState<string>();
 
   async function loginWithPassword(event: FormEvent<HTMLFormElement>) {
@@ -16,13 +18,13 @@ export default function StudentLoginPage() {
       password: String(form.get("password") ?? ""),
     });
     setError(authError?.message);
-    if (!authError) window.location.assign("/onboarding");
+    if (!authError) router.push("/student");
   }
 
   async function loginWithGoogle() {
     const { error: authError } = await createBrowserSupabaseClient().auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=/onboarding` },
+      options: { redirectTo: `${window.location.origin}/auth/callback?next=/student` },
     });
     setError(authError?.message);
   }
