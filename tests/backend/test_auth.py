@@ -14,6 +14,8 @@ from backend.core import auth
 from backend.core.auth import JwksVerifier
 from backend.core.config import Settings
 from backend.core.errors import ApiError
+from backend.identity.router import get_identity_service
+from backend.main import app
 
 TEST_SUPABASE_URL = "https://test-project.supabase.co"
 
@@ -74,6 +76,18 @@ class StubAuthUserResolver:
         )
 
 
+class EmptyIdentityService:
+    async def current_identity(self, user: Any) -> dict[str, object]:
+        return {
+            "user_id": str(user.user_id),
+            "email": user.email,
+            "provider": user.provider,
+            "email_verified": user.email_verified,
+            "onboarding_completed": False,
+            "capabilities": {"student": False, "teacher": False, "admin": False},
+        }
+
+
 def test_backend_auth_reuses_configured_supabase_publishable_key() -> None:
     configured = Settings(
         _env_file=None,
@@ -109,7 +123,11 @@ async def configured_auth(
     monkeypatch.setattr(
         auth, "auth_user_resolver", auth_user_resolver, raising=False
     )
-    return verifier, fetch_count, clock, auth_user_resolver
+    app.dependency_overrides[get_identity_service] = EmptyIdentityService
+    try:
+        yield verifier, fetch_count, clock, auth_user_resolver
+    finally:
+        app.dependency_overrides.pop(get_identity_service, None)
 
 
 async def test_valid_jwt_returns_minimal_authenticated_identity(
@@ -132,6 +150,8 @@ async def test_valid_jwt_returns_minimal_authenticated_identity(
         "email": "student@example.com",
         "provider": "google",
         "email_verified": True,
+        "onboarding_completed": False,
+        "capabilities": {"student": False, "teacher": False, "admin": False},
     }
 
 

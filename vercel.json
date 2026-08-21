@@ -1,4 +1,5 @@
 {
+  "fluid": true,
   "functions": {
     "api/**/*.py": {
       "excludeFiles": "{tests/**,.superpowers/**,fixtures/**,**/fixtures/**}"
