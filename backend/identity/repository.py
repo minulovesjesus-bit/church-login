@@ -180,6 +180,23 @@ class IdentityRepository:
         return self._teacher_application_record(row) if row is not None else None
 
     async def bootstrap_initial_admin(self, user: AuthenticatedUser) -> bool:
+        await self._serialize_staff_memberships()
+        marker_cursor = await self._connection.execute(
+            """
+            select exists(
+                select 1
+                from app.audit_logs
+                where action = 'staff.bootstrap_admin'
+                  and target_type = 'staff_membership'
+                  and target_id = %s
+            )
+            """,
+            (str(user.user_id),),
+        )
+        marker_row = await marker_cursor.fetchone()
+        if marker_row and marker_row[0]:
+            return False
+
         fallback_name = user.email.split("@", maxsplit=1)[0].strip()[:80] or "관리자"
         cursor = await self._connection.execute(
             """
@@ -197,17 +214,17 @@ class IdentityRepository:
                 set role = excluded.role,
                     approved_by = excluded.approved_by,
                     updated_at = now()
-                where app.staff_memberships.role <> 'admin'
                 returning user_id
             ), audit as (
                 insert into app.audit_logs (
                     actor_id, action, target_type, target_id, details
                 )
                 select %s, 'staff.bootstrap_admin', 'staff_membership',
-                       user_id::text, jsonb_build_object('role', 'admin')
-                from saved_membership
+                       saved_user.user_id::text,
+                       jsonb_build_object('role', 'admin')
+                from saved_user
             )
-            select exists(select 1 from saved_membership)
+            select true from saved_user
             """,
             (
                 user.user_id,
@@ -320,9 +337,7 @@ class IdentityRepository:
         return [self._staff_member_record(row) for row in await cursor.fetchall()]
 
     async def lock_staff_memberships(self) -> list[tuple[UUID, StaffRole]]:
-        await self._connection.execute(
-            "select pg_advisory_xact_lock(%s)", (1_256_784_321,)
-        )
+        await self._serialize_staff_memberships()
         cursor = await self._connection.execute(
             """
             select user_id, role::text
@@ -332,6 +347,11 @@ class IdentityRepository:
             """
         )
         return [(row[0], StaffRole(row[1])) for row in await cursor.fetchall()]
+
+    async def _serialize_staff_memberships(self) -> None:
+        await self._connection.execute(
+            "select pg_advisory_xact_lock(%s)", (1_256_784_321,)
+        )
 
     async def staff_member(self, user_id: UUID) -> StaffMemberRecord | None:
         cursor = await self._connection.execute(
