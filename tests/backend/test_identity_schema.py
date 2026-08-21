@@ -46,6 +46,13 @@ def test_identity_tables_and_columns_exist(
         select table_name, column_name
         from information_schema.columns
         where table_schema = 'app'
+          and table_name in (
+            'user_profiles',
+            'student_profiles',
+            'teacher_applications',
+            'staff_memberships',
+            'audit_logs'
+          )
         order by table_name, ordinal_position
         """
     ).fetchall()
@@ -161,6 +168,7 @@ def test_identity_enums_have_only_supported_values(
           join pg_namespace n on n.oid = t.typnamespace
           join pg_enum e on e.enumtypid = t.oid
           where n.nspname = 'app'
+            and t.typname in ('teacher_application_status', 'staff_role')
         ) enums
         group by type_name
         """
@@ -226,6 +234,13 @@ def test_identity_table_grants_are_least_privilege(
             select grantee, table_name, privilege_type
             from information_schema.role_table_grants
             where table_schema = 'app'
+              and table_name in (
+                'user_profiles',
+                'student_profiles',
+                'teacher_applications',
+                'staff_memberships',
+                'audit_logs'
+              )
               and grantee in ('app_backend', 'anon', 'authenticated')
             """
         ).fetchall()
@@ -272,6 +287,13 @@ def test_identity_tables_have_expected_rls_policies(
             from pg_class c
             join pg_namespace n on n.oid = c.relnamespace
             where n.nspname = 'app'
+              and c.relname in (
+                'user_profiles',
+                'student_profiles',
+                'teacher_applications',
+                'staff_memberships',
+                'audit_logs'
+              )
               and c.relkind = 'r'
               and c.relrowsecurity
             """
@@ -283,6 +305,13 @@ def test_identity_tables_have_expected_rls_policies(
             select tablename, cmd, roles::text, qual, with_check
             from pg_policies
             where schemaname = 'app'
+              and tablename in (
+                'user_profiles',
+                'student_profiles',
+                'teacher_applications',
+                'staff_memberships',
+                'audit_logs'
+              )
             """
         ).fetchall()
     )
