@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -8,6 +9,33 @@ import pytest
 from pydantic import ValidationError
 
 from backend.core.config import Settings
+
+
+def test_copied_example_environment_imports_fastapi_without_validation_errors(
+    tmp_path: Path,
+) -> None:
+    repository_root = Path(__file__).resolve().parents[2]
+    shutil.copyfile(repository_root / ".env.example", tmp_path / ".env.local")
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        "PYTHONPATH": str(repository_root),
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from api.index import app; print(app.title)",
+        ],
+        cwd=tmp_path,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "Church Attendance API"
 
 
 def test_settings_load_dotenv_local_after_dotenv_and_before_process_environment(

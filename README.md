@@ -57,3 +57,5 @@ npm run vercel:dev -- --local
 Do not expose database, service-role, teacher-intent, kiosk, QR, or cookie secrets through `NEXT_PUBLIC_*`. The Supabase publishable key is public configuration; privileged credentials remain server-only.
 
 Vercel limits and plan terms are time-sensitive. Check the current official [Python runtime](https://vercel.com/docs/functions/runtimes/python), [FastAPI](https://vercel.com/docs/frameworks/backend/fastapi), [Function limits](https://vercel.com/docs/functions/limitations), and [Hobby plan](https://vercel.com/docs/plans/hobby) documentation before deployment.
+
+Node 22 scanner deployment remains gated: the lockfile's transitive `@zxing/library@0.23.0` declares Node 24 or newer. Follow the strict clean-install, scanner-test, and production-build gate in [docs/local-development.md](docs/local-development.md); passing the current build alone is not a compatibility claim.

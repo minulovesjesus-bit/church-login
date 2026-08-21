@@ -9,6 +9,9 @@ SEED_FIXTURE_PATH = Path(__file__).parents[1] / "e2e" / "fixtures" / "identity_s
 ATTENDANCE_AUDIT_FIXTURE_PATH = (
     Path(__file__).parents[1] / "e2e" / "fixtures" / "attendance_audit.py"
 )
+EMAIL_CONFIRMATION_FIXTURE_PATH = (
+    Path(__file__).parents[1] / "e2e" / "fixtures" / "email_confirmation.py"
+)
 RUN_SEED_VALIDATION = (
     "import runpy; "
     f"runpy.run_path({str(SEED_FIXTURE_PATH)!r})"
@@ -492,6 +495,38 @@ def test_seed_script_reaches_environment_gate_when_invoked_by_file_path() -> Non
     assert result.returncode != 0
     assert "Identity browser fixtures require APP_ENV=test." in result.stderr
     assert "ModuleNotFoundError" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"APP_ENV": "production"},
+        {"VERCEL": "1"},
+        {"SUPABASE_URL": "https://project.supabase.co"},
+        {"INBUCKET_URL": "https://mail.example.com"},
+    ],
+)
+def test_email_confirmation_cleanup_refuses_nonlocal_destinations_before_connections(
+    override: dict[str, str],
+) -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(EMAIL_CONFIRMATION_FIXTURE_PATH),
+            "cleanup",
+            "email-confirmation.student@example.test",
+        ],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(
+            **{"INBUCKET_URL": "http://127.0.0.1:54324", **override}
+        ),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Identity email-confirmation fixture requires" in result.stderr
+    assert "mail.example.com" not in result.stderr
 
 
 @pytest.mark.parametrize(

@@ -19,8 +19,12 @@ function localSupabaseEnvironment(): Record<string, string> {
       .map((match) => [match[1], match[2]]),
   );
   const apiUrl = values.API_URL;
+  const inbucketUrl = values.INBUCKET_URL;
   if (!apiUrl || !["127.0.0.1", "localhost"].includes(new URL(apiUrl).hostname)) {
     throw new Error("Identity browser fixtures require the local Supabase stack.");
+  }
+  if (!inbucketUrl || !["127.0.0.1", "localhost"].includes(new URL(inbucketUrl).hostname)) {
+    throw new Error("Identity browser fixtures require the local Supabase mail viewer.");
   }
   if (!values.PUBLISHABLE_KEY || !values.SECRET_KEY || !values.DB_URL) {
     throw new Error("Local Supabase status did not return the required test credentials.");
@@ -33,6 +37,7 @@ function localSupabaseEnvironment(): Record<string, string> {
     SUPABASE_URL: apiUrl,
     SUPABASE_PUBLISHABLE_KEY: values.PUBLISHABLE_KEY,
     SUPABASE_SERVICE_ROLE_KEY: values.SECRET_KEY,
+    INBUCKET_URL: inbucketUrl,
     DATABASE_URL: values.DB_URL,
     TEST_DATABASE_URL: values.DB_URL,
     INITIAL_ADMIN_EMAIL: "admin.identity@example.test",

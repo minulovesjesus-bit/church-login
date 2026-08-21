@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 import { authenticateAs, currentSession } from "./fixtures/identity";
+import {
+  cleanupEmailConfirmationFixture,
+  confirmationFixture,
+  waitForEmailConfirmationUrl,
+} from "./helpers/email-confirmation";
 
 test("root routes users to separate student and teacher entry points", async ({ page }) => {
   await page.goto("/");
@@ -10,6 +15,55 @@ test("root routes users to separate student and teacher entry points", async ({ 
   await page.goto("/");
   await page.getByRole("link", { name: "교사로 로그인" }).click();
   await expect(page).toHaveURL(/\/teacher\/login$/);
+});
+
+test("student confirms a real local signup email before password login", async ({ page }) => {
+  cleanupEmailConfirmationFixture();
+  try {
+    await page.goto("/auth/signup");
+    await page.getByLabel("이메일").fill(confirmationFixture.email);
+    await page.getByLabel("비밀번호").fill(confirmationFixture.password);
+    await page.getByRole("button", { name: "회원가입" }).click();
+    await expect(page.getByRole("status")).toHaveText("인증 이메일을 확인한 뒤 계속해 주세요.");
+
+    await page.goto("/auth/login");
+    await page.getByLabel("이메일").fill(confirmationFixture.email);
+    await page.getByLabel("비밀번호").fill(confirmationFixture.password);
+    await page.getByRole("button", { name: "로그인", exact: true }).click();
+    await expect(
+      page.getByRole("alert").filter({ hasText: /Email not confirmed/i }),
+    ).toBeVisible();
+    await expect(page).toHaveURL(/\/auth\/login$/);
+
+    const confirmationUrl = await waitForEmailConfirmationUrl(page.request);
+    const confirmationResponse = await page.request.get(confirmationUrl.toString(), {
+      maxRedirects: 0,
+    });
+    expect([302, 303]).toContain(confirmationResponse.status());
+
+    await page.goto("/auth/login");
+    await page.getByLabel("이메일").fill(confirmationFixture.email);
+    await page.getByLabel("비밀번호").fill(confirmationFixture.password);
+    const confirmedLogin = page.waitForResponse((response) => (
+      response.url().includes("/auth/v1/token?grant_type=password")
+      && response.request().method() === "POST"
+    ));
+    await page.getByRole("button", { name: "로그인", exact: true }).click();
+    const confirmedResponse = await confirmedLogin;
+    expect(confirmedResponse.status()).toBe(200);
+    const confirmedBody = await confirmedResponse.json() as {
+      access_token?: string;
+      user?: { email?: string; email_confirmed_at?: string };
+    };
+    expect(confirmedBody.access_token).toBeTruthy();
+    expect(confirmedBody.user?.email).toBe(confirmationFixture.email);
+    expect(confirmedBody.user?.email_confirmed_at).toBeTruthy();
+    await expect.poll(async () => (
+      (await currentSession(page.context()))?.user.email
+    )).toBe(confirmationFixture.email);
+  } finally {
+    cleanupEmailConfirmationFixture();
+  }
 });
 
 test("protected student request refreshes cookies before onboarding redirect", async ({ page }) => {

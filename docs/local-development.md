@@ -29,7 +29,19 @@ npm run supabase:reset
 
 `supabase db reset` recreates the local database and applies every migration. It is destructive to local Supabase data. Do not point these commands or `DATABASE_URL` at a hosted project.
 
-Copy `.env.example` to the ignored `.env.local`. From `supabase status -o env`, use `API_URL` for both Supabase URL variables, `PUBLISHABLE_KEY` for both publishable-key variables, and `DB_URL` for `DATABASE_URL`.
+Copy `.env.example` to the ignored `.env.local`. The example contains parse-safe loopback defaults, so importing FastAPI does not fail on blank integers, booleans, lists, secrets, or timezone values. Map the three relevant outputs from `npx supabase status -o env` into these five variables:
+
+| `.env.local` variable | `supabase status -o env` value |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | `API_URL` |
+| `SUPABASE_URL` | `API_URL` |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | `PUBLISHABLE_KEY` |
+| `SUPABASE_PUBLISHABLE_KEY` | `PUBLISHABLE_KEY` |
+| `DATABASE_URL` | `DB_URL` |
+
+Keep `SUPABASE_JWT_AUDIENCE=authenticated`. Set `SUPABASE_JWKS_URL` to `${API_URL}/auth/v1/.well-known/jwks.json`, `DATABASE_CONNECT_TIMEOUT_SECONDS=2`, `DATABASE_STATEMENT_TIMEOUT_MS=5000`, `FASTAPI_ORIGIN=http://127.0.0.1:8000`, `ALLOWED_FRONTEND_ORIGINS=http://127.0.0.1:3000,http://localhost:3000`, and `APP_TIMEZONE=Asia/Seoul`. The checked-in loopback URL and database defaults match the standard local ports, but the CLI output is authoritative if they differ.
+
+The Google, initial-admin, teacher-intent, and kiosk variables are commented examples rather than blank typed settings. Uncomment them only after supplying real local values. FastAPI can start without the optional kiosk values, but kiosk login/QR issuance remains unavailable until `KIOSK_PASSWORD_HASH`, `KIOSK_COOKIE_SECRET`, and `QR_SIGNING_SECRET` are configured. Teacher OAuth startup similarly requires `TEACHER_OAUTH_INTENT_SECRET`.
 
 The Supabase publishable key is public browser configuration; it is expected in `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The database URL, Supabase service-role or secret keys, kiosk password hash, QR signing secret, kiosk cookie secret, and teacher OAuth intent secret are server-only. Never name any of those secrets with `NEXT_PUBLIC_*`, commit them, print them in logs, or expose them to browser code.
 
@@ -67,7 +79,9 @@ Open `http://127.0.0.1:3000`. The root offers only student and teacher login. Th
 
 ### Student email confirmation
 
-Email confirmation is enabled locally. Register a student, open Inbucket at `http://127.0.0.1:54324`, open the confirmation email, and follow the callback link. If Auth configuration changed while Supabase was running, stop and restart the local stack before retrying.
+Email confirmation is enabled locally. Register a student, open the local mail viewer reported as `INBUCKET_URL` by `npx supabase status -o env` (current CLI versions serve Mailpit at `http://127.0.0.1:54324`), open the confirmation email, and follow the callback link. If Auth configuration changed while Supabase was running, stop and restart the local stack before retrying.
+
+The identity Playwright spec reproduces this with the real local path: it signs up an unverified user through `/auth/signup`, proves password login is rejected, reads only that recipient's message from the loopback mail API, follows its loopback Supabase verification link, and proves password login then returns a confirmed session. A local-only fixture removes the exact owned user/application rows and exact recipient message before and after the test. It refuses non-test, Vercel, hosted Supabase/database, and hosted mail destinations.
 
 ### Google teacher login
 
@@ -99,6 +113,20 @@ Set `INITIAL_ADMIN_EMAIL` to the exact lower-case email of a verified Google use
 5. Revoke that exact session under the administrator kiosk page and confirm the kiosk returns to its password screen.
 
 The automated E2E journey injects decoded QR text through a fail-closed loopback-only bridge. That verifies scanner integration, QR expiry, cooldown, attendance, and revocation, but it is not physical camera/webcam evidence. Physical camera proof requires accessible hardware and browser permission.
+
+### Node 22 scanner deployment gate
+
+The application targets Node 22, but the current lockfile resolves `@zxing/browser@0.2.1` to `@zxing/library@0.23.0`, whose package metadata declares Node `>=24.0.0`. A normal Node 22 install may continue with an engine warning, and passing browser tests/builds alone do not resolve that declared incompatibility.
+
+Before deployment, use a clean checkout in the exact deployment runtime and require all three commands to pass:
+
+```bash
+npm_config_engine_strict=true npm ci
+npm test -- src/features/attendance/qr-scanner.test.tsx
+npm run build
+```
+
+Node 22 currently fails the strict clean-install gate on the transitive ZXing engine declaration. Do not claim full scanner/runtime compatibility or deploy until an explicitly reviewed dependency/runtime change makes the strict install pass; do not use a broad upgrade merely to suppress the warning.
 
 ## Automated verification
 
