@@ -361,10 +361,17 @@ class AttendanceRepository:
                 )
               group by scan.student_id, profile.name
             )
-            select student_id, name, attendance_days, count(*) over ()
-            from student_days
-            order by attendance_days desc, name, student_id
-            limit %(limit)s offset %(offset)s
+            select page.student_id, page.name, page.attendance_days, totals.total
+            from (select count(*) as total from student_days) totals
+            left join lateral (
+              select student_id, name, attendance_days
+              from student_days
+              order by attendance_days desc, name, student_id
+              limit %(limit)s offset %(offset)s
+            ) page on true
+            order by page.attendance_days desc nulls last,
+                     page.name nulls last,
+                     page.student_id nulls last
             """,
             parameters,
         )
@@ -376,6 +383,7 @@ class AttendanceRepository:
                 attendance_days=int(days),
             )
             for student_id, name, days, _total in days_rows
+            if student_id is not None
         ]
         return TeacherStatisticsView(
             unique_students_today=int(row[0] or 0),
@@ -385,7 +393,7 @@ class AttendanceRepository:
             average_stay_seconds=float(row[4]) if row[4] is not None else None,
             time_of_day_entries=time_of_day_entries,
             student_attendance_days=student_days,
-            student_attendance_days_total=int(days_rows[0][3]) if days_rows else 0,
+            student_attendance_days_total=int(days_rows[0][3]),
             student_attendance_days_page=filters.page,
             student_attendance_days_page_size=filters.page_size,
             date_from=filters.date_from,

@@ -94,7 +94,7 @@ class FakeHistoryService:
             average_stay_seconds=None,
             time_of_day_entries=[],
             student_attendance_days=[],
-            student_attendance_days_total=0,
+            student_attendance_days_total=1,
             student_attendance_days_page=filters.page,
             student_attendance_days_page_size=filters.page_size,
             date_from=filters.date_from,
@@ -202,6 +202,8 @@ async def test_teacher_endpoints_require_teacher_and_validate_filters(
     assert service.teacher_summary_calls[0][1].search == "%"
     assert service.teacher_summary_calls[0][1].page == 2
     assert statistics.json()["student_attendance_days_page_size"] == 5
+    assert statistics.json()["student_attendance_days"] == []
+    assert statistics.json()["student_attendance_days_total"] == 1
     assert invalid_range.status_code == 422
 
 

@@ -277,6 +277,15 @@ async def test_teacher_aggregate_excludes_flagged_student_but_detail_keeps_them(
                 rate_limit_secret="statistics-test-secret",
             )
             summary = await service.teacher_summary(teacher, date_filters)
+            beyond_last_page = await service.teacher_summary(
+                teacher,
+                TeacherStatisticsFilters(
+                    date_from=date(2026, 8, 20),
+                    date_to=date(2026, 8, 21),
+                    page=2,
+                    page_size=1,
+                ),
+            )
             excluded_detail = await service.teacher_history(
                 teacher,
                 TeacherAttendanceFilters(
@@ -314,6 +323,9 @@ async def test_teacher_aggregate_excludes_flagged_student_but_detail_keeps_them(
         assert summary.student_attendance_days[0].attendance_days == 1
         assert summary.student_attendance_days_total == 1
         assert summary.student_attendance_days_page == 1
+        assert beyond_last_page.student_attendance_days == []
+        assert beyond_last_page.student_attendance_days_total == 1
+        assert beyond_last_page.student_attendance_days_page == 2
         assert {entry.hour: entry.entries for entry in summary.time_of_day_entries} == {9: 1}
 
         # Percent is treated literally, not as an ILIKE wildcard.
