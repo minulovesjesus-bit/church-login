@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from backend.admin.router import router as admin_router
 from backend.attendance.router import router as attendance_router
 from backend.core.config import settings
 from backend.core.errors import (
@@ -19,7 +20,6 @@ from backend.core.errors import (
 from backend.dashboard.router import router as dashboard_router
 from backend.events.router import router as events_router
 from backend.identity.router import router as identity_router
-from backend.kiosk.router import admin_router as kiosk_admin_router
 from backend.kiosk.router import router as kiosk_router
 from backend.students.router import router as students_router
 
@@ -37,7 +37,7 @@ app.add_middleware(
 )
 app.include_router(identity_router)
 app.include_router(kiosk_router)
-app.include_router(kiosk_admin_router)
+app.include_router(admin_router)
 app.include_router(attendance_router)
 app.include_router(events_router)
 app.include_router(students_router)

@@ -105,18 +105,18 @@ class KioskRepository:
         )
         return await cursor.fetchone() is not None
 
-    async def active_sessions(
-        self, now: datetime, *, limit: int = 100
+    async def admin_sessions(
+        self, *, limit: int = 100
     ) -> list[ManagedKioskSessionRecord]:
+        bounded_limit = min(max(limit, 1), 100)
         cursor = await self._connection.execute(
             """
             select id, created_at, last_seen_at, refresh_expires_at, revoked_at
             from app.kiosk_sessions
-            where revoked_at is null and refresh_expires_at > %s
             order by last_seen_at desc, id desc
             limit %s
             """,
-            (now, limit),
+            (bounded_limit,),
         )
         return [ManagedKioskSessionRecord(*row) for row in await cursor.fetchall()]
 
@@ -127,13 +127,27 @@ class KioskRepository:
         actor_id: UUID,
         now: datetime,
     ) -> bool:
+        locked = await self._connection.execute(
+            """
+            select revoked_at
+            from app.kiosk_sessions
+            where id = %s
+            for update
+            """,
+            (session_id,),
+        )
+        existing = await locked.fetchone()
+        if existing is None:
+            return False
+        if existing[0] is not None:
+            return True
+
         cursor = await self._connection.execute(
             """
             with revoked as (
               update app.kiosk_sessions
               set revoked_at = %(now)s,
-                  revoked_by = %(actor_id)s,
-                  last_seen_at = %(now)s
+                  revoked_by = %(actor_id)s
               where id = %(session_id)s and revoked_at is null
               returning id
             ), audit as (
@@ -154,7 +168,9 @@ class KioskRepository:
             },
         )
         row = await cursor.fetchone()
-        return bool(row and row[0])
+        if not row or not row[0]:
+            raise RuntimeError("Locked kiosk session was not revoked")
+        return True
 
     async def rate_limit_is_blocked(
         self, key_hash: str, action: str, now: datetime

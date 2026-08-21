@@ -148,7 +148,7 @@ class KioskSessionService:
             raise KioskSessionRevoked
 
     async def admin_sessions(self) -> list[ManagedKioskSessionRecord]:
-        return await self.repository.active_sessions(self.clock.now(), limit=100)
+        return await self.repository.admin_sessions(limit=100)
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         if not await self.repository.revoke_session_as_admin(
@@ -158,7 +158,7 @@ class KioskSessionService:
         ):
             raise ApiError(
                 "KIOSK_SESSION_NOT_FOUND",
-                "활성 기기 세션을 찾을 수 없습니다.",
+                "기기 세션을 찾을 수 없습니다.",
                 404,
             )
 

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from backend.attendance.repository import AttendanceRepository
 from backend.attendance.schemas import TeacherStatisticsFilters
 from backend.attendance.service import AttendanceService
-from backend.core.auth import get_current_user, require_google_user
+from backend.core.auth import get_current_user
 from backend.core.clock import FrozenClock
 from backend.core.config import settings
 from backend.core.db import application_transaction

@@ -151,6 +151,18 @@ async def test_login_sets_strict_httponly_cookies_without_exposing_tokens(
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "origin",
+    [
+        None,
+        "null",
+        "https://attacker.example.test",
+        f"{settings.allowed_frontend_origins[0]}.attacker.test",
+        f"https://prefix.{settings.allowed_frontend_origins[0].split('://', 1)[1]}",
+        settings.allowed_frontend_origins[0].replace("http://", "https://"),
+        f"{settings.allowed_frontend_origins[0]}:4444",
+    ],
+)
 async def test_cookie_mutations_reject_untrusted_or_missing_origin(
     client: httpx.AsyncClient,
     kiosk_api: FakeKioskService,
@@ -158,19 +170,26 @@ async def test_cookie_mutations_reject_untrusted_or_missing_origin(
     path: str,
     cookies: dict[str, str],
     json: dict[str, str] | None,
+    origin: str | None,
 ) -> None:
+    headers = {
+        "Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items()),
+    }
+    if origin is not None:
+        headers["Origin"] = origin
     response = await client.request(
         method,
         path,
         json=json,
-        headers={
-            "Origin": "https://attacker.example.test",
-            "Cookie": "; ".join(f"{key}={value}" for key, value in cookies.items()),
-        },
+        headers=headers,
     )
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "ORIGIN_NOT_ALLOWED"
+    assert response.headers.get_list("set-cookie") == []
+    assert kiosk_api.login_calls == []
+    assert kiosk_api.refresh_calls == []
+    assert kiosk_api.revoke_calls == []
 
 
 async def test_refresh_rotates_both_cookies(

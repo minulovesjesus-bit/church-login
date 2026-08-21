@@ -843,7 +843,7 @@ async def test_live_demoted_initial_admin_is_not_bootstrapped_again_on_admin_api
 
         monkeypatch.setattr(settings, "database_url", database_url)
         monkeypatch.setattr(settings, "initial_admin_email", initial_admin.email)
-        app.dependency_overrides[require_google_user] = current_google_user
+        app.dependency_overrides[get_current_user] = current_google_user
         try:
             response = await client.get("/api/admin/staff")
         finally:

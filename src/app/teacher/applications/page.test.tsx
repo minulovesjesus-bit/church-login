@@ -1,10 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
 
-const ApiClientError = vi.hoisted(() => class extends Error {});
-
+const navigation = vi.hoisted(() => ({ replace: vi.fn() }));
+const ApiClientError = vi.hoisted(() => class extends Error {
+  constructor(public code: string, message: string) { super(message); }
+});
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 vi.mock("@/lib/api/client", () => ({ api: mockApi, ApiClientError }));
 
 import TeacherApplicationsPage from "./page";
@@ -20,44 +23,97 @@ const application = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  navigation.replace.mockReset();
 });
 
-it("shows loading until the pending application request settles", async () => {
-  let resolveApplications: ((applications: typeof application[]) => void) | undefined;
-  mockApi.get.mockReturnValue(new Promise((resolve) => {
-    resolveApplications = resolve;
-  }));
-
+it("shows loading, empty, error, and retry states", async () => {
+  mockApi.get
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "목록 실패"))
+    .mockResolvedValueOnce([]);
   render(<TeacherApplicationsPage />);
-
   expect(screen.getByRole("status")).toHaveTextContent("신청 목록을 불러오고 있습니다.");
-  expect(screen.queryByText("대기 중인 신청이 없습니다.")).not.toBeInTheDocument();
-
-  resolveApplications?.([]);
-  expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeInTheDocument();
+  expect(await screen.findByRole("alert")).toHaveTextContent("목록 실패");
+  fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+  expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
 });
 
-it("renders an accessible error when approval fails", async () => {
+it("confirms approval, locks duplicate actions synchronously, and removes only on success", async () => {
   mockApi.get.mockResolvedValue([application]);
-  mockApi.post.mockRejectedValue(new ApiClientError("승인 실패"));
+  let finish: (() => void) | undefined;
+  mockApi.post.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<TeacherApplicationsPage />);
 
+  const approve = await screen.findByRole("button", { name: "승인" });
+  fireEvent.click(approve);
+  fireEvent.click(approve);
+  expect(window.confirm).toHaveBeenCalledWith("김교사 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.");
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+  expect(screen.getAllByRole("button", { name: "처리 중…" })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: "처리 중…" })[0]).toBeDisabled();
+
+  finish?.();
+  expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
+});
+
+it("validates a trimmed rejection reason at 1..500 characters without putting it in a URL", async () => {
+  mockApi.get.mockResolvedValue([application]);
+  mockApi.post.mockResolvedValue({});
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.spyOn(window, "prompt")
+    .mockReturnValueOnce("   ")
+    .mockReturnValueOnce("x".repeat(501))
+    .mockReturnValueOnce("  정보 확인 필요  ");
+  render(<TeacherApplicationsPage />);
+
+  const reject = await screen.findByRole("button", { name: "거절" });
+  fireEvent.click(reject);
+  expect(await screen.findByRole("alert")).toHaveTextContent("거절 사유를 입력해 주세요.");
+  fireEvent.click(reject);
+  expect(await screen.findByRole("alert")).toHaveTextContent("거절 사유는 500자 이하여야 합니다.");
+  fireEvent.click(reject);
+  await waitFor(() => expect(mockApi.post).toHaveBeenCalledTimes(1));
+  expect(mockApi.post).toHaveBeenCalledWith(
+    `/api/admin/teacher-applications/${application.id}/reject`,
+    { rejection_reason: "정보 확인 필요" },
+  );
+  expect(mockApi.post.mock.calls[0][0]).not.toContain("정보 확인 필요");
+});
+
+it("refreshes an already-reviewed conflict instead of presenting duplicate success", async () => {
+  mockApi.get.mockResolvedValueOnce([application]).mockResolvedValueOnce([]);
+  mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<TeacherApplicationsPage />);
   fireEvent.click(await screen.findByRole("button", { name: "승인" }));
-
-  expect(await screen.findByRole("alert")).toHaveTextContent("승인 실패");
-  expect(screen.getByText("김교사")).toBeInTheDocument();
+  await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
+  expect(screen.queryByText(/승인했습니다/)).not.toBeInTheDocument();
 });
 
-it("renders an accessible error when rejection fails", async () => {
-  mockApi.get.mockResolvedValue([application]);
-  mockApi.post.mockRejectedValue(new ApiClientError("거절 실패"));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
-  vi.spyOn(window, "prompt").mockReturnValue("정보 확인 필요");
+it("redirects terminal auth, hides protected rows, and ignores unmounted completions", async () => {
+  mockApi.get.mockRejectedValueOnce(new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
+  const first = render(<TeacherApplicationsPage />);
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher/login"));
+  expect(screen.queryByText("김교사")).not.toBeInTheDocument();
+  first.unmount();
+
+  let resolveList: ((value: typeof application[]) => void) | undefined;
+  mockApi.get.mockReturnValue(new Promise((resolve) => { resolveList = resolve; }));
+  const second = render(<TeacherApplicationsPage />);
+  second.unmount();
+  resolveList?.([application]);
+  await act(async () => {});
+  expect(screen.queryByText("김교사")).not.toBeInTheDocument();
+
+  mockApi.get.mockRejectedValue(new ApiClientError("FORBIDDEN", "권한 없음"));
   render(<TeacherApplicationsPage />);
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher"));
+});
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
-
-  expect(await screen.findByRole("alert")).toHaveTextContent("거절 실패");
-  expect(screen.getByText("김교사")).toBeInTheDocument();
+it("does not render internal user UUIDs", async () => {
+  mockApi.get.mockResolvedValue([application]);
+  render(<TeacherApplicationsPage />);
+  expect(await screen.findByText("김교사")).toBeVisible();
+  expect(document.body).not.toHaveTextContent(application.user_id);
 });

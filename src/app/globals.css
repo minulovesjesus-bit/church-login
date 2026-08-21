@@ -1988,6 +1988,32 @@ a {
   margin: 0;
 }
 
+.admin-page { width: min(100% - 2rem, 70rem); margin-inline: auto; padding-block: clamp(1.25rem, 4vw, 3rem); }
+.admin-page__header { margin-bottom: 1.25rem; }
+.admin-page__header h1 { margin: 0; font-size: clamp(1.75rem, 4vw, 2.5rem); }
+.admin-state { display: grid; justify-items: start; gap: 0.75rem; border: 1px solid #d9e4dc; border-radius: 1rem; padding: 1rem; background: #fff; }
+.admin-card-list { display: grid; gap: 0.8rem; padding: 0; list-style: none; }
+.admin-card { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 1rem; align-items: center; border: 1px solid #d9e4dc; border-radius: 1rem; padding: 1rem; background: #fff; box-shadow: 0 0.7rem 2rem rgb(42 71 54 / 6%); }
+.admin-card p, .admin-card dl, .admin-card dd { margin: 0; }
+.admin-status { display: inline-flex; min-height: 2rem; align-items: center; border-radius: 999px; padding: 0.35rem 0.7rem; font-size: 0.82rem; font-weight: 800; }
+.admin-status--admin, .admin-status--active { color: #17603b; background: #e8f6ed; }
+.admin-status--teacher, .admin-status--expired { color: #72520d; background: #fff4cf; }
+.admin-status--revoked { color: #6f3b3b; background: #f7e9e9; }
+.admin-card--kiosk { grid-template-columns: minmax(0, 1fr) auto; }
+.admin-card--kiosk > button, .admin-session-times { grid-column: 1 / -1; }
+.admin-session-id { min-width: 0; }
+.admin-session-id span { display: block; color: #65776c; font-size: 0.8rem; }
+.admin-session-id strong { overflow-wrap: anywhere; }
+.admin-session-times { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
+.admin-session-times div { border-radius: 0.7rem; padding: 0.65rem; background: #f5f7f2; }
+.admin-session-times dt { color: #65776c; font-size: 0.78rem; font-weight: 750; }
+
+@media (max-width: 42rem) {
+  .admin-card { grid-template-columns: 1fr; align-items: stretch; }
+  .admin-card .admin-status { justify-self: start; }
+  .admin-session-times { grid-template-columns: 1fr 1fr; }
+}
+
 @media (max-width: 64rem) {
   .teacher-dashboard-shell .attendance-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

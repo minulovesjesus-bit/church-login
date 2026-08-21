@@ -268,6 +268,22 @@ async def test_postgres_rate_limit_rotation_replay_and_revocation() -> None:
             clock=clock,
         )
         rate_key = f"hmac-sha256:{uuid4().hex}"
+        window_key = f"hmac-sha256:{uuid4().hex}"
+
+        with pytest.raises(KioskLoginRejected):
+            await service.login("wrong", window_key)
+        clock.advance(minutes=5)
+        with pytest.raises(KioskLoginRejected):
+            await service.login("wrong", window_key)
+        reset_bucket = await connection.execute(
+            """
+            select attempt_count from app.rate_limit_buckets
+            where bucket_key_hash = %s and action = 'kiosk.login'
+            """,
+            (window_key,),
+        )
+        assert await reset_bucket.fetchone() == (1,)
+        await service.login("church-kiosk-secret", window_key)
 
         with pytest.raises(KioskLoginRejected):
             await service.login("wrong", rate_key)
@@ -297,9 +313,16 @@ async def test_postgres_rate_limit_rotation_replay_and_revocation() -> None:
             await service.login("church-kiosk-secret", rate_key)
         assert blocked.value.message == "관리자 비밀번호를 확인해 주세요."
 
-        tokens = await service.login(
-            "church-kiosk-secret", f"hmac-sha256:{uuid4().hex}"
+        clock.advance(minutes=15)
+        tokens = await service.login("church-kiosk-secret", rate_key)
+        cleared_bucket = await connection.execute(
+            """
+            select count(*) from app.rate_limit_buckets
+            where bucket_key_hash = %s and action = 'kiosk.login'
+            """,
+            (rate_key,),
         )
+        assert await cleared_bucket.fetchone() == (0,)
         stored = await connection.execute(
             """
             select refresh_token_hash

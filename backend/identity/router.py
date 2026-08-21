@@ -1,5 +1,4 @@
 from typing import Annotated, Any
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
@@ -11,10 +10,7 @@ from backend.identity.models import AuthenticatedUser
 from backend.identity.repository import IdentityRepository
 from backend.identity.schemas import (
     CurrentIdentityView,
-    RejectTeacherApplicationInput,
-    StaffMemberView,
     StaffRole,
-    StaffRoleInput,
     StudentProfileInput,
     StudentProfileView,
     TeacherApplicationInput,
@@ -81,9 +77,11 @@ async def require_teacher(
 
 
 async def require_admin(
-    user: GoogleUser,
+    user: CurrentUser,
     repository: IdentityRepositoryDependency,
 ) -> AuthenticatedUser:
+    if user.provider != "google":
+        raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
     staff_service = StaffService(
         repository, initial_admin_email=settings.initial_admin_email
     )
@@ -91,9 +89,6 @@ async def require_admin(
     if await repository.staff_role(user.user_id) != StaffRole.ADMIN:
         raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
     return user
-
-
-AdminUser = Annotated[AuthenticatedUser, Depends(require_admin, scope="function")]
 
 
 @router.get("/me", response_model=CurrentIdentityView)
@@ -147,63 +142,3 @@ async def current_teacher_application(
     service: StaffServiceDependency,
 ) -> TeacherApplicationStateView:
     return await service.application_state(user)
-
-
-@router.get(
-    "/admin/teacher-applications", response_model=list[TeacherApplicationView]
-)
-async def pending_teacher_applications(
-    _admin: AdminUser,
-    service: StaffServiceDependency,
-) -> list[TeacherApplicationView]:
-    return await service.pending_applications()
-
-
-@router.post(
-    "/admin/teacher-applications/{application_id}/approve",
-    response_model=TeacherApplicationView,
-)
-async def approve_teacher_application(
-    application_id: UUID,
-    admin: AdminUser,
-    service: StaffServiceDependency,
-) -> TeacherApplicationView:
-    return await service.decide_application(
-        admin.user_id, application_id, decision="approved"
-    )
-
-
-@router.post(
-    "/admin/teacher-applications/{application_id}/reject",
-    response_model=TeacherApplicationView,
-)
-async def reject_teacher_application(
-    application_id: UUID,
-    rejection: RejectTeacherApplicationInput,
-    admin: AdminUser,
-    service: StaffServiceDependency,
-) -> TeacherApplicationView:
-    return await service.decide_application(
-        admin.user_id,
-        application_id,
-        decision="rejected",
-        rejection_reason=rejection.rejection_reason,
-    )
-
-
-@router.get("/admin/staff", response_model=list[StaffMemberView])
-async def staff_members(
-    _admin: AdminUser,
-    service: StaffServiceDependency,
-) -> list[StaffMemberView]:
-    return await service.staff_members()
-
-
-@router.patch("/admin/staff/{user_id}/role", response_model=StaffMemberView)
-async def change_staff_role(
-    user_id: UUID,
-    role_input: StaffRoleInput,
-    admin: AdminUser,
-    service: StaffServiceDependency,
-) -> StaffMemberView:
-    return await service.set_role(admin.user_id, user_id, role_input.role.value)
