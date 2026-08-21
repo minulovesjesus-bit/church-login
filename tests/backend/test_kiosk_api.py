@@ -1,14 +1,16 @@
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
 
 from backend.core.config import settings
 from backend.core.errors import ApiError
+from backend.kiosk.repository import KioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
-from backend.kiosk.schemas import KioskTokens
+from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
+from backend.kiosk.service import KioskSessionRevoked
 from backend.main import app
 
 
@@ -17,12 +19,16 @@ class FakeKioskService:
         self.login_calls: list[tuple[str, str]] = []
         self.refresh_calls: list[str] = []
         self.revoke_calls: list[str] = []
+        self.require_access_calls: list[str] = []
+        self.issue_qr_calls: list[UUID] = []
         self.now = datetime(2026, 8, 21, 1, tzinfo=UTC)
+        self.session_id = uuid4()
         self.reject_login = False
+        self.reject_access = False
 
     def tokens(self) -> KioskTokens:
         return KioskTokens(
-            session_id=uuid4(),
+            session_id=self.session_id,
             access_token="signed-access-token",
             access_expires_at=self.now + timedelta(minutes=15),
             refresh_token="opaque-refresh-token",
@@ -43,6 +49,28 @@ class FakeKioskService:
 
     async def revoke(self, access_token: str) -> None:
         self.revoke_calls.append(access_token)
+
+    async def require_access(self, access_token: str) -> KioskSessionRecord:
+        self.require_access_calls.append(access_token)
+        if self.reject_access:
+            raise KioskSessionRevoked
+        return KioskSessionRecord(
+            id=self.session_id,
+            created_at=self.now,
+            last_seen_at=self.now,
+            refresh_expires_at=self.now + timedelta(days=30),
+            revoked_at=None,
+        )
+
+    def issue_qr_challenge(self, session_id: UUID) -> IssuedQrChallenge:
+        self.issue_qr_calls.append(session_id)
+        challenge = QrChallenge(
+            kiosk_session_id=session_id,
+            issued_at=self.now,
+            expires_at=self.now + timedelta(seconds=20),
+            nonce=uuid4(),
+        )
+        return IssuedQrChallenge(token="signed-attendance-qr", challenge=challenge)
 
 
 @pytest.fixture
@@ -243,6 +271,55 @@ async def test_missing_cookie_uses_stable_safe_error_envelope(
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "KIOSK_SESSION_REVOKED"
     assert response.json()["error"]["request_id"]
+
+
+async def test_qr_endpoint_requires_active_cookie_and_returns_only_challenge_fields(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+) -> None:
+    response = await client.get(
+        "/api/kiosk/qr",
+        headers={"Cookie": "kiosk_access=signed-access-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "no-store"
+    assert response.json() == {
+        "token": "signed-attendance-qr",
+        "issued_at": "2026-08-21T01:00:00Z",
+        "expires_at": "2026-08-21T01:00:20Z",
+    }
+    assert kiosk_api.require_access_calls == ["signed-access-token"]
+    assert kiosk_api.issue_qr_calls == [kiosk_api.session_id]
+    assert "student" not in response.text.lower()
+    assert "nonce" not in response.text.lower()
+
+
+async def test_qr_endpoint_rejects_missing_kiosk_cookie(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+) -> None:
+    response = await client.get("/api/kiosk/qr")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "KIOSK_SESSION_REVOKED"
+    assert kiosk_api.issue_qr_calls == []
+
+
+async def test_qr_endpoint_rejects_revoked_or_refresh_expired_session(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+) -> None:
+    kiosk_api.reject_access = True
+
+    response = await client.get(
+        "/api/kiosk/qr",
+        headers={"Cookie": "kiosk_access=signed-access-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "KIOSK_SESSION_REVOKED"
+    assert kiosk_api.issue_qr_calls == []
 
 
 async def test_transaction_teardown_failure_replaces_success_response(

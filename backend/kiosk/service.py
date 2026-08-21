@@ -1,14 +1,18 @@
 from datetime import timedelta
+from uuid import UUID
 
 from backend.core.clock import Clock, SystemClock
 from backend.core.errors import ApiError
 from backend.core.rate_limit import KIOSK_LOGIN_RATE_LIMIT
 from backend.kiosk.repository import KioskRepository, KioskSessionRecord
-from backend.kiosk.schemas import KioskTokens
+from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
 from backend.kiosk.security import (
     AccessTokenInvalid,
     KioskAccessTokenCodec,
     KioskPasswordHasher,
+    QrChallengeCodec,
+    QrExpired,
+    QrInvalid,
     generate_opaque_refresh_token,
     hash_opaque_token,
 )
@@ -34,6 +38,24 @@ class KioskSessionRevoked(ApiError):
         )
 
 
+class QrChallengeInvalid(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            "QR_INVALID",
+            "유효하지 않은 출결 QR 코드입니다.",
+            400,
+        )
+
+
+class QrChallengeExpired(ApiError):
+    def __init__(self) -> None:
+        super().__init__(
+            "QR_EXPIRED",
+            "QR 코드가 만료되었습니다. 새 QR 코드를 스캔해 주세요.",
+            400,
+        )
+
+
 class KioskSessionService:
     def __init__(
         self,
@@ -41,6 +63,7 @@ class KioskSessionService:
         *,
         password_hash: str,
         cookie_secret: str,
+        qr_signing_secret: str,
         clock: Clock | None = None,
         password_hasher: KioskPasswordHasher | None = None,
     ) -> None:
@@ -50,6 +73,10 @@ class KioskSessionService:
         self._cookie_secret = cookie_secret
         self._password_hasher = password_hasher or KioskPasswordHasher()
         self._access_tokens = KioskAccessTokenCodec(cookie_secret, clock=self.clock)
+        self._qr_challenges = QrChallengeCodec(
+            qr_signing_secret,
+            clock=self.clock,
+        )
 
     async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
         policy = KIOSK_LOGIN_RATE_LIMIT
@@ -115,6 +142,28 @@ class KioskSessionService:
             raise KioskSessionRevoked from error
         if not await self.repository.revoke_session(claims.session_id, self.clock.now()):
             raise KioskSessionRevoked
+
+    def issue_qr_challenge(self, kiosk_session_id: UUID) -> IssuedQrChallenge:
+        token = self._qr_challenges.issue(kiosk_session_id)
+        return IssuedQrChallenge(
+            token=token,
+            challenge=self._qr_challenges.verify(token),
+        )
+
+    async def verify_qr_challenge(self, token: str) -> QrChallenge:
+        try:
+            challenge = self._qr_challenges.verify(token)
+        except QrExpired as error:
+            raise QrChallengeExpired from error
+        except QrInvalid as error:
+            raise QrChallengeInvalid from error
+        session = await self.repository.active_session(
+            challenge.kiosk_session_id,
+            self.clock.now(),
+        )
+        if session is None:
+            raise KioskSessionRevoked
+        return challenge
 
     def _tokens_for(
         self, session: KioskSessionRecord, refresh_token: str

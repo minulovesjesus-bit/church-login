@@ -138,6 +138,7 @@ def kiosk_service(
         InMemoryKioskRepository(),
         password_hash=kiosk_password_hash,
         cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
         clock=frozen_clock,
     )
 
@@ -182,6 +183,7 @@ async def test_blocked_and_wrong_password_both_perform_password_verification(
         wrong_repository,
         password_hash="stored-argon-hash",
         cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
         clock=frozen_clock,
         password_hasher=wrong_hasher,
     )
@@ -196,6 +198,7 @@ async def test_blocked_and_wrong_password_both_perform_password_verification(
         blocked_repository,
         password_hash="stored-argon-hash",
         cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
         clock=frozen_clock,
         password_hasher=blocked_hasher,
     )
@@ -261,6 +264,7 @@ async def test_postgres_rate_limit_rotation_replay_and_revocation() -> None:
             repository,
             password_hash=KioskPasswordHasher().hash("church-kiosk-secret"),
             cookie_secret="p" * 32,
+            qr_signing_secret="q" * 32,
             clock=clock,
         )
         rate_key = f"hmac-sha256:{uuid4().hex}"
@@ -341,6 +345,7 @@ async def test_postgres_concurrent_refresh_allows_exactly_one_rotation() -> None
             KioskRepository(initial_connection),
             password_hash=password_hash,
             cookie_secret=cookie_secret,
+            qr_signing_secret="q" * 32,
             clock=clock,
         )
         initial = await initial_service.login(
@@ -360,6 +365,7 @@ async def test_postgres_concurrent_refresh_allows_exactly_one_rotation() -> None
                 KioskRepository(connection),
                 password_hash=password_hash,
                 cookie_secret=cookie_secret,
+                qr_signing_secret="q" * 32,
                 clock=clock,
             )
             await barrier.wait()

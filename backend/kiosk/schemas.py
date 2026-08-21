@@ -20,6 +20,20 @@ class KioskTokens:
     refresh_expires_at: datetime
 
 
+@dataclass(frozen=True)
+class QrChallenge:
+    kiosk_session_id: UUID
+    issued_at: datetime
+    expires_at: datetime
+    nonce: UUID
+
+
+@dataclass(frozen=True)
+class IssuedQrChallenge:
+    token: str
+    challenge: QrChallenge
+
+
 class KioskSessionView(BaseModel):
     session_id: UUID
     access_expires_at: datetime
@@ -31,4 +45,18 @@ class KioskSessionView(BaseModel):
             session_id=tokens.session_id,
             access_expires_at=tokens.access_expires_at,
             refresh_expires_at=tokens.refresh_expires_at,
+        )
+
+
+class QrChallengeView(BaseModel):
+    token: str
+    issued_at: datetime
+    expires_at: datetime
+
+    @classmethod
+    def from_issued(cls, issued: IssuedQrChallenge) -> "QrChallengeView":
+        return cls(
+            token=issued.token,
+            issued_at=issued.challenge.issued_at,
+            expires_at=issued.challenge.expires_at,
         )

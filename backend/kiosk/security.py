@@ -1,9 +1,10 @@
 import hashlib
 import hmac
+import math
 import secrets
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from uuid import UUID, uuid4
 
 import jwt
 from argon2 import PasswordHasher
@@ -11,10 +12,14 @@ from argon2.exceptions import InvalidHashError, VerificationError
 from jwt import InvalidTokenError
 
 from backend.core.clock import Clock, SystemClock
+from backend.kiosk.schemas import QrChallenge
 
 ACCESS_TOKEN_LIFETIME = timedelta(minutes=15)
+QR_LIFETIME = timedelta(seconds=20)
 REFRESH_TOKEN_BYTES = 32
 ACCESS_TOKEN_TYPE = "kiosk-access"
+QR_TOKEN_TYPE = "attendance-qr"
+QR_REQUIRED_CLAIMS = frozenset({"typ", "sid", "iat", "exp", "jti"})
 
 
 class AccessTokenInvalid(Exception):
@@ -22,6 +27,14 @@ class AccessTokenInvalid(Exception):
 
 
 class AccessTokenExpired(AccessTokenInvalid):
+    pass
+
+
+class QrInvalid(Exception):
+    pass
+
+
+class QrExpired(QrInvalid):
     pass
 
 
@@ -123,3 +136,71 @@ class KioskAccessTokenCodec:
         if isinstance(value, bool) or not isinstance(value, int):
             raise AccessTokenInvalid
         return value
+
+
+class QrChallengeCodec:
+    def __init__(self, secret: str, *, clock: Clock | None = None) -> None:
+        self._secret = secret
+        self._clock = clock or SystemClock()
+
+    def issue(self, kiosk_session_id: UUID) -> str:
+        issued_at = self._clock.now().astimezone(UTC)
+        expires_at = issued_at + QR_LIFETIME
+        payload = {
+            "typ": QR_TOKEN_TYPE,
+            "sid": str(kiosk_session_id),
+            # JWT NumericDate permits non-integer values. Preserving the fraction
+            # prevents a sub-second issue time from losing part of the 20 seconds.
+            "iat": issued_at.timestamp(),
+            "exp": expires_at.timestamp(),
+            "jti": str(uuid4()),
+        }
+        return jwt.encode(payload, self._secret, algorithm="HS256")
+
+    def verify(self, token: str) -> QrChallenge:
+        try:
+            payload = jwt.decode(
+                token,
+                self._secret,
+                algorithms=["HS256"],
+                options={
+                    "require": sorted(QR_REQUIRED_CLAIMS),
+                    "verify_exp": False,
+                    "verify_iat": False,
+                    "verify_nbf": False,
+                },
+            )
+            if set(payload) != QR_REQUIRED_CLAIMS:
+                raise QrInvalid
+            if payload.get("typ") != QR_TOKEN_TYPE:
+                raise QrInvalid
+            issued_at = self._required_timestamp(payload, "iat")
+            expires_at = self._required_timestamp(payload, "exp")
+            kiosk_session_id = UUID(str(payload["sid"]))
+            nonce = UUID(str(payload["jti"]))
+        except QrInvalid:
+            raise
+        except (InvalidTokenError, KeyError, TypeError, ValueError, OverflowError) as error:
+            raise QrInvalid from error
+
+        now = self._clock.now().astimezone(UTC)
+        if issued_at > now or expires_at - issued_at != QR_LIFETIME:
+            raise QrInvalid
+        if now >= expires_at:
+            raise QrExpired
+        return QrChallenge(
+            kiosk_session_id=kiosk_session_id,
+            issued_at=issued_at,
+            expires_at=expires_at,
+            nonce=nonce,
+        )
+
+    @staticmethod
+    def _required_timestamp(payload: dict[str, object], claim: str) -> datetime:
+        value = payload[claim]
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise QrInvalid
+        timestamp = float(value)
+        if not math.isfinite(timestamp):
+            raise QrInvalid
+        return datetime.fromtimestamp(timestamp, tz=UTC)

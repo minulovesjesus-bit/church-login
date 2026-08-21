@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     initial_admin_email: str | None = None
     kiosk_password_hash: SecretStr | None = None
     kiosk_cookie_secret: SecretStr | None = Field(default=None, min_length=32)
+    qr_signing_secret: SecretStr | None = Field(default=None, min_length=32)
     kiosk_insecure_local_cookies: bool = False
     vercel: str | None = None
     vercel_env: str | None = None
@@ -101,6 +102,19 @@ class Settings(BaseSettings):
         )
         if timeout_budget_ms > 8000:
             raise ValueError("Database timeout budget must not exceed 8000ms")
+        return self
+
+    @model_validator(mode="after")
+    def validate_separate_kiosk_secrets(self) -> Self:
+        if (
+            self.kiosk_cookie_secret is not None
+            and self.qr_signing_secret is not None
+            and self.kiosk_cookie_secret.get_secret_value()
+            == self.qr_signing_secret.get_secret_value()
+        ):
+            raise ValueError(
+                "QR_SIGNING_SECRET must be different from KIOSK_COOKIE_SECRET"
+            )
         return self
 
     def kiosk_cookies_secure(self) -> bool:

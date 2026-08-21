@@ -154,17 +154,29 @@ def test_kiosk_secrets_are_redacted_and_validated() -> None:
         _env_file=None,
         kiosk_password_hash="$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA",
         kiosk_cookie_secret="s" * 32,
+        qr_signing_secret="q" * 32,
     )
 
     assert configured.kiosk_password_hash is not None
     assert configured.kiosk_cookie_secret is not None
+    assert configured.qr_signing_secret is not None
     assert "argon2id" not in repr(configured.kiosk_password_hash)
     assert configured.kiosk_cookie_secret.get_secret_value() == "s" * 32
+    assert configured.qr_signing_secret.get_secret_value() == "q" * 32
+    assert "q" * 32 not in repr(configured.qr_signing_secret)
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, kiosk_password_hash="plain-text-password")
     with pytest.raises(ValidationError):
         Settings(_env_file=None, kiosk_cookie_secret="too-short")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, qr_signing_secret="too-short")
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            kiosk_cookie_secret="same-secret" * 4,
+            qr_signing_secret="same-secret" * 4,
+        )
 
 
 def test_kiosk_cookies_are_secure_by_default_even_in_development() -> None:

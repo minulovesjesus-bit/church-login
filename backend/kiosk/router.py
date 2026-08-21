@@ -7,7 +7,12 @@ from backend.core.config import settings
 from backend.core.db import application_transaction
 from backend.core.errors import ApiError, safe_error_response
 from backend.kiosk.repository import KioskRepository, KioskSessionRecord
-from backend.kiosk.schemas import KioskLoginInput, KioskSessionView, KioskTokens
+from backend.kiosk.schemas import (
+    KioskLoginInput,
+    KioskSessionView,
+    KioskTokens,
+    QrChallengeView,
+)
 from backend.kiosk.security import hash_rate_limit_identity
 from backend.kiosk.service import (
     KioskLoginRejected,
@@ -35,12 +40,17 @@ KioskRepositoryDependency = Annotated[
 async def get_kiosk_service(
     repository: KioskRepositoryDependency,
 ) -> KioskSessionService:
-    if not settings.kiosk_password_hash or not settings.kiosk_cookie_secret:
+    if (
+        not settings.kiosk_password_hash
+        or not settings.kiosk_cookie_secret
+        or not settings.qr_signing_secret
+    ):
         raise RuntimeError("Kiosk security configuration is required")
     return KioskSessionService(
         repository,
         password_hash=settings.kiosk_password_hash.get_secret_value(),
         cookie_secret=settings.kiosk_cookie_secret.get_secret_value(),
+        qr_signing_secret=settings.qr_signing_secret.get_secret_value(),
     )
 
 
@@ -181,3 +191,14 @@ async def revoke_current_kiosk_session(
         raise KioskSessionRevoked
     await service.revoke(access_token)
     clear_kiosk_cookies(response, _cookie_secure())
+
+
+@router.get("/qr", response_model=QrChallengeView)
+async def get_kiosk_qr(
+    response: Response,
+    session: AuthenticatedKioskSession,
+    service: KioskServiceDependency,
+) -> QrChallengeView:
+    response.headers["Cache-Control"] = "no-store"
+    issued = service.issue_qr_challenge(session.id)
+    return QrChallengeView.from_issued(issued)
