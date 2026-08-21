@@ -28,6 +28,57 @@ settings.database_url = (
 )
 install_identity_auth_fixtures(FastAPI())
 """
+LIBPQ_DESTINATION_BYPASSES = [
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?host=db.example.com"
+        ),
+        id="query-host",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?hostaddr=203.0.113.10"
+        ),
+        id="query-hostaddr",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?service=remote-db"
+        ),
+        id="service",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?servicefile=/tmp/remote-service.conf"
+        ),
+        id="servicefile",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322,"
+            "db.example.com:5432/postgres"
+        ),
+        id="authority-multi-host",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?host=127.0.0.1%2Cdb.example.com"
+        ),
+        id="query-multi-host",
+    ),
+    pytest.param(
+        (
+            "postgresql://fixture:query-secret@127.0.0.1:54322/postgres"
+            "?hostaddr=127.0.0.1%2C203.0.113.10"
+        ),
+        id="query-multi-hostaddr",
+    ),
+]
 
 
 def fixture_environment(**overrides: str | None) -> dict[str, str]:
@@ -120,6 +171,17 @@ def test_identity_auth_fixture_refuses_remote_supabase_endpoint() -> None:
             "http://[::1]:54321",
             "postgresql://postgres:postgres@[::1]:54322/postgres",
         ),
+        (
+            "http://localhost:54321",
+            ("postgresql://postgres:postgres@localhost:54322,127.0.0.1:54322/postgres"),
+        ),
+        (
+            "http://localhost:54321",
+            (
+                "postgresql://postgres:postgres@localhost:54322/postgres"
+                "?hostaddr=127.0.0.1"
+            ),
+        ),
     ],
 )
 def test_identity_auth_fixture_accepts_only_supported_loopback_endpoints(
@@ -151,6 +213,17 @@ def test_identity_auth_fixture_rejects_remote_or_missing_runtime_database(
     assert result.returncode != 0
     assert "local PostgreSQL database" in result.stderr
     assert "remote-secret" not in result.stderr
+
+
+@pytest.mark.parametrize("database_url", LIBPQ_DESTINATION_BYPASSES)
+def test_identity_auth_fixture_rejects_libpq_destination_bypasses(
+    database_url: str,
+) -> None:
+    result = run_identity_auth_import(fixture_environment(DATABASE_URL=database_url))
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "query-secret" not in result.stderr
 
 
 def test_identity_auth_fixture_revalidates_before_attaching_override() -> None:
@@ -198,6 +271,17 @@ def test_seed_fixture_rejects_remote_or_missing_database_before_main(
     assert result.returncode != 0
     assert "local PostgreSQL database" in result.stderr
     assert "remote-secret" not in result.stderr
+
+
+@pytest.mark.parametrize("database_url", LIBPQ_DESTINATION_BYPASSES)
+def test_seed_fixture_rejects_libpq_destination_bypasses_before_main(
+    database_url: str,
+) -> None:
+    result = run_seed_validation(fixture_environment(TEST_DATABASE_URL=database_url))
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "query-secret" not in result.stderr
 
 
 def test_seed_fixture_rejects_remote_database_before_any_connection() -> None:
@@ -267,6 +351,17 @@ def test_seed_fixture_rejects_vercel_before_main(vercel_env: str) -> None:
         (
             "http://[::1]:54321",
             "postgresql://postgres:postgres@[::1]:54322/postgres",
+        ),
+        (
+            "http://localhost:54321",
+            ("postgresql://postgres:postgres@localhost:54322,127.0.0.1:54322/postgres"),
+        ),
+        (
+            "http://localhost:54321",
+            (
+                "postgresql://postgres:postgres@localhost:54322/postgres"
+                "?hostaddr=127.0.0.1"
+            ),
         ),
     ],
 )

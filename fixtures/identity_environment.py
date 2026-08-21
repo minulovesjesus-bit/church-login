@@ -3,8 +3,24 @@ import os
 from collections.abc import Iterable
 from urllib.parse import urlsplit
 
+from psycopg import ProgrammingError
+from psycopg.conninfo import conninfo_to_dict
 
-def _is_loopback_url(value: str | None, allowed_schemes: frozenset[str]) -> bool:
+
+def _is_loopback_host(value: str, *, allow_localhost: bool) -> bool:
+    normalized_value = value.strip().rstrip(".").lower()
+    if not normalized_value:
+        return False
+    if allow_localhost and normalized_value == "localhost":
+        return True
+
+    try:
+        return ipaddress.ip_address(normalized_value).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_supabase_url(value: str | None) -> bool:
     if not value:
         return False
 
@@ -14,17 +30,44 @@ def _is_loopback_url(value: str | None, allowed_schemes: frozenset[str]) -> bool
     except ValueError:
         return False
 
-    if parsed.scheme.lower() not in allowed_schemes or not hostname:
+    if parsed.scheme.lower() not in {"http", "https"} or not hostname:
         return False
 
-    normalized_hostname = hostname.rstrip(".").lower()
-    if normalized_hostname == "localhost":
-        return True
+    return _is_loopback_host(hostname, allow_localhost=True)
+
+
+def _all_destinations_are_loopback(
+    value: str,
+    *,
+    allow_localhost: bool,
+) -> bool:
+    return all(
+        _is_loopback_host(destination, allow_localhost=allow_localhost)
+        for destination in value.split(",")
+    )
+
+
+def _is_loopback_database_dsn(value: str | None) -> bool:
+    if not value:
+        return False
 
     try:
-        return ipaddress.ip_address(normalized_hostname).is_loopback
-    except ValueError:
+        parameters = conninfo_to_dict(value)
+    except ProgrammingError:
         return False
+
+    if "service" in parameters or "servicefile" in parameters:
+        return False
+
+    host = parameters.get("host")
+    hostaddr = parameters.get("hostaddr")
+    if not host and not hostaddr:
+        return False
+    if host and not _all_destinations_are_loopback(host, allow_localhost=True):
+        return False
+    return not hostaddr or _all_destinations_are_loopback(
+        hostaddr, allow_localhost=False
+    )
 
 
 def require_local_identity_environment(
@@ -36,13 +79,12 @@ def require_local_identity_environment(
         raise RuntimeError("Identity browser fixtures require APP_ENV=test.")
     if "VERCEL_ENV" in os.environ:
         raise RuntimeError("Identity browser fixtures cannot load on Vercel.")
-    if not _is_loopback_url(supabase_url, frozenset({"http", "https"})):
+    if not _is_loopback_supabase_url(supabase_url):
         raise RuntimeError(
             "Identity browser fixtures require the local Supabase stack."
         )
     if any(
-        not _is_loopback_url(database_url, frozenset({"postgres", "postgresql"}))
-        for database_url in database_urls
+        not _is_loopback_database_dsn(database_url) for database_url in database_urls
     ):
         raise RuntimeError(
             "Identity browser fixtures require a local PostgreSQL database."
