@@ -1,5 +1,7 @@
 .superpowers/
 .worktrees/
+.env*
+!.env.example
 node_modules/
 .next/
 .venv/
