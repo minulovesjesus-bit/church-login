@@ -196,6 +196,48 @@ it("stops partially opened camera tracks when decoder startup fails", async () =
   expect(stopTrack).toHaveBeenCalledTimes(1);
 });
 
+it("stops controls once when a QR is decoded before decoder startup resolves", async () => {
+  let finishStart: ((stop: () => void) => void) | undefined;
+  const controlsStop = vi.fn();
+  const trackStop = vi.fn();
+  const client = createScanClient();
+  const decoder: QrDecoder = {
+    start: vi.fn((video, onDecoded) => {
+      Object.defineProperty(video, "srcObject", {
+        configurable: true,
+        writable: true,
+        value: { getTracks: () => [{ stop: trackStop }] },
+      });
+      onDecoded("early-signed-qr");
+      return new Promise<() => void>((resolve) => {
+        finishStart = resolve;
+      });
+    }),
+  };
+  const view = render(
+    <QrScanner
+      client={client}
+      createRequestId={() => REQUEST_ID}
+      decoder={decoder}
+    />,
+  );
+
+  await waitFor(() => expect(client.scan).toHaveBeenCalledTimes(1));
+  expect(client.scan).toHaveBeenCalledWith({
+    qr_token: "early-signed-qr",
+    request_id: REQUEST_ID,
+  });
+  expect(await screen.findByRole("heading", { name: "입실 처리됐어요" })).toBeInTheDocument();
+
+  await act(async () => finishStart?.(controlsStop));
+
+  expect(controlsStop).toHaveBeenCalledTimes(1);
+  expect(trackStop).toHaveBeenCalledTimes(1);
+  view.unmount();
+  expect(controlsStop).toHaveBeenCalledTimes(1);
+  expect(client.scan).toHaveBeenCalledTimes(1);
+});
+
 it("stops decoder controls and every media track on unmount", async () => {
   const camera = createDecoder();
   const view = render(

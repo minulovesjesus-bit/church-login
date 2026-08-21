@@ -163,9 +163,12 @@ export function QrScanner({
 
     decoder.start(video, onDecoded)
       .then((stop) => {
-        if (cancelled) {
-          stop();
-          stopVideoTracks(video);
+        if (cancelled || submittingRef.current || pendingRef.current) {
+          try {
+            stop();
+          } finally {
+            stopVideoTracks(video);
+          }
           return;
         }
         localStop = stop;
