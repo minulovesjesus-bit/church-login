@@ -12,6 +12,11 @@ type ListState =
   | { status: "error"; message: string }
   | { status: "auth" };
 type RejectionDraft = { application: Application; reason: string };
+type ReconciliationState =
+  | { status: "idle" }
+  | { status: "checking"; conflictMessage: string }
+  | { status: "error"; conflictMessage: string; message: string }
+  | { status: "conflict"; conflictMessage: string };
 
 function authorizationDestination(error: unknown): string | undefined {
   if (!(error instanceof ApiClientError)) return undefined;
@@ -28,14 +33,16 @@ export default function TeacherApplicationsPage() {
   const [mutationError, setMutationError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [rejection, setRejection] = useState<RejectionDraft>();
+  const [reconciliation, setReconciliation] = useState<ReconciliationState>({ status: "idle" });
   const mountedRef = useRef(true);
   const terminalAuthRef = useRef(false);
   const sequenceRef = useRef(0);
   const mutationRef = useRef(false);
+  const reconciliationRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
-    return () => { mountedRef.current = false; sequenceRef.current += 1; mutationRef.current = false; };
+    return () => { mountedRef.current = false; sequenceRef.current += 1; mutationRef.current = false; reconciliationRef.current = false; };
   }, []);
 
   const terminalAuthorization = useCallback((error: unknown) => {
@@ -44,8 +51,10 @@ export default function TeacherApplicationsPage() {
     terminalAuthRef.current = true;
     sequenceRef.current += 1;
     mutationRef.current = false;
+    reconciliationRef.current = false;
     setPendingId(undefined);
     setMutationError(undefined);
+    setReconciliation({ status: "idle" });
     setRejection(undefined);
     setState({ status: "auth" });
     router.replace(destination);
@@ -109,13 +118,44 @@ export default function TeacherApplicationsPage() {
     if (mutationRef.current || terminalAuthRef.current || rejection) return;
     setMutationError(undefined);
     setNotice(undefined);
+    setReconciliation({ status: "idle" });
     setRejection({ application, reason: "" });
   }
 
   function cancelRejection() {
-    if (mutationRef.current) return;
+    if (mutationRef.current || reconciliationRef.current) return;
     setMutationError(undefined);
+    setReconciliation({ status: "idle" });
     setRejection(undefined);
+  }
+
+  async function reconcileRejection(application: Application, conflictMessage: string) {
+    if (reconciliationRef.current || terminalAuthRef.current) return;
+    reconciliationRef.current = true;
+    setReconciliation({ status: "checking", conflictMessage });
+    try {
+      const applications = await api.get<Application[]>("/api/admin/teacher-applications");
+      if (!mountedRef.current || terminalAuthRef.current) return;
+      setState({ status: "ready", applications });
+      if (applications.some((item) => item.id === application.id)) {
+        setReconciliation({ status: "conflict", conflictMessage });
+        return;
+      }
+      setMutationError(undefined);
+      setReconciliation({ status: "idle" });
+      setRejection(undefined);
+      setNotice("이미 처리된 신청을 목록에서 정리했습니다.");
+    } catch (error) {
+      if (!mountedRef.current || terminalAuthRef.current) return;
+      if (terminalAuthorization(error)) return;
+      setReconciliation({
+        status: "error",
+        conflictMessage,
+        message: error instanceof ApiClientError ? error.message : "신청 상태를 확인하지 못했습니다.",
+      });
+    } finally {
+      if (mountedRef.current && !terminalAuthRef.current) reconciliationRef.current = false;
+    }
   }
 
   async function reject(event: FormEvent<HTMLFormElement>) {
@@ -138,16 +178,14 @@ export default function TeacherApplicationsPage() {
       setState((current) => current.status === "ready"
         ? { status: "ready", applications: current.applications.filter((item) => item.id !== application.id) }
         : current);
+      setReconciliation({ status: "idle" });
       setRejection(undefined);
       setNotice(`${application.name} 님의 신청을 거절했습니다.`);
     } catch (error) {
       if (!mountedRef.current || terminalAuthRef.current) return;
       if (terminalAuthorization(error)) return;
       if (error instanceof ApiClientError && error.code === "APPLICATION_ALREADY_REVIEWED") {
-        const applications = await loadApplications();
-        if (applications?.some((item) => item.id === application.id)) {
-          setMutationError(error.message);
-        }
+        await reconcileRejection(application, error.message);
         return;
       }
       setMutationError(error instanceof ApiClientError ? error.message : "신청을 처리하지 못했습니다.");
@@ -158,6 +196,13 @@ export default function TeacherApplicationsPage() {
 
   if (state.status === "auth") return null;
   const actionsLocked = Boolean(pendingId || rejection);
+  const reconciliationPending = reconciliation.status === "checking";
+  const reconciliationMessage = reconciliation.status === "error"
+    ? reconciliation.message
+    : reconciliation.status === "conflict"
+      ? reconciliation.conflictMessage
+      : undefined;
+  const reconciliationConflictMessage = reconciliation.status === "idle" ? undefined : reconciliation.conflictMessage;
   return (
     <main className="admin-page">
       <header className="admin-page__header"><p className="eyebrow">Administrator</p><h1>교사 가입 신청 관리</h1><p className="supporting-copy">신청자의 정보를 확인한 뒤 교사 권한 승인 또는 거절을 결정합니다.</p></header>
@@ -195,8 +240,13 @@ export default function TeacherApplicationsPage() {
                 value={rejection.reason}
                 maxLength={500}
                 aria-invalid={Boolean(mutationError)}
-                aria-describedby={mutationError ? "rejection-error rejection-count" : "rejection-count"}
-                disabled={pendingId === rejection.application.id}
+                aria-describedby={[
+                  "rejection-count",
+                  mutationError ? "rejection-error" : undefined,
+                  reconciliationPending ? "reconciliation-status" : undefined,
+                  reconciliationMessage ? "reconciliation-message" : undefined,
+                ].filter(Boolean).join(" ")}
+                disabled={pendingId === rejection.application.id || reconciliationPending}
                 onChange={(event) => {
                   setMutationError(undefined);
                   setRejection((current) => current ? { ...current, reason: event.target.value } : current);
@@ -204,11 +254,26 @@ export default function TeacherApplicationsPage() {
               />
               <p id="rejection-count" className="admin-dialog__count">{rejection.reason.length}/500자</p>
               {mutationError ? <p id="rejection-error" className="inline-alert" role="alert">{mutationError}</p> : null}
+              {reconciliationPending ? <p id="reconciliation-status" role="status">신청 상태를 확인하고 있습니다.</p> : null}
+              {reconciliationMessage ? <p id="reconciliation-message" className="inline-alert" role="alert">{reconciliationMessage}</p> : null}
               <div className="button-row">
-                <button className="danger-button" type="submit" disabled={pendingId === rejection.application.id}>
-                  {pendingId === rejection.application.id ? "거절 처리 중…" : `${rejection.application.name} 님 신청 거절 확정`}
-                </button>
-                <button className="secondary-button" type="button" disabled={pendingId === rejection.application.id} onClick={cancelRejection}>거절 취소</button>
+                {reconciliation.status === "idle" ? (
+                  <button className="danger-button" type="submit" disabled={pendingId === rejection.application.id}>
+                    {pendingId === rejection.application.id ? "거절 처리 중…" : `${rejection.application.name} 님 신청 거절 확정`}
+                  </button>
+                ) : (
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    disabled={reconciliationPending}
+                    onClick={() => {
+                      if (reconciliationConflictMessage) void reconcileRejection(rejection.application, reconciliationConflictMessage);
+                    }}
+                  >
+                    {reconciliationPending ? "신청 상태 확인 중…" : "신청 상태 다시 확인"}
+                  </button>
+                )}
+                <button className="secondary-button" type="button" disabled={pendingId === rejection.application.id || reconciliationPending} onClick={cancelRejection}>거절 취소</button>
               </div>
             </form>
           </section>

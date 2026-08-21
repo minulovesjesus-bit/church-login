@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
@@ -160,19 +160,99 @@ it("clears a rejection draft when conflict reconciliation proves the item was re
   expect(screen.queryByText(/거절했습니다/)).not.toBeInTheDocument();
 });
 
-it("keeps a rejection draft when conflict reconciliation still contains the item", async () => {
-  mockApi.get.mockResolvedValueOnce([application]).mockResolvedValueOnce([application]);
+it("keeps the successful list and retries only reconciliation after its GET fails", async () => {
+  let resolveRetry: ((applications: typeof application[]) => void) | undefined;
+  mockApi.get
+    .mockResolvedValueOnce([application])
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "신청 상태 확인 실패"))
+    .mockReturnValueOnce(new Promise((resolve) => { resolveRetry = resolve; }));
+  mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
+  render(<TeacherApplicationsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  그대로 둘 사유  " } });
+  fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
+
+  const dialog = await screen.findByRole("dialog", { name: "김교사 님 신청 거절" });
+  await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
+  expect(screen.getByText("teacher@example.com")).toBeVisible();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent("신청 상태 확인 실패");
+  expect(within(dialog).getByRole("textbox", { name: "거절 사유" })).toHaveValue("  그대로 둘 사유  ");
+
+  const retry = within(dialog).getByRole("button", { name: "신청 상태 다시 확인" });
+  fireEvent.click(retry);
+  fireEvent.click(retry);
+  fireEvent.click(screen.getByRole("button", { name: "승인" }));
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+  expect(mockApi.get).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole("button", { name: "승인" })).toBeDisabled();
+
+  resolveRetry?.([]);
+  expect(await screen.findByText("이미 처리된 신청을 목록에서 정리했습니다.")).toHaveAttribute("role", "status");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+});
+
+it("retains the draft and retry control after repeated reconciliation GET failures", async () => {
+  mockApi.get
+    .mockResolvedValueOnce([application])
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "첫 상태 확인 실패"))
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "다시 상태 확인 실패"));
+  mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
+  render(<TeacherApplicationsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  실패 후 유지  " } });
+  fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
+  const retry = await screen.findByRole("button", { name: "신청 상태 다시 확인" });
+  fireEvent.click(retry);
+
+  const dialog = screen.getByRole("dialog", { name: "김교사 님 신청 거절" });
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("다시 상태 확인 실패");
+  expect(within(dialog).getByRole("textbox", { name: "거절 사유" })).toHaveValue("  실패 후 유지  ");
+  expect(within(dialog).getByRole("button", { name: "신청 상태 다시 확인" })).toBeEnabled();
+  expect(within(dialog).getByRole("button", { name: "거절 취소" })).toBeEnabled();
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the draft and stable conflict feedback when retry still finds the item", async () => {
+  mockApi.get
+    .mockResolvedValueOnce([application])
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "신청 상태 확인 실패"))
+    .mockResolvedValueOnce([application]);
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  재확인할 사유  " } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "신청 상태 다시 확인" }));
 
-  await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
-  expect(screen.getByRole("dialog", { name: "김교사 님 신청 거절" })).toBeVisible();
-  expect(screen.getByRole("textbox", { name: "거절 사유" })).toHaveValue("  재확인할 사유  ");
-  expect(screen.getByRole("alert")).toHaveTextContent("이미 처리된 신청입니다.");
+  const dialog = screen.getByRole("dialog", { name: "김교사 님 신청 거절" });
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("이미 처리된 신청입니다.");
+  expect(within(dialog).getByRole("textbox", { name: "거절 사유" })).toHaveValue("  재확인할 사유  ");
+  expect(within(dialog).getByRole("button", { name: "신청 상태 다시 확인" })).toBeEnabled();
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+});
+
+it("closes once on terminal auth during reconciliation retry", async () => {
+  mockApi.get
+    .mockResolvedValueOnce([application])
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "신청 상태 확인 실패"))
+    .mockRejectedValueOnce(new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
+  mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
+  render(<TeacherApplicationsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "보이면 안 되는 사유" } });
+  fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "신청 상태 다시 확인" }));
+
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledTimes(1));
+  expect(navigation.replace).toHaveBeenCalledWith("/teacher/login");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByText("김교사")).not.toBeInTheDocument();
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
 });
 
 it("clears the rejection form and protected queue on terminal mutation auth", async () => {

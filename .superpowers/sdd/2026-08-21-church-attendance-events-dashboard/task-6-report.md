@@ -270,3 +270,84 @@ exit 0
 ```
 
 The only warning remains the pre-existing Starlette/httpx `TestClient` deprecation. No migration, push, or deploy was performed. The fix commit SHA is recorded in the final task handoff because a commit cannot embed its own final object ID.
+
+## Fix round 2 — dialog-owned conflict reconciliation
+
+### Changes
+
+- Rejection conflict reconciliation now has its own state and request lock. Its GET never replaces a previously successful queue with the global loading/error surface, so the applicant row and exact rejection draft remain available beneath the labelled dialog.
+- After `APPLICATION_ALREADY_REVIEWED`, the rejection submit action is replaced by `신청 상태 다시 확인`. Automatic and manual checks call only `GET /api/admin/teacher-applications`; the original rejection POST cannot be resubmitted from the conflict state.
+- A failed check produces a dialog-local `role="alert"` and keeps the retry/cancel controls. Repeated checks are synchronously deduplicated and all competing row actions remain disabled while the dialog is open.
+- If a check no longer finds the application, the dialog/draft close and a `role="status"` announcement reports `이미 처리된 신청을 목록에서 정리했습니다.` If the row remains, the exact draft stays and the stable original conflict message is shown with another GET-only retry. Terminal authorization clears protected state and redirects exactly once.
+
+### RED evidence
+
+The four reviewer-path tests were added before the reconciliation refactor and failed against the global list loader:
+
+```text
+$ npm test -- src/app/teacher/applications/page.test.tsx
+Test Files  1 failed (1)
+Tests       4 failed | 10 passed (14)
+
+successful applicant row disappeared after reconciliation GET failure
+dialog-local role=alert was absent
+unable to find button "신청 상태 다시 확인"
+terminal reconciliation retry path was unreachable
+```
+
+The failures directly demonstrated that the global `loadApplications` error replaced the ready queue while the aria-modal dialog retained neither a local recovery message nor a GET-only retry action.
+
+### GREEN and final sequential verification
+
+Node commands used `v22.22.0`; both backend database variables used the local Supabase loopback URL. Strict advisor thresholds were unchanged.
+
+```text
+$ npm test -- src/app/teacher/applications/page.test.tsx
+Test Files  1 passed (1)
+Tests       14 passed (14)
+
+$ npm test -- src/app/teacher/applications/page.test.tsx src/app/admin/staff/page.test.tsx src/app/admin/kiosks/page.test.tsx
+Test Files  3 passed (3)
+Tests       23 passed (23)
+
+$ npm test
+Test Files  32 passed (32)
+Tests       210 passed (210)
+
+$ uv run pytest tests/backend -q
+411 passed, 1 warning in 28.03s
+
+$ uv run ruff check backend tests/backend
+All checks passed!
+
+$ npm run typecheck
+tsc --noEmit
+exit 0
+
+$ npm run lint
+eslint .
+exit 0
+
+$ npm run build
+Next.js 16.3.1 (Turbopack)
+Compiled successfully
+Generating static pages (22/22)
+exit 0
+
+$ ./node_modules/.bin/supabase db lint --local --schema app --level warning --fail-on warning
+No schema errors found
+exit 0
+
+$ ./node_modules/.bin/supabase db advisors --local --type security --level warn --fail-on warn
+No issues found
+exit 0
+
+$ ./node_modules/.bin/supabase db advisors --local --type performance --level warn --fail-on warn
+No issues found
+exit 0
+
+$ git diff --check
+exit 0
+```
+
+The first full frontend invocation produced one unrelated Task 5 dashboard fake-timer failure (`expected 6 calls, received 7`). The current diff does not touch dashboard polling. The polling file immediately passed alone (`6/6`), and the fresh complete rerun passed all `210/210`; no out-of-scope dashboard change was made. The pre-existing Starlette/httpx warning also remains. No migration, push, or deploy was performed. The fix commit SHA is recorded in the final handoff.
