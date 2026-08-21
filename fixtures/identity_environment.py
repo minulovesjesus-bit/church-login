@@ -6,6 +6,10 @@ from urllib.parse import urlsplit
 from psycopg import ProgrammingError
 from psycopg.conninfo import conninfo_to_dict
 
+LIBPQ_DESTINATION_ENVIRONMENT = frozenset(
+    {"PGHOST", "PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"}
+)
+
 
 def _is_loopback_host(value: str, *, allow_localhost: bool) -> bool:
     normalized_value = value.strip().rstrip(".").lower()
@@ -82,6 +86,10 @@ def require_local_identity_environment(
     if not _is_loopback_supabase_url(supabase_url):
         raise RuntimeError(
             "Identity browser fixtures require the local Supabase stack."
+        )
+    if any(name in os.environ for name in LIBPQ_DESTINATION_ENVIRONMENT):
+        raise RuntimeError(
+            "Identity browser fixtures require a local PostgreSQL database."
         )
     if any(
         not _is_loopback_database_dsn(database_url) for database_url in database_urls

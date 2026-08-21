@@ -28,6 +28,35 @@ settings.database_url = (
 )
 install_identity_auth_fixtures(FastAPI())
 """
+ATTEMPT_AUTH_FIXTURE_INSTALL = """
+from fastapi import FastAPI
+
+app = FastAPI()
+try:
+    from fixtures.identity_auth import install_identity_auth_fixtures
+    install_identity_auth_fixtures(app)
+except RuntimeError:
+    if app.dependency_overrides:
+        raise AssertionError("auth override attached")
+    raise
+"""
+LIBPQ_DESTINATION_ENVIRONMENT_NAMES = (
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+)
+LIBPQ_DESTINATION_ENVIRONMENT = [
+    pytest.param("PGHOST", "ambient-secret.db.example.com", id="pghost"),
+    pytest.param("PGHOSTADDR", "203.0.113.10", id="pghostaddr"),
+    pytest.param("PGSERVICE", "ambient-secret-service", id="pgservice"),
+    pytest.param(
+        "PGSERVICEFILE",
+        "/tmp/ambient-secret-service.conf",
+        id="pgservicefile",
+    ),
+    pytest.param("PGHOST", "", id="present-empty-pghost"),
+]
 LIBPQ_DESTINATION_BYPASSES = [
     pytest.param(
         (
@@ -95,6 +124,8 @@ def fixture_environment(**overrides: str | None) -> dict[str, str]:
         }
     )
     environment.pop("VERCEL_ENV", None)
+    for name in LIBPQ_DESTINATION_ENVIRONMENT_NAMES:
+        environment.pop(name, None)
     for name, value in overrides.items():
         if value is None:
             environment.pop(name, None)
@@ -215,6 +246,18 @@ def test_identity_auth_fixture_rejects_remote_or_missing_runtime_database(
     assert "remote-secret" not in result.stderr
 
 
+def test_identity_auth_fixture_rejects_malformed_database_dsn() -> None:
+    result = run_identity_auth_import(
+        fixture_environment(
+            DATABASE_URL="postgresql://fixture:parser-secret@[::1/postgres"
+        )
+    )
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "parser-secret" not in result.stderr
+
+
 @pytest.mark.parametrize("database_url", LIBPQ_DESTINATION_BYPASSES)
 def test_identity_auth_fixture_rejects_libpq_destination_bypasses(
     database_url: str,
@@ -224,6 +267,28 @@ def test_identity_auth_fixture_rejects_libpq_destination_bypasses(
     assert result.returncode != 0
     assert "local PostgreSQL database" in result.stderr
     assert "query-secret" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("environment_name", "environment_value"), LIBPQ_DESTINATION_ENVIRONMENT
+)
+def test_identity_auth_fixture_rejects_ambient_libpq_destination_before_override(
+    environment_name: str,
+    environment_value: str,
+) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", ATTEMPT_AUTH_FIXTURE_INSTALL],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(**{environment_name: environment_value}),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "auth override attached" not in result.stderr
+    if environment_value:
+        assert environment_value not in result.stderr
 
 
 def test_identity_auth_fixture_revalidates_before_attaching_override() -> None:
@@ -273,6 +338,18 @@ def test_seed_fixture_rejects_remote_or_missing_database_before_main(
     assert "remote-secret" not in result.stderr
 
 
+def test_seed_fixture_rejects_malformed_database_dsn_before_main() -> None:
+    result = run_seed_validation(
+        fixture_environment(
+            TEST_DATABASE_URL="postgresql://fixture:parser-secret@[::1/postgres"
+        )
+    )
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "parser-secret" not in result.stderr
+
+
 @pytest.mark.parametrize("database_url", LIBPQ_DESTINATION_BYPASSES)
 def test_seed_fixture_rejects_libpq_destination_bypasses_before_main(
     database_url: str,
@@ -282,6 +359,28 @@ def test_seed_fixture_rejects_libpq_destination_bypasses_before_main(
     assert result.returncode != 0
     assert "local PostgreSQL database" in result.stderr
     assert "query-secret" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("environment_name", "environment_value"), LIBPQ_DESTINATION_ENVIRONMENT
+)
+def test_seed_fixture_rejects_ambient_libpq_destination_before_connections(
+    environment_name: str,
+    environment_value: str,
+) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", RUN_SEED_MAIN_WITHOUT_CONNECTIONS],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(**{environment_name: environment_value}),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "local PostgreSQL database" in result.stderr
+    assert "connection attempted" not in result.stderr
+    if environment_value:
+        assert environment_value not in result.stderr
 
 
 def test_seed_fixture_rejects_remote_database_before_any_connection() -> None:
