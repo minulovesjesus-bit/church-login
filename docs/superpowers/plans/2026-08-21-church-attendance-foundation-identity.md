@@ -16,6 +16,8 @@
 - Export the FastAPI `app` from `api/index.py`; reserve all `/api/*` routes for FastAPI.
 - Use Python 3.12 and pin all JavaScript and Python dependencies with committed lockfiles.
 - Store durable state only in Supabase PostgreSQL; Vercel function memory is never authoritative.
+- Target the Vercel Hobby technical envelope: one Python FastAPI Function, explicit Fluid Compute, conservative 500 MB bundle, 2 GB/1 vCPU standard instance, and ordinary API requests well under 10 seconds.
+- Use a production Supabase/Supavisor transaction-pooler URL with bounded connect/query timeouts and explicit connection cleanup; never run migrations during a Function request.
 - The browser may use the Supabase publishable key for Auth but must not access application tables directly.
 - Store application authorization in PostgreSQL, never in `user_metadata`.
 - Students self-register; teachers authenticate with Google and require administrator approval.
@@ -23,6 +25,7 @@
 - Use `Asia/Seoul` for business dates and display.
 - Commit only safe examples; never commit a real URL, key, hash, token, or password.
 - Implement each behavior test-first and commit after every task passes its focused verification.
+- Treat Hobby plan eligibility as a deployment gate because its free usage is restricted by current personal/non-commercial fair-use terms; technical compatibility does not guarantee organizational production eligibility.
 
 ## File Structure
 

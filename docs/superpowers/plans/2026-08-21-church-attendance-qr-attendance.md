@@ -18,6 +18,7 @@
 - Reject new accepted scans within 10 seconds of the student's previous accepted, non-voided scan.
 - Make retries idempotent through unique `(student_id, request_id)` values.
 - Keep FastAPI stateless; persist kiosk sessions, refresh-token hashes, scan rows, and rate-limit buckets in PostgreSQL.
+- Issue exactly one QR challenge request per 20-second token; do not add one-second server polling, background schedulers, or instance-local session state so a continuously displayed kiosk remains compatible with the Vercel Hobby invocation budget.
 - Hash the shared kiosk password with Argon2 and keep it separate from QR and cookie signing secrets.
 - Never trust a direction, student ID, timestamp, or kiosk ID supplied by the student browser.
 - Preserve scan history; teacher corrections void rows or append audited manual rows.

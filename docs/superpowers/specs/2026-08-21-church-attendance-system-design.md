@@ -88,6 +88,20 @@ FastAPI is the only application-data API. It validates the Supabase access token
 
 Vercel's FastAPI runtime and the Supabase SSR/Auth APIs must be rechecked against their official documentation immediately before implementation because both can change.
 
+### Vercel Hobby/free-tier operating contract
+
+Verified against Vercel's official FastAPI, Function limits, Fluid Compute, and Hobby-plan documentation on 2026-08-21:
+
+- Vercel packages the FastAPI application as one Python Function. Keep `api/index.py` as the single entrypoint and enable Fluid Compute explicitly in `vercel.json`.
+- Stay within the conservative 500 MB compressed Python bundle boundary documented for FastAPI. Tests, local fixtures, caches, and development-only assets are excluded from the Function bundle, and heavyweight dependencies require an explicit size review.
+- The implementation targets the Hobby standard instance envelope of 2 GB memory and 1 vCPU. Normal API work must finish well under 10 seconds even though current Fluid Compute documentation allows a longer maximum; no user flow may depend on a long-running request.
+- Current Hobby included usage is 1,000,000 Function invocations, 4 active CPU-hours, and 360 GB-hours of provisioned memory per usage period. The service uses bounded, visibility-aware polling and stops polling on hidden/unmounted pages. One continuously displayed kiosk refreshing exactly once per 20 seconds is approximately 129,600 invocations per 30 days, before scans and dashboards.
+- QR rotation performs one request per 20-second token and never polls every second. Dashboard refresh defaults to at least 30 seconds, pauses while the page is hidden, and applies retry backoff.
+- All durable state remains in Supabase. Production uses a Supabase/Supavisor transaction-pooler `DATABASE_URL`, bounded connect/query timeouts, short transactions, and explicit connection cleanup. Migrations never run inside a Function invocation.
+- No route relies on post-response background work, WebSockets, sticky sessions, writable local files, or an in-memory scheduler. Warm-instance caches are opportunistic only and remain bounded; correctness survives cold starts and instance replacement.
+- Deployment verification must run `vercel build` or an equivalent Vercel build plus `vercel dev`, inspect the generated Python Function/bundle, and exercise `/api/health`, one authenticated API request, and one database-backed request.
+- Hobby is free only within its quotas and is governed by Vercel's current personal/non-commercial fair-use terms. The code is technically Hobby-compatible, but an organization-wide church production deployment requires an explicit plan/eligibility check before launch; exceeding Hobby quotas can pause the affected feature until usage resets.
+
 ## 4. Identity and authorization
 
 ### Student registration
@@ -495,6 +509,9 @@ The implementation will document, at minimum:
 
 - [Vercel FastAPI documentation](https://vercel.com/docs/frameworks/backend/fastapi)
 - [Vercel Python runtime](https://vercel.com/docs/functions/runtimes/python)
+- [Vercel Function limits](https://vercel.com/docs/functions/limitations)
+- [Vercel Fluid Compute](https://vercel.com/docs/fluid-compute)
+- [Vercel Hobby plan](https://vercel.com/docs/plans/hobby)
 - [Supabase Next.js SSR auth](https://supabase.com/docs/guides/auth/server-side/creating-a-client?framework=nextjs&queryGroups=framework)
 - [Supabase Google login](https://supabase.com/docs/guides/auth/social-login/auth-google)
 - [Supabase JWT verification](https://supabase.com/docs/guides/auth/jwts)

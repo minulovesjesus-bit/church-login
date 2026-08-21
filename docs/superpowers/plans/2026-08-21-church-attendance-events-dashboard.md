@@ -21,7 +21,8 @@
 - Root `/` contains only the teacher and student login choices; kiosk entry remains `/login`.
 - Preserve the approved visual hierarchy: student QR action first, teacher summary plus attendance table first.
 - Keep administrator-only routes hidden for convenience and protected again in FastAPI for security.
-- Use polling with cleanup for changing dashboards; do not hold durable state in Vercel function memory.
+- Use visibility-aware dashboard polling at intervals of at least 30 seconds with cleanup and retry backoff; do not hold durable state in Vercel function memory.
+- Keep all FastAPI routes short-lived and free of background schedulers/WebSockets so the final build remains within the Vercel Hobby Function and invocation envelope documented by the spec.
 - Finish with actual local browser, camera, database, build, and `vercel dev` verification.
 
 ## File Structure
