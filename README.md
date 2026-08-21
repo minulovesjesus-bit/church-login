@@ -90,6 +90,10 @@ The Playwright command uses bounded Next.js/FastAPI `webServer` processes, creat
 
 ## Vercel-shaped local smoke
 
+### QR scanner dependency gate
+
+The approved exact pin `@zxing/browser@0.2.1` currently resolves its peer `@zxing/library@0.23.0`, which declares Node.js `>=24` even though this project targets Node.js 22. A clean Node 22 install therefore emits an engine advisory. The browser-only ZXing chunk, frontend tests, and production build currently pass on Node 22, but this warning remains an explicit pre-deployment gate: run a clean install and Vercel build on the selected production runtime, and do not deploy until either that check is accepted or an approved dependency/runtime revision removes the mismatch. Do not silently change the exact scanner pins or the project runtime to suppress the warning.
+
 After authenticating the Vercel CLI and linking the intended project, set `APP_ENV=production` and provide the same non-secret public Auth values plus the server-only production `DATABASE_URL`, bounded database timeouts, `INITIAL_ADMIN_EMAIL`, `TEACHER_OAUTH_INTENT_SECRET`, `KIOSK_PASSWORD_HASH`, `KIOSK_COOKIE_SECRET`, `QR_SIGNING_SECRET`, explicit `ALLOWED_FRONTEND_ORIGINS`, and `APP_TIMEZONE=Asia/Seoul` through Vercel environment settings. Never set `KIOSK_INSECURE_LOCAL_COOKIES=true` on Vercel; the runtime's `VERCEL` or `VERCEL_ENV` marker forces kiosk cookies to `Secure` even if `APP_ENV` is accidentally missing or left at its development default. Production must not expose the kiosk secrets, QR-signing secret, teacher-intent secret, or a Supabase secret/service-role key to `NEXT_PUBLIC_*` variables.
 
 Run the combined routing shape:

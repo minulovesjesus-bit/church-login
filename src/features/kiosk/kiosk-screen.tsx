@@ -24,6 +24,25 @@ type KioskScreenProps = {
 
 type ConnectionState = "connecting" | "connected" | "retrying";
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
+const QR_LIFETIME_MS = 20_000;
+
+function usableChallengeExpiry(challenge: KioskQrChallenge, now: number): number {
+  const issuedAt = Date.parse(challenge.issued_at);
+  const expiresAt = Date.parse(challenge.expires_at);
+  const lifetime = expiresAt - issuedAt;
+  const remaining = expiresAt - now;
+  if (
+    !challenge.token.trim()
+    || !Number.isFinite(issuedAt)
+    || !Number.isFinite(expiresAt)
+    || lifetime !== QR_LIFETIME_MS
+    || remaining <= 0
+    || remaining > QR_LIFETIME_MS
+  ) {
+    throw new TypeError("Unusable QR challenge");
+  }
+  return expiresAt;
+}
 
 function isSessionError(error: unknown): boolean {
   return error instanceof ApiClientError
@@ -97,8 +116,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       try {
         const nextChallenge = await fetchQrWithRefresh();
         if (!active) return;
-        const nextExpiry = Date.parse(nextChallenge.expires_at);
-        if (!Number.isFinite(nextExpiry)) throw new TypeError("Invalid QR expiry");
+        const nextExpiry = usableChallengeExpiry(nextChallenge, Date.now());
         expiresAt = nextExpiry;
         retryAttempt = 0;
         retrying = false;

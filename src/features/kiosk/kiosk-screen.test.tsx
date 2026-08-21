@@ -19,6 +19,11 @@ const QR = {
   issued_at: NOW.toISOString(),
   expires_at: new Date(NOW.getTime() + 20_000).toISOString(),
 };
+const EXPIRED_QR = {
+  token: "already-expired-qr",
+  issued_at: new Date(NOW.getTime() - 20_001).toISOString(),
+  expires_at: new Date(NOW.getTime() - 1).toISOString(),
+};
 
 function createClient(): KioskClient {
   return {
@@ -36,6 +41,25 @@ async function unlock(client: KioskClient) {
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
   expect(await screen.findByText("20초 후 갱신")).toBeInTheDocument();
+}
+
+async function submitPassword(client: KioskClient) {
+  render(<KioskScreen client={client} />);
+  fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
+    target: { value: "church-secret" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+function useStationaryClock() {
+  vi.useRealTimers();
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
 }
 
 beforeEach(() => {
@@ -122,6 +146,50 @@ it("removes an expired QR while its replacement request is still pending", async
   expect(client.getQr).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("img", { name: "학생 출결용 QR 코드" })).not.toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("QR을 준비하고 있어요");
+});
+
+it("never renders an already-expired successful response and retries with bounded backoff", async () => {
+  useStationaryClock();
+  const client = createClient();
+  vi.mocked(client.getQr).mockResolvedValue(EXPIRED_QR);
+  await submitPassword(client);
+
+  expect(client.getQr).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("img", { name: "학생 출결용 QR 코드" })).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("연결을 다시 시도하고 있어요");
+
+  await act(() => vi.advanceTimersByTimeAsync(999));
+  expect(client.getQr).toHaveBeenCalledTimes(1);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(client.getQr).toHaveBeenCalledTimes(2);
+
+  await act(() => vi.advanceTimersByTimeAsync(1_999));
+  expect(client.getQr).toHaveBeenCalledTimes(2);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(client.getQr).toHaveBeenCalledTimes(3);
+});
+
+it("recovers from a stale response and gives the next valid token its remaining lifetime", async () => {
+  useStationaryClock();
+  const client = createClient();
+  const recoveredQr = {
+    ...QR,
+    token: "recovered-signed-qr",
+    issued_at: new Date(NOW.getTime() + 1_000).toISOString(),
+    expires_at: new Date(NOW.getTime() + 21_000).toISOString(),
+  };
+  vi.mocked(client.getQr)
+    .mockResolvedValueOnce(EXPIRED_QR)
+    .mockResolvedValueOnce(recoveredQr);
+  await submitPassword(client);
+
+  await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+  expect(client.getQr).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" })).toBeInTheDocument();
+  expect(screen.getByText("20초 후 갱신")).toBeInTheDocument();
+  await act(() => vi.advanceTimersByTimeAsync(19_999));
+  expect(client.getQr).toHaveBeenCalledTimes(2);
 });
 
 it("rotates HttpOnly cookies on an unauthorized QR response and retries once", async () => {
