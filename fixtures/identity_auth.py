@@ -1,6 +1,4 @@
-import os
 from typing import Annotated
-from urllib.parse import urlparse
 from uuid import UUID
 
 from fastapi import Depends, FastAPI
@@ -15,13 +13,17 @@ from backend.core.auth import (
 from backend.core.config import settings
 from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
+from fixtures.identity_environment import require_local_identity_environment
 
-if os.environ.get("APP_ENV") != "test":
-    raise RuntimeError("Identity browser fixtures require APP_ENV=test.")
-if os.environ.get("VERCEL_ENV"):
-    raise RuntimeError("Identity browser fixtures cannot load on Vercel.")
-if urlparse(settings.supabase_url).hostname not in {"127.0.0.1", "localhost"}:
-    raise RuntimeError("Identity browser fixtures require the local Supabase stack.")
+
+def require_identity_auth_fixture_environment() -> None:
+    require_local_identity_environment(
+        supabase_url=settings.supabase_url,
+        database_urls=(settings.database_url,),
+    )
+
+
+require_identity_auth_fixture_environment()
 
 FIXTURE_USERS = {
     UUID("00000000-0000-4000-8000-000000000101"): (
@@ -74,4 +76,5 @@ async def get_identity_fixture_user(
 
 
 def install_identity_auth_fixtures(app: FastAPI) -> None:
+    require_identity_auth_fixture_environment()
     app.dependency_overrides[get_current_user] = get_identity_fixture_user

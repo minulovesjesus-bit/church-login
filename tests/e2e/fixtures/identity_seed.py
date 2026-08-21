@@ -1,10 +1,17 @@
 import os
 import sys
-from urllib.parse import urlparse
+from pathlib import Path
 from uuid import UUID
 
 import httpx
 import psycopg
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from fixtures.identity_environment import (
+    require_local_identity_environment,
+)
 
 FIXTURES = (
     ("00000000-0000-4000-8000-000000000101", "incomplete.student@example.test"),
@@ -16,13 +23,14 @@ PASSWORD = "Identity-e2e-2026!"
 
 
 def require_local_test_environment() -> tuple[str, str, str]:
-    if os.environ.get("APP_ENV") != "test":
-        raise RuntimeError("Identity browser fixtures require APP_ENV=test.")
     supabase_url = os.environ.get("SUPABASE_URL", "")
-    if urlparse(supabase_url).hostname not in {"127.0.0.1", "localhost"}:
-        raise RuntimeError("Identity browser fixtures require the local Supabase stack.")
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
     database_url = os.environ.get("TEST_DATABASE_URL")
+    runtime_database_url = os.environ.get("DATABASE_URL")
+    require_local_identity_environment(
+        supabase_url=supabase_url,
+        database_urls=(database_url, runtime_database_url),
+    )
     if not service_key or not database_url:
         raise RuntimeError("Local Supabase fixture credentials are required.")
     return supabase_url.rstrip("/"), service_key, database_url
