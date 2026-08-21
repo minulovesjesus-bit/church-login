@@ -34,13 +34,15 @@ DATABASE_STATEMENT_TIMEOUT_MS=5000
 FASTAPI_ORIGIN=http://127.0.0.1:8000
 INITIAL_ADMIN_EMAIL=<exact lower-case Google email>
 TEACHER_OAUTH_INTENT_SECRET=<at least 32 random bytes, server-only>
+KIOSK_PASSWORD_HASH=<Argon2 hash of the shared kiosk password>
+KIOSK_COOKIE_SECRET=<at least 32 random bytes, server-only>
 ALLOWED_FRONTEND_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
 APP_TIMEZONE=Asia/Seoul
 ```
 
 FastAPI loads `.env` first and `.env.local` second; explicitly supplied process environment variables take final precedence. The database connection and statement timeout budget is validated at no more than eight seconds so ordinary Function requests retain time for authentication and response handling.
 
-Generate `TEACHER_OAUTH_INTENT_SECRET` locally with a cryptographically secure generator such as `openssl rand -base64 32`; never prefix it with `NEXT_PUBLIC_`. Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
+Generate `TEACHER_OAUTH_INTENT_SECRET` and `KIOSK_COOKIE_SECRET` locally with a cryptographically secure generator such as `openssl rand -base64 32`; never prefix either with `NEXT_PUBLIC_`. Generate `KIOSK_PASSWORD_HASH` with Argon2 and keep the shared password itself out of environment files. Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
 
 Run Next.js and FastAPI in separate terminals:
 

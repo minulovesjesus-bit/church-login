@@ -234,6 +234,7 @@ def test_attendance_indexes_have_exact_shapes(
           and idx.relname in (
             'attendance_scans_student_date_scanned_at_idx',
             'kiosk_sessions_active_refresh_expires_at_idx',
+            'kiosk_sessions_refresh_token_hash_key',
             'attendance_scans_non_voided_student_date_scanned_at_idx'
           )
         """
@@ -257,6 +258,14 @@ def test_attendance_indexes_have_exact_shapes(
                 "WHERE (revoked_at IS NULL)"
             ),
             "(revoked_at IS NULL)",
+        ),
+        (
+            "kiosk_sessions_refresh_token_hash_key",
+            (
+                "CREATE UNIQUE INDEX kiosk_sessions_refresh_token_hash_key ON "
+                "app.kiosk_sessions USING btree (refresh_token_hash)"
+            ),
+            None,
         ),
         (
             "attendance_scans_non_voided_student_date_scanned_at_idx",

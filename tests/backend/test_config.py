@@ -147,3 +147,21 @@ def test_application_timezone_is_fixed_to_seoul() -> None:
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, app_timezone="UTC")
+
+
+def test_kiosk_secrets_are_redacted_and_validated() -> None:
+    configured = Settings(
+        _env_file=None,
+        kiosk_password_hash="$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA",
+        kiosk_cookie_secret="s" * 32,
+    )
+
+    assert configured.kiosk_password_hash is not None
+    assert configured.kiosk_cookie_secret is not None
+    assert "argon2id" not in repr(configured.kiosk_password_hash)
+    assert configured.kiosk_cookie_secret.get_secret_value() == "s" * 32
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, kiosk_password_hash="plain-text-password")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, kiosk_cookie_secret="too-short")

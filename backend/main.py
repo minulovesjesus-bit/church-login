@@ -16,6 +16,7 @@ from backend.core.errors import (
     unexpected_error_handler,
 )
 from backend.identity.router import router as identity_router
+from backend.kiosk.router import router as kiosk_router
 
 app = FastAPI(title="Church Attendance API")
 app.add_exception_handler(ApiError, api_error_handler)
@@ -30,6 +31,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
 )
 app.include_router(identity_router)
+app.include_router(kiosk_router)
 
 if settings.app_env == "test":
     from fixtures.identity_auth import install_identity_auth_fixtures

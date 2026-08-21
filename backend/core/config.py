@@ -1,7 +1,7 @@
 from typing import Annotated, Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import AliasChoices, Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=2, ge=1, le=5)
     database_statement_timeout_ms: int = Field(default=5000, ge=1, lt=8000)
     initial_admin_email: str | None = None
+    kiosk_password_hash: SecretStr | None = None
+    kiosk_cookie_secret: SecretStr | None = Field(default=None, min_length=32)
     allowed_frontend_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: [
             "http://127.0.0.1:3000",
@@ -78,6 +80,15 @@ class Settings(BaseSettings):
         if not origins:
             raise ValueError("ALLOWED_FRONTEND_ORIGINS must not be empty")
         return origins
+
+    @field_validator("kiosk_password_hash")
+    @classmethod
+    def validate_kiosk_password_hash(
+        cls, value: SecretStr | None
+    ) -> SecretStr | None:
+        if value is not None and not value.get_secret_value().startswith("$argon2id$"):
+            raise ValueError("KIOSK_PASSWORD_HASH must be an Argon2id hash")
+        return value
 
     @model_validator(mode="after")
     def validate_database_timeout_budget(self) -> Self:
