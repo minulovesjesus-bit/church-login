@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import os
 import sys
 from pathlib import Path
@@ -16,11 +18,14 @@ from fixtures.identity_environment import (
 FIXTURES = (
     ("00000000-0000-4000-8000-000000000101", "incomplete.student@example.test"),
     ("00000000-0000-4000-8000-000000000102", "complete.student@example.test"),
+    ("00000000-0000-4000-8000-000000000103", "student@example.test"),
     ("00000000-0000-4000-8000-000000000201", "pending.teacher@example.test"),
     ("00000000-0000-4000-8000-000000000202", "approved.teacher@example.test"),
+    ("00000000-0000-4000-8000-000000000203", "teacher@example.test"),
     ("00000000-0000-4000-8000-000000000301", "admin.identity@example.test"),
 )
 PASSWORD = "Identity-e2e-2026!"
+RATE_LIMIT_SECRET = "attendance-e2e-cookie-secret-2026-only-local"
 
 
 def require_local_test_environment() -> tuple[str, str, str]:
@@ -52,13 +57,46 @@ def remove_identity_rows(database_url: str) -> None:
     user_ids = [UUID(user_id) for user_id, _ in FIXTURES]
     with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
         cursor.execute(
+            """
+            select id
+            from app.kiosk_sessions
+            where revoked_by = any(%s::uuid[])
+            union
+            select distinct kiosk_session_id as id
+            from app.attendance_scans
+            where student_id = any(%s::uuid[]) and kiosk_session_id is not null
+            """,
+            (user_ids, user_ids),
+        )
+        kiosk_session_ids = [row[0] for row in cursor.fetchall()]
+        cursor.execute(
             "delete from app.attendance_scans where student_id = any(%s::uuid[])",
             (user_ids,),
         )
-        cursor.execute("delete from app.kiosk_sessions")
-        cursor.execute("delete from app.rate_limit_buckets")
+        if kiosk_session_ids:
+            cursor.execute(
+                "delete from app.kiosk_sessions where id = any(%s::uuid[])",
+                (kiosk_session_ids,),
+            )
+        attendance_rate_keys = [
+            "hmac-sha256:"
+            + hmac.new(
+                RATE_LIMIT_SECRET.encode(),
+                f"attendance-scan\0{user_id}".encode(),
+                hashlib.sha256,
+            ).hexdigest()
+            for user_id in user_ids
+        ]
+        cursor.execute(
+            "delete from app.rate_limit_buckets where bucket_key_hash = any(%s::text[])",
+            (attendance_rate_keys,),
+        )
         cursor.execute(
             "delete from app.audit_logs where actor_id = any(%s::uuid[])",
+            (user_ids,),
+        )
+        cursor.execute(
+            "delete from app.events where created_by = any(%s::uuid[])",
             (user_ids,),
         )
         cursor.execute(
@@ -110,12 +148,12 @@ def seed_identity_rows(database_url: str) -> None:
             (
                 FIXTURES[1][0],
                 FIXTURES[1][1],
-                FIXTURES[2][0],
-                FIXTURES[2][1],
                 FIXTURES[3][0],
                 FIXTURES[3][1],
                 FIXTURES[4][0],
                 FIXTURES[4][1],
+                FIXTURES[6][0],
+                FIXTURES[6][1],
             ),
         )
         cursor.execute(
@@ -131,7 +169,7 @@ def seed_identity_rows(database_url: str) -> None:
             insert into app.teacher_applications (id, user_id, status)
             values ('00000000-0000-4000-8000-000000000401', %s, 'pending')
             """,
-            (FIXTURES[2][0],),
+            (FIXTURES[3][0],),
         )
         cursor.execute(
             """
@@ -139,10 +177,10 @@ def seed_identity_rows(database_url: str) -> None:
             values (%s, 'admin', %s), (%s, 'teacher', %s)
             """,
             (
+                FIXTURES[6][0],
+                FIXTURES[6][0],
                 FIXTURES[4][0],
-                FIXTURES[4][0],
-                FIXTURES[3][0],
-                FIXTURES[4][0],
+                FIXTURES[6][0],
             ),
         )
 

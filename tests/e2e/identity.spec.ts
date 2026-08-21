@@ -49,7 +49,8 @@ test("approved teacher can access the teacher dashboard", async ({ page }) => {
 test("administrator pages reject teachers and allow administrators", async ({ page }) => {
   await authenticateAs(page.context(), "approvedTeacher");
   await page.goto("/teacher/applications");
-  await expect(page.getByText("이 작업을 수행할 권한이 없습니다.")).toBeVisible();
+  await expect(page).toHaveURL(/\/teacher$/);
+  await expect(page.getByRole("heading", { name: "교사 대시보드" })).toBeVisible();
 
   await authenticateAs(page.context(), "admin");
   await page.goto("/teacher/applications");

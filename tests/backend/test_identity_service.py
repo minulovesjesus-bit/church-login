@@ -1,11 +1,15 @@
+import os
 from datetime import date
+from urllib.parse import urlsplit
 from uuid import uuid4
 
+import psycopg
 import pytest
 
+from backend.core.config import settings
 from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
-from backend.identity.repository import StudentProfileRecord
+from backend.identity.repository import IdentityRepository, StudentProfileRecord
 from backend.identity.service import IdentityService
 
 
@@ -101,3 +105,37 @@ async def test_google_user_can_create_profile_without_email_confirmation(
     )
 
     assert profile.name == "구글 학생"
+
+
+async def test_live_student_onboarding_returns_profile_fields_in_schema_order() -> None:
+    database_url = os.environ.get("TEST_DATABASE_URL") or settings.database_url
+    if database_url is None or urlsplit(database_url).hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        pytest.skip("A local TEST_DATABASE_URL is required")
+    user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="profile-order@example.test",
+        provider="password",
+        email_verified=True,
+    )
+    connection = await psycopg.AsyncConnection.connect(database_url)
+    try:
+        await connection.execute("insert into auth.users (id) values (%s)", (user.user_id,))
+
+        profile = await IdentityService(IdentityRepository(connection)).upsert_student_profile(
+            user,
+            name="필드 순서 학생",
+            birth_date=date(2012, 4, 5),
+            phone="01011111003",
+            guardian_phone="01099990003",
+        )
+
+        assert profile.birth_date == date(2012, 4, 5)
+        assert profile.phone == "01011111003"
+        assert profile.guardian_phone == "01099990003"
+    finally:
+        await connection.rollback()
+        await connection.close()

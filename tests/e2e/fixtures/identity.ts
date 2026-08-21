@@ -10,6 +10,10 @@ export const identityFixtures = {
     id: "00000000-0000-4000-8000-000000000102",
     email: "complete.student@example.test",
   },
+  fullSystemStudent: {
+    id: "00000000-0000-4000-8000-000000000103",
+    email: "student@example.test",
+  },
   pendingTeacher: {
     id: "00000000-0000-4000-8000-000000000201",
     email: "pending.teacher@example.test",
@@ -17,6 +21,10 @@ export const identityFixtures = {
   approvedTeacher: {
     id: "00000000-0000-4000-8000-000000000202",
     email: "approved.teacher@example.test",
+  },
+  fullSystemTeacher: {
+    id: "00000000-0000-4000-8000-000000000203",
+    email: "teacher@example.test",
   },
   admin: {
     id: "00000000-0000-4000-8000-000000000301",

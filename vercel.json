@@ -2,7 +2,7 @@
   "fluid": true,
   "functions": {
     "api/**/*.py": {
-      "excludeFiles": "{tests/**,.superpowers/**,fixtures/**,**/fixtures/**}"
+      "excludeFiles": "{tests/**,docs/**,.superpowers/**,fixtures/**,**/fixtures/**}"
     }
   }
 }

@@ -78,7 +78,7 @@ class IdentityRepository:
                 returning user_id, birth_date, guardian_phone, include_in_statistics
             )
             select saved_user.user_id, saved_user.email, saved_user.name,
-                   saved_user.phone, saved_student.birth_date,
+                   saved_student.birth_date, saved_user.phone,
                    saved_student.guardian_phone, saved_student.include_in_statistics
             from saved_user join saved_student using (user_id)
             """,

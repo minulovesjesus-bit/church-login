@@ -92,7 +92,7 @@ export default function StudentAttendancePage() {
 
       <SummaryCards items={[
         { label: "이번 주", value: `이번 주 ${summary.attendance_days_this_week}일` },
-        { label: "이번 달", value: `이번 달 ${summary.attendance_days_this_month}일` },
+        { label: "이번 달 출석 일수", value: `이번 달 ${summary.attendance_days_this_month}일` },
         { label: "누적 입실", value: `총 입실 ${summary.total_entries}회` },
         {
           label: "평균 체류",

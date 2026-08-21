@@ -46,7 +46,7 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
     await expect(student.getByRole("heading", { name: "퇴실 처리됐어요" })).toBeVisible();
 
     const freshToken = await waitForFreshRenderedQrToken(kiosk, firstToken);
-    await advanceTestClock(1_500);
+    await advanceTestClock(10_100);
     const secondIn = await submitDecodedQr(student, freshToken, REQUEST_SECOND_IN);
     await expect(student.getByRole("heading", { name: "입실 처리됐어요" })).toBeVisible();
 

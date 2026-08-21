@@ -11,6 +11,6 @@ it("enables Fluid Compute without changing the FastAPI function bundle exclusion
 
   expect(config.fluid).toBe(true);
   expect(config.functions?.["api/**/*.py"]?.excludeFiles).toBe(
-    "{tests/**,.superpowers/**,fixtures/**,**/fixtures/**}",
+    "{tests/**,docs/**,.superpowers/**,fixtures/**,**/fixtures/**}",
   );
 });
