@@ -1,6 +1,9 @@
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from backend.core.config import settings
 from backend.core.errors import (
@@ -8,11 +11,24 @@ from backend.core.errors import (
     ApiError,
     api_error_handler,
     get_request_id,
+    http_error_handler,
+    request_validation_error_handler,
+    unexpected_error_handler,
 )
 from backend.identity.router import router as identity_router
 
 app = FastAPI(title="Church Attendance API")
 app.add_exception_handler(ApiError, api_error_handler)
+app.add_exception_handler(RequestValidationError, request_validation_error_handler)
+app.add_exception_handler(StarletteHTTPException, http_error_handler)
+app.add_exception_handler(Exception, unexpected_error_handler)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.allowed_frontend_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+)
 app.include_router(identity_router)
 
 if settings.app_env == "test":

@@ -6,7 +6,7 @@ import httpx
 import psycopg
 import pytest
 
-from backend.core.auth import require_google_user
+from backend.core.auth import get_current_user, require_google_user
 from backend.core.config import settings
 from backend.core.db import application_transaction
 from backend.core.errors import ApiError
@@ -37,7 +37,7 @@ class InMemoryStaffRepository:
         self.applications: list[TeacherApplicationRecord] = []
         self.staff: dict[UUID, StaffMemberRecord] = {}
         self.audit_actions: list[tuple[str, UUID, UUID]] = []
-        self.bootstrap_markers: set[UUID] = set()
+        self.bootstrap_completed = False
         self.locked_role_changes = 0
 
     async def create_or_get_teacher_application(
@@ -98,9 +98,9 @@ class InMemoryStaffRepository:
         return member.role if member else None
 
     async def bootstrap_initial_admin(self, user: AuthenticatedUser) -> bool:
-        if user.user_id in self.bootstrap_markers:
+        if self.bootstrap_completed:
             return False
-        self.bootstrap_markers.add(user.user_id)
+        self.bootstrap_completed = True
         current = self.staff.get(user.user_id)
         self.staff[user.user_id] = StaffMemberRecord(
             user_id=user.user_id,
@@ -313,9 +313,16 @@ async def test_initial_admin_bootstrap_requires_exact_verified_google_email(
         provider="google",
         email_verified=False,
     )
+    password_user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="initial@example.com",
+        provider="password",
+        email_verified=True,
+    )
 
     assert await service.bootstrap_initial_admin(wrong_case) is False
     assert await service.bootstrap_initial_admin(unverified) is False
+    assert await service.bootstrap_initial_admin(password_user) is False
     assert await service.bootstrap_initial_admin(exact_google) is True
     assert await service.bootstrap_initial_admin(exact_google) is False
     assert await staff_repository.staff_role(exact_google.user_id) == StaffRole.ADMIN
@@ -350,6 +357,38 @@ async def test_initial_admin_bootstrap_does_not_undo_later_admin_demotion(
 
     assert await service.bootstrap_initial_admin(initial_admin) is False
     assert await staff_repository.staff_role(initial_admin.user_id) == StaffRole.TEACHER
+    assert [
+        action
+        for action, _, _ in staff_repository.audit_actions
+        if action == "staff.bootstrap_admin"
+    ] == ["staff.bootstrap_admin"]
+
+
+async def test_initial_admin_bootstrap_marker_is_global_when_configured_email_changes(
+    staff_repository: InMemoryStaffRepository,
+) -> None:
+    first_user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="first-initial@example.com",
+        provider="google",
+        email_verified=True,
+    )
+    later_user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="later-initial@example.com",
+        provider="google",
+        email_verified=True,
+    )
+
+    assert await StaffService(
+        staff_repository, initial_admin_email=first_user.email
+    ).bootstrap_initial_admin(first_user) is True
+    assert await StaffService(
+        staff_repository, initial_admin_email=later_user.email
+    ).bootstrap_initial_admin(later_user) is False
+
+    assert await staff_repository.staff_role(first_user.user_id) == StaffRole.ADMIN
+    assert await staff_repository.staff_role(later_user.user_id) is None
     assert [
         action
         for action, _, _ in staff_repository.audit_actions
@@ -667,6 +706,12 @@ async def test_live_staff_workflow_is_audited_and_never_loses_last_admin() -> No
             )
             assert await service.bootstrap_initial_admin(first_admin) is True
             assert await service.bootstrap_initial_admin(first_admin) is False
+            changed_configuration = StaffService(
+                IdentityRepository(connection),
+                initial_admin_email=second_admin.email,
+            )
+            assert await changed_configuration.bootstrap_initial_admin(second_admin) is False
+            assert await changed_configuration.has_teacher_access(second_admin.user_id) is False
 
             application = await service.apply(
                 applicant, name="김교사", phone="01011112222"
@@ -845,3 +890,68 @@ async def test_live_demoted_initial_admin_is_not_bootstrapped_again_on_admin_api
                 "delete from auth.users where id = any(%s)",
                 (list(user_ids),),
             )
+
+
+async def test_me_bootstraps_matching_initial_admin_and_returns_committed_capability(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL is required for the live bootstrap journey")
+
+    user = AuthenticatedUser(
+        user_id=uuid4(),
+        email=f"normal-bootstrap-{uuid4().hex}@example.com",
+        provider="google",
+        email_verified=True,
+    )
+    with psycopg.connect(database_url) as owner:
+        owner.execute("insert into auth.users (id) values (%s)", (user.user_id,))
+
+    async def current_google_user() -> AuthenticatedUser:
+        return user
+
+    monkeypatch.setattr(settings, "database_url", database_url)
+    monkeypatch.setattr(settings, "initial_admin_email", user.email)
+    app.dependency_overrides[get_current_user] = current_google_user
+    try:
+        response = await client.get("/api/me")
+
+        with psycopg.connect(database_url) as owner:
+            role = owner.execute(
+                "select role::text from app.staff_memberships where user_id = %s",
+                (user.user_id,),
+            ).fetchone()
+            bootstrap_audits = owner.execute(
+                """
+                select count(*)
+                from app.audit_logs
+                where action = 'staff.bootstrap_admin'
+                """
+            ).fetchone()
+
+        assert response.status_code == 200
+        assert response.json()["capabilities"] == {
+            "student": False,
+            "teacher": True,
+            "admin": True,
+        }
+        assert role == ("admin",)
+        assert bootstrap_audits == (1,)
+    finally:
+        app.dependency_overrides.clear()
+        with psycopg.connect(database_url) as owner:
+            owner.execute(
+                "delete from app.audit_logs where actor_id = %s",
+                (user.user_id,),
+            )
+            owner.execute(
+                "delete from app.staff_memberships where user_id = %s",
+                (user.user_id,),
+            )
+            owner.execute(
+                "delete from app.user_profiles where user_id = %s",
+                (user.user_id,),
+            )
+            owner.execute("delete from auth.users where id = %s", (user.user_id,))

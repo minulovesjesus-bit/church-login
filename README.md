@@ -29,11 +29,18 @@ SUPABASE_PUBLISHABLE_KEY=<local PUBLISHABLE_KEY>
 SUPABASE_JWT_AUDIENCE=authenticated
 SUPABASE_JWKS_URL=http://127.0.0.1:54321/auth/v1/.well-known/jwks.json
 DATABASE_URL=<local DB_URL>
+DATABASE_CONNECT_TIMEOUT_SECONDS=2
+DATABASE_STATEMENT_TIMEOUT_MS=5000
 FASTAPI_ORIGIN=http://127.0.0.1:8000
 INITIAL_ADMIN_EMAIL=<exact lower-case Google email>
+TEACHER_OAUTH_INTENT_SECRET=<at least 32 random bytes, server-only>
+ALLOWED_FRONTEND_ORIGINS=http://127.0.0.1:3000,http://localhost:3000
+APP_TIMEZONE=Asia/Seoul
 ```
 
-Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
+FastAPI loads `.env` first and `.env.local` second; explicitly supplied process environment variables take final precedence. The database connection and statement timeout budget is validated at no more than eight seconds so ordinary Function requests retain time for authentication and response handling.
+
+Generate `TEACHER_OAUTH_INTENT_SECRET` locally with a cryptographically secure generator such as `openssl rand -base64 32`; never prefix it with `NEXT_PUBLIC_`. Do not copy `SECRET_KEY`, `SERVICE_ROLE_KEY`, or `JWT_SECRET` into browser variables or application runtime configuration. `.env.local` is ignored by Git. The Playwright harness reads ephemeral local Admin credentials directly from `supabase status` only after enforcing `APP_ENV=test` and a loopback Supabase URL.
 
 Run Next.js and FastAPI in separate terminals:
 
@@ -58,7 +65,9 @@ For Google OAuth, configure the Google provider in Supabase Auth with the client
 
 The application redirect allowlist must separately include `http://127.0.0.1:3000/auth/callback`, `http://localhost:3000/auth/callback`, and the production `https://<domain>/auth/callback`. Keep the Google client secret server-side.
 
-The first administrator is bootstrapped only when a verified Google user signs in with the exact lower-case `INITIAL_ADMIN_EMAIL`. Later role changes come from the administrator UI; staff roles are stored in PostgreSQL, never user-editable Supabase metadata.
+The first administrator is bootstrapped during the normal `/api/me` request only when a verified Google user signs in with the exact lower-case `INITIAL_ADMIN_EMAIL`. The bootstrap marker is global and durable: changing the configured email later cannot promote another identity, and demoting the original administrator does not promote them again. Later role changes come from the administrator UI; staff roles are stored in PostgreSQL, never user-editable Supabase metadata.
+
+Teacher OAuth starts at the server route `/auth/teacher/start`. It creates a five-minute signed, browser-bound intent for `/teacher`, keeps the signing secret server-only, and preserves Supabase PKCE. The callback consumes the intent cookie and safely falls back to student onboarding when the intent is absent, invalid, expired, or replayed.
 
 ## Tests
 
@@ -77,7 +86,7 @@ The Playwright command uses bounded Next.js/FastAPI `webServer` processes, creat
 
 ## Vercel-shaped local smoke
 
-After authenticating the Vercel CLI and linking the intended project, provide the same non-secret public Auth values plus the server-only production `DATABASE_URL` and `INITIAL_ADMIN_EMAIL` through Vercel environment settings. Production must not set `APP_ENV=test`, and must not expose a Supabase secret/service-role key to `NEXT_PUBLIC_*` variables.
+After authenticating the Vercel CLI and linking the intended project, provide the same non-secret public Auth values plus the server-only production `DATABASE_URL`, bounded database timeouts, `INITIAL_ADMIN_EMAIL`, `TEACHER_OAUTH_INTENT_SECRET`, explicit `ALLOWED_FRONTEND_ORIGINS`, and `APP_TIMEZONE=Asia/Seoul` through Vercel environment settings. Production must not set `APP_ENV=test`, and must not expose the teacher-intent secret or a Supabase secret/service-role key to `NEXT_PUBLIC_*` variables.
 
 Run the combined routing shape:
 

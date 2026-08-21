@@ -90,6 +90,11 @@ class EmptyIdentityService:
         }
 
 
+class EmptyStaffService:
+    async def bootstrap_initial_admin(self, _user: Any) -> bool:
+        return False
+
+
 def test_backend_auth_reuses_configured_supabase_publishable_key() -> None:
     configured = Settings(
         _env_file=None,
@@ -126,10 +131,12 @@ async def configured_auth(
         auth, "auth_user_resolver", auth_user_resolver, raising=False
     )
     app.dependency_overrides[get_identity_service] = EmptyIdentityService
+    app.dependency_overrides[get_staff_service] = EmptyStaffService
     try:
         yield verifier, fetch_count, clock, auth_user_resolver
     finally:
         app.dependency_overrides.pop(get_identity_service, None)
+        app.dependency_overrides.pop(get_staff_service, None)
 
 
 async def test_valid_jwt_returns_minimal_authenticated_identity(

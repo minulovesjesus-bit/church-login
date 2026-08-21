@@ -7,7 +7,7 @@ import pytest
 from backend.core.auth import get_current_user
 from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
-from backend.identity.router import get_identity_service
+from backend.identity.router import get_identity_service, get_staff_service
 from backend.identity.schemas import StudentProfileView
 from backend.main import app
 
@@ -39,6 +39,11 @@ class FakeIdentityService:
         }
 
 
+class FakeStaffService:
+    async def bootstrap_initial_admin(self, _user: AuthenticatedUser) -> bool:
+        return False
+
+
 @pytest.fixture
 def api_user() -> AuthenticatedUser:
     return AuthenticatedUser(
@@ -58,6 +63,7 @@ def identity_api(api_user: AuthenticatedUser):
 
     app.dependency_overrides[get_current_user] = current_user
     app.dependency_overrides[get_identity_service] = lambda: service
+    app.dependency_overrides[get_staff_service] = FakeStaffService
     try:
         yield service
     finally:

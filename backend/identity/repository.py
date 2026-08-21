@@ -188,10 +188,8 @@ class IdentityRepository:
                 from app.audit_logs
                 where action = 'staff.bootstrap_admin'
                   and target_type = 'staff_membership'
-                  and target_id = %s
             )
-            """,
-            (str(user.user_id),),
+            """
         )
         marker_row = await marker_cursor.fetchone()
         if marker_row and marker_row[0]:

@@ -93,8 +93,11 @@ AdminUser = Annotated[AuthenticatedUser, Depends(require_admin, scope="function"
 
 @router.get("/me", response_model=CurrentIdentityView)
 async def current_identity(
-    user: CurrentUser, service: IdentityServiceDependency
+    user: CurrentUser,
+    service: IdentityServiceDependency,
+    staff_service: StaffServiceDependency,
 ) -> dict[str, object]:
+    await staff_service.bootstrap_initial_admin(user)
     return await service.current_identity(user)
 
 
