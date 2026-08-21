@@ -116,6 +116,7 @@ a {
 
 .primary-button,
 .secondary-button,
+.danger-button,
 .quiet-button {
   min-height: 2.75rem;
   border-radius: 0.8rem;
@@ -139,6 +140,12 @@ a {
   background: #fff;
 }
 
+.danger-button {
+  border: 1px solid #e0aaaa;
+  color: #8a2d2d;
+  background: #fff7f7;
+}
+
 .quiet-button {
   border: 0;
   color: #52675b;
@@ -146,6 +153,7 @@ a {
 }
 
 .primary-button:disabled,
+.danger-button:disabled,
 .quiet-button:disabled {
   cursor: wait;
   opacity: 0.65;
@@ -745,6 +753,278 @@ a {
   border-top: 1px solid #e4ebe6;
 }
 
+.teacher-events-shell {
+  min-height: 100dvh;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background:
+    radial-gradient(circle at 8% 2%, rgb(218 240 225 / 65%), transparent 32rem),
+    #f5f7f2;
+}
+
+.teacher-events-shell > * {
+  width: min(100%, 74rem);
+  margin-inline: auto;
+}
+
+.teacher-events-header,
+.teacher-event-section-heading,
+.teacher-event-card__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.teacher-events-header {
+  align-items: end;
+  padding-block: clamp(0.5rem, 2vw, 1.5rem);
+}
+
+.teacher-events-header h1,
+.teacher-event-section-heading h2,
+.teacher-event-card h3 {
+  margin: 0;
+  line-height: 1.2;
+}
+
+.teacher-events-header > div > p:last-child {
+  margin-bottom: 0;
+  color: #5a6d62;
+  line-height: 1.6;
+}
+
+.teacher-events-notice {
+  margin-block: 0 1rem;
+}
+
+.teacher-events-layout {
+  display: grid;
+  grid-template-columns: minmax(19rem, 0.8fr) minmax(0, 1.2fr);
+  align-items: start;
+  gap: 1rem;
+}
+
+.teacher-event-form-card,
+.teacher-event-list-card {
+  overflow: hidden;
+  border: 1px solid #d9e4dc;
+  border-radius: 1.25rem;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 1rem 3rem rgb(42 71 54 / 7%);
+}
+
+.teacher-event-section-heading {
+  align-items: center;
+  padding: 1.15rem 1.25rem;
+  border-bottom: 1px solid #e4ebe6;
+}
+
+.teacher-event-section-heading .eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.teacher-event-section-heading > span {
+  color: #5a6d62;
+  font-size: 0.88rem;
+}
+
+.event-series-warning {
+  margin: 1rem 1rem 0;
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  color: #67511e;
+  background: #fff7df;
+  font-weight: 750;
+}
+
+.teacher-event-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  padding: 1.25rem;
+}
+
+.teacher-event-form label {
+  display: grid;
+  align-content: start;
+  gap: 0.4rem;
+  color: #355445;
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.teacher-event-form label > span:not(.event-form__error) {
+  color: #6a7a71;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.teacher-event-form input,
+.teacher-event-form textarea {
+  width: 100%;
+  min-height: 2.8rem;
+  border: 1px solid #aebeb4;
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  color: #10251c;
+  background: #fff;
+}
+
+.teacher-event-form textarea {
+  min-height: 6.5rem;
+  resize: vertical;
+}
+
+.teacher-event-form input:focus-visible,
+.teacher-event-form textarea:focus-visible,
+.danger-button:focus-visible {
+  outline: 3px solid #83d6a4;
+  outline-offset: 3px;
+}
+
+.teacher-event-form input[aria-invalid="true"],
+.teacher-event-form textarea[aria-invalid="true"] {
+  border-color: #bd6262;
+}
+
+.teacher-event-form input:disabled {
+  color: #738079;
+  background: #eef2ef;
+}
+
+.teacher-event-form__wide,
+.teacher-event-form__actions {
+  grid-column: 1 / -1;
+}
+
+.teacher-event-form label.teacher-event-form__checkbox {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  grid-auto-flow: column;
+  justify-content: start;
+  min-height: 2.8rem;
+}
+
+.teacher-event-form__checkbox input {
+  width: 1.2rem;
+  min-height: 1.2rem;
+  margin: 0;
+}
+
+.event-form__error {
+  color: #a13e3e;
+  font-size: 0.8rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.teacher-event-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 1rem;
+  list-style: none;
+}
+
+.teacher-event-card {
+  display: grid;
+  gap: 0.6rem;
+  border: 1px solid #e0e8e2;
+  border-radius: 1rem;
+  padding: 1rem;
+  background: #fff;
+}
+
+.teacher-event-card__heading > div:first-child {
+  min-width: 0;
+}
+
+.teacher-event-card h3 {
+  overflow-wrap: anywhere;
+}
+
+.event-series-badge {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  margin-bottom: 0.45rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.6rem;
+  color: #286044;
+  background: #eaf7ee;
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.teacher-event-card__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+.teacher-event-card__actions button {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+}
+
+.teacher-event-card__time,
+.teacher-event-card__location,
+.teacher-event-card__description {
+  margin: 0;
+  color: #5a6d62;
+  line-height: 1.55;
+}
+
+.teacher-event-card__time {
+  font-size: 0.86rem;
+}
+
+.teacher-event-card__location {
+  color: #287a4d;
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.teacher-event-card__description {
+  white-space: pre-wrap;
+}
+
+.teacher-event-loading,
+.teacher-event-empty,
+.teacher-event-error {
+  margin: 0;
+  padding: 2.5rem 1rem;
+  color: #53665b;
+  text-align: center;
+}
+
+.teacher-event-error {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  color: #8a2d2d;
+}
+
+.teacher-event-error p {
+  margin: 0;
+}
+
+.teacher-event-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  border-top: 1px solid #e4ebe6;
+}
+
+.teacher-event-pagination span {
+  color: #53665b;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
 .events-shell,
 .student-home-shell {
   min-height: 100dvh;
@@ -919,11 +1199,14 @@ a {
   .kiosk-shell,
   .student-scan-shell,
   .events-shell,
+  .teacher-events-shell,
   .student-home-shell {
     padding: 0.75rem;
   }
 
   .events-page-header,
+  .teacher-events-header,
+  .teacher-event-card__heading,
   .event-card__heading {
     align-items: stretch;
     flex-direction: column;
@@ -939,6 +1222,37 @@ a {
 
   .event-card__time {
     text-align: left;
+  }
+
+  .teacher-events-layout,
+  .teacher-event-form {
+    grid-template-columns: 1fr;
+  }
+
+  .teacher-event-form__wide,
+  .teacher-event-form__actions {
+    grid-column: auto;
+  }
+
+  .teacher-event-card__actions,
+  .teacher-event-card__actions button {
+    width: 100%;
+  }
+
+  .teacher-event-card__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .teacher-event-pagination {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .teacher-event-pagination span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    text-align: center;
   }
 
   .kiosk-toolbar {
@@ -1028,6 +1342,10 @@ a {
 }
 
 @media (min-width: 40.001rem) and (max-width: 64rem) {
+  .teacher-events-layout {
+    grid-template-columns: 1fr;
+  }
+
   .attendance-summary-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }

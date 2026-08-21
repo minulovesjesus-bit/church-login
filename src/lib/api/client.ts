@@ -52,4 +52,5 @@ export const api = {
   get: <T>(path: `/api/${string}`) => apiFetch<T>(path),
   post: jsonRequest("POST"),
   patch: jsonRequest("PATCH"),
+  delete: <T = void>(path: `/api/${string}`) => apiFetch<T>(path, { method: "DELETE" }),
 };
