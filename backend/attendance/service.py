@@ -9,8 +9,15 @@ from backend.attendance.models import AttendanceScan, Direction
 from backend.attendance.repository import AttendanceRepository
 from backend.attendance.schemas import (
     AttendanceCorrectionInput,
+    AttendanceHistoryPage,
     CorrectionMode,
+    PaginationFilters,
     ScanResult,
+    StudentStatisticsView,
+    TeacherAttendanceFilters,
+    TeacherAttendancePage,
+    TeacherStatisticsFilters,
+    TeacherStatisticsView,
 )
 from backend.core.clock import Clock, SystemClock
 from backend.core.errors import ApiError
@@ -128,16 +135,64 @@ class AttendanceService:
         ).hexdigest()
         return f"hmac-sha256:{digest}"
 
+    async def student_history(
+        self, user: AuthenticatedUser, filters: PaginationFilters
+    ) -> AttendanceHistoryPage:
+        await self._require_student(user.user_id)
+        return await self._repository.student_history(user.user_id, filters)
+
+    async def student_summary(
+        self, user: AuthenticatedUser
+    ) -> StudentStatisticsView:
+        await self._require_student(user.user_id)
+        as_of_date = self._clock.now().astimezone(self.BUSINESS_TIMEZONE).date()
+        week_start = as_of_date - timedelta(days=as_of_date.weekday())
+        month_start = as_of_date.replace(day=1)
+        return await self._repository.student_statistics(
+            user.user_id,
+            as_of_date=as_of_date,
+            week_start=week_start,
+            month_start=month_start,
+        )
+
+    async def teacher_history(
+        self,
+        actor: AuthenticatedUser,
+        filters: TeacherAttendanceFilters,
+    ) -> TeacherAttendancePage:
+        await self._require_staff(actor.user_id)
+        return await self._repository.teacher_history(filters)
+
+    async def teacher_summary(
+        self,
+        actor: AuthenticatedUser,
+        filters: TeacherStatisticsFilters,
+    ) -> TeacherStatisticsView:
+        await self._require_staff(actor.user_id)
+        as_of_date = self._clock.now().astimezone(self.BUSINESS_TIMEZONE).date()
+        week_start = as_of_date - timedelta(days=as_of_date.weekday())
+        month_start = as_of_date.replace(day=1)
+        return await self._repository.teacher_statistics(
+            filters,
+            as_of_date=as_of_date,
+            week_start=week_start,
+            month_start=month_start,
+        )
+
+    async def _require_student(self, user_id: UUID) -> None:
+        if not await self._repository.student_exists(user_id):
+            raise ApiError("PROFILE_REQUIRED", "학생 정보를 먼저 등록해 주세요.", 403)
+
+    async def _require_staff(self, user_id: UUID) -> None:
+        if await self._repository.staff_role(user_id) not in {"teacher", "admin"}:
+            raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
+
     async def correct(
         self,
         actor: AuthenticatedUser,
         correction: AttendanceCorrectionInput,
     ) -> AttendanceScan:
-        if await self._repository.staff_role(actor.user_id) not in {
-            "teacher",
-            "admin",
-        }:
-            raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
+        await self._require_staff(actor.user_id)
 
         if correction.mode == CorrectionMode.VOID:
             scan_id = correction.scan_id

@@ -1,14 +1,21 @@
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 
 from backend.attendance.repository import AttendanceRepository
 from backend.attendance.schemas import (
     AttendanceCorrectionInput,
+    AttendanceHistoryPage,
     AttendanceScanView,
+    PaginationFilters,
     ScanInput,
     ScanResult,
+    StudentStatisticsView,
+    TeacherAttendanceFilters,
+    TeacherAttendancePage,
+    TeacherStatisticsFilters,
+    TeacherStatisticsView,
 )
 from backend.attendance.service import AttendanceService, ScanRateLimited
 from backend.core.auth import get_current_user
@@ -81,6 +88,41 @@ async def scan_attendance(
             if isinstance(error, ScanRateLimited)
             else None,
         )
+
+
+@router.get("/attendance/me", response_model=AttendanceHistoryPage)
+async def my_attendance_history(
+    user: CurrentUser,
+    service: AttendanceServiceDependency,
+    filters: Annotated[PaginationFilters, Query()],
+) -> AttendanceHistoryPage:
+    return await service.student_history(user, filters)
+
+
+@router.get("/statistics/me", response_model=StudentStatisticsView)
+async def my_attendance_statistics(
+    user: CurrentUser,
+    service: AttendanceServiceDependency,
+) -> StudentStatisticsView:
+    return await service.student_summary(user)
+
+
+@router.get("/teacher/attendance", response_model=TeacherAttendancePage)
+async def teacher_attendance_history(
+    teacher: TeacherUser,
+    service: AttendanceServiceDependency,
+    filters: Annotated[TeacherAttendanceFilters, Query()],
+) -> TeacherAttendancePage:
+    return await service.teacher_history(teacher, filters)
+
+
+@router.get("/teacher/statistics", response_model=TeacherStatisticsView)
+async def teacher_attendance_statistics(
+    teacher: TeacherUser,
+    service: AttendanceServiceDependency,
+    filters: Annotated[TeacherStatisticsFilters, Query()],
+) -> TeacherStatisticsView:
+    return await service.teacher_summary(teacher, filters)
 
 
 @router.post(
