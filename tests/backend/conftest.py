@@ -47,20 +47,49 @@ def rsa_jwks() -> tuple[rsa.RSAPrivateKey, dict[str, Any]]:
 @pytest.fixture
 def token_factory(
     rsa_jwks: tuple[rsa.RSAPrivateKey, dict[str, Any]],
-) -> Callable[[str, bool, UUID], str]:
+) -> Callable[..., str]:
     private_key, _ = rsa_jwks
 
-    def create_token(provider: str, verified: bool, subject: UUID) -> str:
+    def create_token(
+        provider: str,
+        verified: bool,
+        subject: UUID,
+        *,
+        expires_in: timedelta = timedelta(minutes=5),
+        payload_overrides: dict[str, Any] | None = None,
+        signing_key: rsa.RSAPrivateKey | str | bytes | None = None,
+        algorithm: str = "RS256",
+    ) -> str:
         now = datetime.now(UTC)
         payload = {
             "sub": str(subject),
             "aud": "authenticated",
-            "exp": now + timedelta(minutes=5),
+            "iss": "https://test-project.supabase.co/auth/v1",
+            "exp": now + expires_in,
             "iat": now,
             "email": "student@example.com",
-            "app_metadata": {"provider": provider},
+            "role": "authenticated",
+            "aal": "aal1",
+            "session_id": "00000000-0000-4000-8000-000000000001",
+            "phone": "",
+            "is_anonymous": False,
+            "app_metadata": {"provider": provider, "providers": [provider]},
+            "user_metadata": {"provider": "untrusted-client-value"},
+            "amr": [
+                {
+                    "method": "oauth" if provider == "google" else "password",
+                    "timestamp": int(now.timestamp()),
+                }
+            ],
             "email_verified": verified,
         }
-        return jwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "test-key"})
+        if payload_overrides:
+            payload.update(payload_overrides)
+        return jwt.encode(
+            payload,
+            signing_key or private_key,
+            algorithm=algorithm,
+            headers={"kid": "test-key"},
+        )
 
     return create_token
