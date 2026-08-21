@@ -1,7 +1,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from backend.identity.models import AuthenticatedUser
 from backend.identity.router import (
@@ -15,7 +15,7 @@ from backend.identity.schemas import (
     TeacherApplicationView,
 )
 from backend.kiosk.router import KioskServiceDependency
-from backend.kiosk.schemas import AdminKioskSessionView
+from backend.kiosk.schemas import AdminKioskSessionPage, KioskSessionListFilters
 
 router = APIRouter(prefix="/api/admin")
 AdminUser = Annotated[AuthenticatedUser, Depends(require_admin, scope="function")]
@@ -87,15 +87,15 @@ async def change_staff_role(
     return await service.set_role(admin.user_id, user_id, role_input.role.value)
 
 
-@router.get("/kiosk-sessions", response_model=list[AdminKioskSessionView])
+@router.get("/kiosk-sessions", response_model=AdminKioskSessionPage)
 async def list_kiosk_sessions(
     response: Response,
     _admin: AdminUser,
     service: KioskServiceDependency,
-) -> list[AdminKioskSessionView]:
+    filters: Annotated[KioskSessionListFilters, Query()],
+) -> AdminKioskSessionPage:
     _disable_storage(response)
-    sessions = await service.admin_sessions()
-    return [AdminKioskSessionView.model_validate(session) for session in sessions]
+    return await service.admin_sessions(filters)
 
 
 @router.delete(

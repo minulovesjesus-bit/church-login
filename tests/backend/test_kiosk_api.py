@@ -11,7 +11,12 @@ from backend.identity.models import AuthenticatedUser
 from backend.identity.router import require_admin
 from backend.kiosk.repository import KioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
-from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
+from backend.kiosk.schemas import (
+    IssuedQrChallenge,
+    KioskSessionListFilters,
+    KioskTokens,
+    QrChallenge,
+)
 from backend.kiosk.service import KioskSessionRevoked
 from backend.main import app
 
@@ -75,16 +80,18 @@ class FakeKioskService:
         )
         return IssuedQrChallenge(token="signed-attendance-qr", challenge=challenge)
 
-    async def admin_sessions(self):
-        return [
-            {
+    async def admin_sessions(self, filters: KioskSessionListFilters):
+        return {
+            "items": [{
                 "session_id": self.session_id,
                 "created_at": self.now,
                 "last_seen_at": self.now,
                 "refresh_expires_at": self.now + timedelta(days=30),
                 "revoked_at": None,
-            }
-        ]
+            }],
+            "next_cursor": None,
+            "page_size": filters.page_size,
+        }
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         self.admin_revoke_calls.append((session_id, actor_id))
@@ -406,7 +413,7 @@ async def test_admin_can_list_and_revoke_kiosk_sessions(
         app.dependency_overrides.pop(require_admin, None)
 
     assert listed.status_code == 200
-    assert listed.json()[0]["session_id"] == str(kiosk_api.session_id)
+    assert listed.json()["items"][0]["session_id"] == str(kiosk_api.session_id)
     assert "refresh_token" not in listed.text
     assert revoked.status_code == 204
     assert kiosk_api.admin_revoke_calls == [(kiosk_api.session_id, admin.user_id)]

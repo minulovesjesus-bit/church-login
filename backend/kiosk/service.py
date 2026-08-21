@@ -1,4 +1,8 @@
-from datetime import timedelta
+import base64
+import binascii
+import json
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from backend.core.clock import Clock, SystemClock
@@ -6,10 +10,18 @@ from backend.core.errors import ApiError
 from backend.core.rate_limit import KIOSK_LOGIN_RATE_LIMIT
 from backend.kiosk.repository import (
     KioskRepository,
+    KioskSessionCursorKey,
     KioskSessionRecord,
     ManagedKioskSessionRecord,
 )
-from backend.kiosk.schemas import IssuedQrChallenge, KioskTokens, QrChallenge
+from backend.kiosk.schemas import (
+    AdminKioskSessionPage,
+    AdminKioskSessionView,
+    IssuedQrChallenge,
+    KioskSessionListFilters,
+    KioskTokens,
+    QrChallenge,
+)
 from backend.kiosk.security import (
     AccessTokenInvalid,
     KioskAccessTokenCodec,
@@ -22,6 +34,9 @@ from backend.kiosk.security import (
 )
 
 REFRESH_TOKEN_LIFETIME = timedelta(days=30)
+INVALID_CURSOR = ("INVALID_CURSOR", "페이지 위치를 확인해 주세요.", 422)
+KIOSK_CURSOR_VERSION = 1
+KIOSK_CURSOR_FIELDS = {"v", "c", "i"}
 
 
 class KioskLoginRejected(ApiError):
@@ -147,8 +162,93 @@ class KioskSessionService:
         if not await self.repository.revoke_session(claims.session_id, self.clock.now()):
             raise KioskSessionRevoked
 
-    async def admin_sessions(self) -> list[ManagedKioskSessionRecord]:
-        return await self.repository.admin_sessions(limit=100)
+    async def admin_sessions(
+        self,
+        filters: KioskSessionListFilters,
+    ) -> AdminKioskSessionPage:
+        cursor_key = self._decode_admin_cursor(filters.cursor)
+        candidates = await self.repository.admin_sessions(
+            page_size=filters.page_size,
+            cursor_key=cursor_key,
+        )
+        records = candidates[: filters.page_size]
+        next_cursor = None
+        if len(candidates) > filters.page_size and records:
+            next_cursor = self._encode_admin_cursor(records[-1])
+        return AdminKioskSessionPage(
+            items=[AdminKioskSessionView.model_validate(record) for record in records],
+            next_cursor=next_cursor,
+            page_size=filters.page_size,
+        )
+
+    @staticmethod
+    def _canonical_cursor_timestamp(value: datetime) -> str:
+        return value.astimezone(UTC).isoformat(timespec="microseconds").replace(
+            "+00:00", "Z"
+        )
+
+    @classmethod
+    def _encode_admin_cursor(cls, session: ManagedKioskSessionRecord) -> str:
+        payload = {
+            "v": KIOSK_CURSOR_VERSION,
+            "c": cls._canonical_cursor_timestamp(session.created_at),
+            "i": str(session.session_id),
+        }
+        raw = json.dumps(
+            payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+    @classmethod
+    def _decode_admin_cursor(cls, cursor: str | None) -> KioskSessionCursorKey | None:
+        if cursor is None:
+            return None
+        try:
+            padding = "=" * (-len(cursor) % 4)
+            raw = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
+            canonical_encoding = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+            if canonical_encoding != cursor or len(raw) > 512:
+                raise ValueError("cursor encoding is invalid")
+            payload: Any = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != KIOSK_CURSOR_FIELDS:
+                raise ValueError("cursor shape is invalid")
+
+            version = payload["v"]
+            timestamp_text = payload["c"]
+            session_id_text = payload["i"]
+            if (
+                type(version) is not int
+                or version != KIOSK_CURSOR_VERSION
+                or not isinstance(timestamp_text, str)
+                or not isinstance(session_id_text, str)
+            ):
+                raise ValueError("cursor fields are invalid")
+
+            timestamp = datetime.fromisoformat(timestamp_text)
+            if (
+                timestamp.tzinfo is None
+                or cls._canonical_cursor_timestamp(timestamp) != timestamp_text
+            ):
+                raise ValueError("cursor timestamp is not canonical")
+            session_id = UUID(session_id_text)
+            if str(session_id) != session_id_text:
+                raise ValueError("cursor id is not canonical")
+            return KioskSessionCursorKey(
+                created_at=timestamp,
+                session_id=session_id,
+            )
+        except (
+            binascii.Error,
+            json.JSONDecodeError,
+            OverflowError,
+            UnicodeDecodeError,
+            TypeError,
+            ValueError,
+        ):
+            raise ApiError(*INVALID_CURSOR) from None
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         if not await self.repository.revoke_session_as_admin(

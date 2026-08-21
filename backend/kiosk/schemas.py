@@ -1,8 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class KioskLoginInput(BaseModel):
@@ -56,6 +57,19 @@ class AdminKioskSessionView(BaseModel):
     last_seen_at: datetime
     refresh_expires_at: datetime
     revoked_at: datetime | None
+
+
+class KioskSessionListFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: Annotated[str, StringConstraints(min_length=1, max_length=2048)] | None = None
+    page_size: int = Field(default=50, ge=1, le=100)
+
+
+class AdminKioskSessionPage(BaseModel):
+    items: list[AdminKioskSessionView]
+    next_cursor: str | None
+    page_size: int = Field(ge=1, le=100)
 
 
 class QrChallengeView(BaseModel):

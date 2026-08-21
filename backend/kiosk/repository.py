@@ -24,6 +24,12 @@ class ManagedKioskSessionRecord:
     revoked_at: datetime | None
 
 
+@dataclass(frozen=True)
+class KioskSessionCursorKey:
+    created_at: datetime
+    session_id: UUID
+
+
 class KioskRepository:
     def __init__(self, connection: Any) -> None:
         self._connection = connection
@@ -106,17 +112,28 @@ class KioskRepository:
         return await cursor.fetchone() is not None
 
     async def admin_sessions(
-        self, *, limit: int = 100
+        self,
+        *,
+        page_size: int,
+        cursor_key: KioskSessionCursorKey | None,
     ) -> list[ManagedKioskSessionRecord]:
-        bounded_limit = min(max(limit, 1), 100)
         cursor = await self._connection.execute(
             """
             select id, created_at, last_seen_at, refresh_expires_at, revoked_at
             from app.kiosk_sessions
-            order by last_seen_at desc, id desc
-            limit %s
+            where (
+              %(cursor_created_at)s::timestamptz is null
+              or (created_at, id)
+                 < (%(cursor_created_at)s::timestamptz, %(cursor_session_id)s::uuid)
+            )
+            order by created_at desc, id desc
+            limit %(limit)s
             """,
-            (bounded_limit,),
+            {
+                "cursor_created_at": cursor_key.created_at if cursor_key else None,
+                "cursor_session_id": str(cursor_key.session_id) if cursor_key else None,
+                "limit": page_size + 1,
+            },
         )
         return [ManagedKioskSessionRecord(*row) for row in await cursor.fetchall()]
 

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
@@ -32,6 +32,12 @@ const revoked = {
   session_id: "33333333-3333-4333-8333-333333333333",
   revoked_at: "2026-08-22T02:58:00Z",
 };
+type SessionFixture = Omit<typeof active, "revoked_at"> & { revoked_at: string | null };
+const page = (items: SessionFixture[], next_cursor: string | null = null) => ({
+  items,
+  next_cursor,
+  page_size: 100,
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -42,7 +48,7 @@ afterEach(() => {
 it("renders bounded safe fields, Seoul timestamps, and active/expired/revoked states", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-22T03:00:00Z"));
-  mockApi.get.mockResolvedValue([active, expired, revoked]);
+  mockApi.get.mockResolvedValue(page([active, expired, revoked]));
 
   render(<KioskSessionsPage />);
 
@@ -60,7 +66,7 @@ it("renders bounded safe fields, Seoul timestamps, and active/expired/revoked st
 });
 
 it("cancels without a request, locks duplicate revokes, and refetches after 204", async () => {
-  mockApi.get.mockResolvedValueOnce([active]).mockResolvedValueOnce([revoked]);
+  mockApi.get.mockResolvedValueOnce(page([active])).mockResolvedValueOnce(page([revoked]));
   let finishDelete: (() => void) | undefined;
   mockApi.delete.mockReturnValue(new Promise<void>((resolve) => {
     finishDelete = resolve;
@@ -86,7 +92,7 @@ it("cancels without a request, locks duplicate revokes, and refetches after 204"
 });
 
 it("keeps the session and action available when revocation fails", async () => {
-  mockApi.get.mockResolvedValue([active]);
+  mockApi.get.mockResolvedValue(page([active]));
   mockApi.delete.mockRejectedValue(new ApiClientError("REQUEST_FAILED", "해지 실패"));
   vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<KioskSessionsPage />);
@@ -99,13 +105,13 @@ it("keeps the session and action available when revocation fails", async () => {
 });
 
 it("redirects terminal auth failures and never renders a stale protected list", async () => {
-  let resolveList: ((value: typeof active[]) => void) | undefined;
+  let resolveList: ((value: ReturnType<typeof page>) => void) | undefined;
   mockApi.get.mockReturnValue(new Promise((resolve) => {
     resolveList = resolve;
   }));
   const view = render(<KioskSessionsPage />);
   view.unmount();
-  resolveList?.([active]);
+  resolveList?.(page([active]));
   await act(async () => {});
   expect(screen.queryByText(active.session_id)).not.toBeInTheDocument();
 
@@ -118,7 +124,7 @@ it("redirects terminal auth failures and never renders a stale protected list", 
 it("retries a failed list and redirects forbidden administrators to the teacher home", async () => {
   mockApi.get
     .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "목록 실패"))
-    .mockResolvedValueOnce([]);
+    .mockResolvedValueOnce(page([]));
   render(<KioskSessionsPage />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent("목록 실패");
@@ -128,4 +134,86 @@ it("retries a failed list and redirects forbidden administrators to the teacher 
   mockApi.get.mockRejectedValue(new ApiClientError("FORBIDDEN", "권한 없음"));
   render(<KioskSessionsPage />);
   await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher"));
+});
+
+it("appends a later page without duplicates and locks competing loads", async () => {
+  let resolveNext: ((value: ReturnType<typeof page>) => void) | undefined;
+  const later = {
+    ...active,
+    session_id: "00000000-0000-4000-8000-000000000001",
+    created_at: "2026-01-01T03:00:00Z",
+  };
+  mockApi.get
+    .mockResolvedValueOnce(page([active], "opaque+/cursor="))
+    .mockReturnValueOnce(new Promise((resolve) => { resolveNext = resolve; }));
+  render(<KioskSessionsPage />);
+
+  const loadMore = await screen.findByRole("button", { name: "더 보기" });
+  fireEvent.click(loadMore);
+  fireEvent.click(loadMore);
+
+  expect(mockApi.get).toHaveBeenCalledTimes(2);
+  expect(mockApi.get).toHaveBeenLastCalledWith(
+    "/api/admin/kiosk-sessions?page_size=100&cursor=opaque%2B%2Fcursor%3D",
+  );
+  expect(loadMore).toBeDisabled();
+  expect(screen.getByRole("button", { name: "세션 해지" })).toBeDisabled();
+
+  resolveNext?.(page([active, later, later]));
+  await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
+  expect(screen.getByText(later.session_id)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "더 보기" })).not.toBeInTheDocument();
+});
+
+it("keeps loaded rows and restores pagination after a transient next-page error", async () => {
+  mockApi.get
+    .mockResolvedValueOnce(page([active], "retry-page"))
+    .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "다음 목록 실패"));
+  render(<KioskSessionsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("다음 목록 실패");
+  expect(screen.getByText(active.session_id)).toBeVisible();
+  expect(screen.getByRole("button", { name: "더 보기" })).toBeEnabled();
+});
+
+it("hides protected rows when a later-page request has terminal authorization failure", async () => {
+  mockApi.get
+    .mockResolvedValueOnce(page([active], "terminal-page"))
+    .mockRejectedValueOnce(new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
+  render(<KioskSessionsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher/login"));
+  expect(screen.queryByText(active.session_id)).not.toBeInTheDocument();
+});
+
+it("revokes the exact session loaded from a later page", async () => {
+  const later = {
+    ...active,
+    session_id: "00000000-0000-4000-8000-000000000002",
+    created_at: "2026-01-01T03:00:00Z",
+  };
+  mockApi.get
+    .mockResolvedValueOnce(page([active], "next-page"))
+    .mockResolvedValueOnce(page([later]))
+    .mockResolvedValueOnce(page([active], "next-page"))
+    .mockResolvedValueOnce(page([{ ...later, revoked_at: "2026-08-22T03:00:00Z" }]));
+  mockApi.delete.mockResolvedValue(undefined);
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  render(<KioskSessionsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
+  const laterCard = (await screen.findByText(later.session_id)).closest("li");
+  fireEvent.click(within(laterCard as HTMLElement).getByRole("button", { name: "세션 해지" }));
+
+  await waitFor(() => expect(mockApi.delete).toHaveBeenCalledWith(
+    `/api/admin/kiosk-sessions/${later.session_id}`,
+  ));
+  await waitFor(() => {
+    const refreshedLaterCard = screen.getByText(later.session_id).closest("li");
+    expect(within(refreshedLaterCard as HTMLElement).getByText("해지됨")).toBeVisible();
+  });
 });

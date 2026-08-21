@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import os
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -27,6 +29,7 @@ from backend.identity.router import (
 from backend.identity.schemas import StaffRole, TeacherApplicationStatus
 from backend.kiosk.repository import KioskRepository, ManagedKioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
+from backend.kiosk.schemas import KioskSessionListFilters
 from backend.kiosk.security import KioskPasswordHasher, hash_opaque_token
 from backend.kiosk.service import KioskSessionRevoked, KioskSessionService
 from backend.main import app
@@ -187,8 +190,12 @@ class FakeKioskService:
         )
         self.revocations: list[tuple[UUID, UUID]] = []
 
-    async def admin_sessions(self) -> list[ManagedKioskSessionRecord]:
-        return [self.session]
+    async def admin_sessions(self, filters: KioskSessionListFilters):
+        return {
+            "items": [self.session],
+            "next_cursor": None,
+            "page_size": filters.page_size,
+        }
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         self.revocations.append((session_id, actor_id))
@@ -309,13 +316,139 @@ async def test_admin_routes_delegate_and_gets_are_no_store(
     assert kiosk_service.revocations == [
         (kiosk_service.session.session_id, admin_user.user_id)
     ]
-    assert set(kiosks.json()[0]) == {
+    assert kiosks.json()["next_cursor"] is None
+    assert kiosks.json()["page_size"] == 50
+    assert set(kiosks.json()["items"][0]) == {
         "session_id",
         "created_at",
         "last_seen_at",
         "refresh_expires_at",
         "revoked_at",
     }
+
+
+def _encoded_kiosk_cursor_payload(payload: object) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).decode("ascii")
+    return encoded.rstrip("=")
+
+
+@pytest.mark.parametrize(
+    "cursor",
+    [
+        "not-base64",
+        "e30",
+        "x" * 2048,
+        _encoded_kiosk_cursor_payload(None),
+        _encoded_kiosk_cursor_payload({"v": 1, "c": "2026-08-22T03:00:00.000000Z"}),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": "2026-08-22T03:00:00.000000Z",
+                "i": "11111111-1111-4111-8111-111111111111",
+                "extra": True,
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 2,
+                "c": "2026-08-22T03:00:00.000000Z",
+                "i": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": True,
+                "c": "2026-08-22T03:00:00.000000Z",
+                "i": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": "2026-08-22T03:00:00Z",
+                "i": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": "0001-01-01T00:00:00.000000+14:00",
+                "i": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": 123,
+                "i": "11111111-1111-4111-8111-111111111111",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": "2026-08-22T03:00:00.000000Z",
+                "i": "not-a-uuid",
+            }
+        ),
+        _encoded_kiosk_cursor_payload(
+            {
+                "v": 1,
+                "c": "2026-08-22T03:00:00.000000Z",
+                "i": 123,
+            }
+        ),
+    ],
+)
+async def test_kiosk_session_cursor_validation_is_stable_422(
+    client: httpx.AsyncClient,
+    admin_user: AuthenticatedUser,
+    cursor: str,
+) -> None:
+    async def current_admin() -> AuthenticatedUser:
+        return admin_user
+
+    app.dependency_overrides[require_admin] = current_admin
+    app.dependency_overrides[get_kiosk_service] = lambda: KioskSessionService(
+        KioskRepository(None),
+        password_hash="unused",
+        cookie_secret="c" * 64,
+        qr_signing_secret="q" * 64,
+    )
+    try:
+        response = await client.get(
+            "/api/admin/kiosk-sessions",
+            params={"cursor": cursor},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "INVALID_CURSOR"
+
+
+@pytest.mark.parametrize("page_size", [0, 101])
+async def test_kiosk_session_page_size_bounds_are_stable_422(
+    client: httpx.AsyncClient,
+    admin_user: AuthenticatedUser,
+    page_size: int,
+) -> None:
+    async def current_admin() -> AuthenticatedUser:
+        return admin_user
+
+    app.dependency_overrides[require_admin] = current_admin
+    app.dependency_overrides[get_kiosk_service] = lambda: FakeKioskService()
+    try:
+        response = await client.get(
+            "/api/admin/kiosk-sessions",
+            params={"page_size": page_size},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 async def test_admin_mutation_dependency_commit_failure_precedes_success_response(
@@ -372,10 +505,15 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
         pytest.skip("TEST_DATABASE_URL is required for kiosk administration integration")
 
     actor_id = uuid4()
-    session_ids = [uuid4(), uuid4(), uuid4()]
+    session_ids = [
+        UUID("33333333-3333-4333-8333-333333333333"),
+        UUID("22222222-2222-4222-8222-222222222222"),
+        UUID("11111111-1111-4111-8111-111111111111"),
+    ]
     older_session_ids = [uuid4() for _ in range(100)]
     all_session_ids = session_ids + older_session_ids
     now = datetime(2026, 8, 22, 3, tzinfo=UTC)
+    created_anchor = now + timedelta(days=3650)
     clock = FrozenClock(now)
     password_hash = KioskPasswordHasher().hash("church-kiosk-secret")
     cookie_secret = "c" * 64
@@ -403,7 +541,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 (
                     session_ids[0],
                     hash_opaque_token(refresh_token, cookie_secret),
-                    now - timedelta(days=3),
+                    created_anchor,
                     now - timedelta(minutes=1),
                     now + timedelta(days=1),
                     None,
@@ -411,7 +549,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 (
                     session_ids[1],
                     "expired-secret-hash",
-                    now - timedelta(days=4),
+                    created_anchor,
                     now - timedelta(minutes=2),
                     now - timedelta(seconds=1),
                     None,
@@ -419,7 +557,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 (
                     session_ids[2],
                     "revoked-secret-hash",
-                    now - timedelta(days=5),
+                    created_anchor,
                     now - timedelta(minutes=3),
                     now + timedelta(days=2),
                     now - timedelta(minutes=2),
@@ -437,7 +575,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                     (
                         session_id,
                         f"older-secret-hash-{index}",
-                        now - timedelta(days=10 + index),
+                        created_anchor - timedelta(days=10 + index),
                         now - timedelta(minutes=10 + index),
                         now + timedelta(days=1),
                     )
@@ -454,19 +592,85 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 qr_signing_secret=qr_secret,
                 clock=clock,
             )
+            pagination_indexes = await connection.execute(
+                """
+                select indexdef
+                from pg_indexes
+                where schemaname = 'app'
+                  and tablename = 'kiosk_sessions'
+                  and lower(indexdef) like '%(created_at desc, id desc)%'
+                """
+            )
+            assert len(await pagination_indexes.fetchall()) == 1
             access_token, _ = service._access_tokens.issue(session_ids[0])
             issued_qr = service.issue_qr_challenge(session_ids[0]).token
 
-            listed = await service.admin_sessions()
-            assert [item.session_id for item in listed[:3]] == session_ids
-            assert len(listed) == 100
-            assert set(listed[0].__dict__) == {
+            first_page = await service.admin_sessions(
+                KioskSessionListFilters(page_size=100)
+            )
+            assert [item.session_id for item in first_page.items[:3]] == session_ids
+            assert len(first_page.items) == 100
+            assert first_page.next_cursor is not None
+            assert set(first_page.items[0].model_dump()) == {
                 "session_id",
                 "created_at",
                 "last_seen_at",
                 "refresh_expires_at",
                 "revoked_at",
             }
+            assert "secret" not in first_page.next_cursor
+
+            second_page = await service.admin_sessions(
+                KioskSessionListFilters(
+                    page_size=100,
+                    cursor=first_page.next_cursor,
+                )
+            )
+            assert not (
+                {item.session_id for item in first_page.items}
+                & {item.session_id for item in second_page.items}
+            )
+            oldest_session_id = older_session_ids[-1]
+            assert oldest_session_id in {
+                item.session_id for item in second_page.items
+            }
+
+            seen_ids = {
+                item.session_id for page in (first_page, second_page) for item in page.items
+            }
+            terminal_page = second_page
+            while terminal_page.next_cursor is not None:
+                following_page = await service.admin_sessions(
+                    KioskSessionListFilters(
+                        page_size=100,
+                        cursor=terminal_page.next_cursor,
+                    )
+                )
+                following_ids = {
+                    item.session_id for item in following_page.items
+                }
+                assert seen_ids.isdisjoint(following_ids)
+                seen_ids.update(following_ids)
+                terminal_page = following_page
+            assert terminal_page.next_cursor is None
+
+            await service.revoke_as_admin(oldest_session_id, actor_id)
+            await service.revoke_as_admin(oldest_session_id, actor_id)
+            oldest_state = await connection.execute(
+                "select revoked_at from app.kiosk_sessions where id = %s",
+                (oldest_session_id,),
+            )
+            assert (await oldest_state.fetchone())[0] is not None
+            oldest_audits = await connection.execute(
+                """
+                select details from app.audit_logs
+                where action = 'kiosk.session_revoked' and target_id = %s
+                """,
+                (str(oldest_session_id),),
+            )
+            assert await oldest_audits.fetchall() == [
+                ({"reason": "administrator_revocation"},)
+            ]
 
             await service.revoke_as_admin(session_ids[0], actor_id)
             first_state = await connection.execute(
