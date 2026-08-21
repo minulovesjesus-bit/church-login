@@ -126,6 +126,7 @@ def fixture_environment(**overrides: str | None) -> dict[str, str]:
             "DATABASE_URL": ("postgresql://postgres:postgres@127.0.0.1:54322/postgres"),
         }
     )
+    environment.pop("VERCEL", None)
     environment.pop("VERCEL_ENV", None)
     for name in LIBPQ_DESTINATION_ENVIRONMENT_NAMES:
         environment.pop(name, None)
@@ -168,11 +169,15 @@ def test_identity_auth_fixture_refuses_to_load_outside_test_environment() -> Non
     assert "Identity browser fixtures require APP_ENV=test." in result.stderr
 
 
-@pytest.mark.parametrize("vercel_env", ["production", ""])
+@pytest.mark.parametrize(
+    ("marker", "value"),
+    [("VERCEL", "1"), ("VERCEL", ""), ("VERCEL_ENV", "production"), ("VERCEL_ENV", "")],
+)
 def test_identity_auth_fixture_refuses_to_load_in_vercel_environment(
-    vercel_env: str,
+    marker: str,
+    value: str,
 ) -> None:
-    result = run_identity_auth_import(fixture_environment(VERCEL_ENV=vercel_env))
+    result = run_identity_auth_import(fixture_environment(**{marker: value}))
 
     assert result.returncode != 0
     assert "Identity browser fixtures cannot load on Vercel." in result.stderr
@@ -430,18 +435,49 @@ def test_attendance_audit_fixture_refuses_production_environment() -> None:
     assert "Identity browser fixtures require APP_ENV=test." in result.stderr
 
 
-@pytest.mark.parametrize("vercel_env", ["production", ""])
-def test_attendance_audit_fixture_refuses_vercel(vercel_env: str) -> None:
+@pytest.mark.parametrize(
+    ("marker", "value"),
+    [("VERCEL", "1"), ("VERCEL", ""), ("VERCEL_ENV", "production"), ("VERCEL_ENV", "")],
+)
+def test_attendance_audit_fixture_refuses_vercel(marker: str, value: str) -> None:
     result = subprocess.run(
         [sys.executable, str(ATTENDANCE_AUDIT_FIXTURE_PATH)],
         capture_output=True,
         check=False,
-        env=fixture_environment(VERCEL_ENV=vercel_env),
+        env=fixture_environment(**{marker: value}),
         text=True,
     )
 
     assert result.returncode != 0
     assert "Identity browser fixtures cannot load on Vercel." in result.stderr
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"SUPABASE_URL": "https://project.supabase.co"},
+        {
+            "TEST_DATABASE_URL": (
+                "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+                "?host=db.example.com"
+            )
+        },
+        {"PGSERVICE": "remote-service"},
+    ],
+)
+def test_attendance_audit_fixture_refuses_hosted_or_overridden_destinations(
+    override: dict[str, str],
+) -> None:
+    result = subprocess.run(
+        [sys.executable, str(ATTENDANCE_AUDIT_FIXTURE_PATH)],
+        capture_output=True,
+        check=False,
+        env=fixture_environment(**override),
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "Identity browser fixtures require" in result.stderr
 
 
 def test_seed_script_reaches_environment_gate_when_invoked_by_file_path() -> None:
@@ -458,9 +494,12 @@ def test_seed_script_reaches_environment_gate_when_invoked_by_file_path() -> Non
     assert "ModuleNotFoundError" not in result.stderr
 
 
-@pytest.mark.parametrize("vercel_env", ["preview", ""])
-def test_seed_fixture_rejects_vercel_before_main(vercel_env: str) -> None:
-    result = run_seed_validation(fixture_environment(VERCEL_ENV=vercel_env))
+@pytest.mark.parametrize(
+    ("marker", "value"),
+    [("VERCEL", "1"), ("VERCEL", ""), ("VERCEL_ENV", "preview"), ("VERCEL_ENV", "")],
+)
+def test_seed_fixture_rejects_vercel_before_main(marker: str, value: str) -> None:
+    result = run_seed_validation(fixture_environment(**{marker: value}))
 
     assert result.returncode != 0
     assert "cannot load on Vercel" in result.stderr

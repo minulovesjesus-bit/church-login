@@ -143,6 +143,33 @@ it("writes bounded date, status, and search filters to the URL", async () => {
   expect(destination).not.toContain("student_id");
 });
 
+it.each(["0000-01-01", "2026-02-29", "2026-02-30", "2026-04-31"])(
+  "rejects impossible calendar date %s before requesting the API",
+  async (impossibleDate) => {
+    navigation.search = `date_from=${impossibleDate}&date_to=${impossibleDate}&status=ALL&page=1`;
+    client.api.get.mockImplementation(resolveTeacherApi);
+
+    render(<TeacherAttendancePage />);
+
+    await screen.findByRole("heading", { name: "전체 출결 관리" });
+    const requestedPaths = client.api.get.mock.calls.flat().join(" ");
+    expect(requestedPaths).not.toContain(impossibleDate);
+    expect(screen.getByLabelText("시작일")).not.toHaveValue(impossibleDate);
+    expect(screen.getByLabelText("종료일")).not.toHaveValue(impossibleDate);
+  },
+);
+
+it("keeps a real leap day in bounded API requests", async () => {
+  navigation.search = "date_from=2024-02-29&date_to=2024-02-29&status=ALL&page=1";
+  client.api.get.mockImplementation(resolveTeacherApi);
+
+  render(<TeacherAttendancePage />);
+
+  await screen.findByRole("heading", { name: "전체 출결 관리" });
+  expect(client.api.get.mock.calls.flat().join(" ")).toContain("date_from=2024-02-29");
+  expect(screen.getByLabelText("시작일")).toHaveValue("2024-02-29");
+});
+
 it("uses URL pagination totals and preserves active filters", async () => {
   client.api.get.mockImplementation(resolveTeacherApi);
   render(<TeacherAttendancePage />);
@@ -193,6 +220,10 @@ it("requires a correction reason, submits a void, and preserves the original row
     { mode: "VOID", scan_id: history.items[0].id, reason: "중복 스캔" },
   ));
   expect(await screen.findByRole("status")).toHaveTextContent("보정이 저장되었습니다.");
+  const dialog = screen.getByRole("dialog", { name: "통계 제외 학생" });
+  expect(within(dialog).getByText("취소된 원본")).toBeInTheDocument();
+  expect(within(dialog).getByText("취소 사유: 중복 스캔")).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "원본 기록 취소" })).toBeDisabled();
   expect(screen.getAllByText("통계 제외 학생").length).toBeGreaterThan(0);
 });
 

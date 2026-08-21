@@ -9,6 +9,7 @@ from psycopg.conninfo import conninfo_to_dict
 LIBPQ_DESTINATION_ENVIRONMENT = frozenset(
     {"PGHOST", "PGHOSTADDR", "PGSERVICE", "PGSERVICEFILE"}
 )
+VERCEL_MARKERS = frozenset({"VERCEL", "VERCEL_ENV"})
 
 
 def _is_loopback_host(value: str, *, allow_localhost: bool) -> bool:
@@ -81,7 +82,7 @@ def require_local_identity_environment(
 ) -> None:
     if os.environ.get("APP_ENV") != "test":
         raise RuntimeError("Identity browser fixtures require APP_ENV=test.")
-    if "VERCEL_ENV" in os.environ:
+    if any(marker in os.environ for marker in VERCEL_MARKERS):
         raise RuntimeError("Identity browser fixtures cannot load on Vercel.")
     if not _is_loopback_supabase_url(supabase_url):
         raise RuntimeError(

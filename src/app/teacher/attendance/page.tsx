@@ -11,6 +11,7 @@ import { SummaryCards } from "@/features/attendance/summary-cards";
 import type {
   AttendanceDirection,
   AttendanceHistoryPage,
+  AttendanceScan,
   TeacherAttendanceItem,
   TeacherStatistics,
 } from "@/features/attendance/types";
@@ -49,7 +50,14 @@ function addDays(dateValue: string, days: number): string {
 }
 
 function validDate(value: string | null): value is string {
-  return Boolean(value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)));
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  if (Number(match[1]) < 1) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime())
+    && parsed.getUTCFullYear() === Number(match[1])
+    && parsed.getUTCMonth() + 1 === Number(match[2])
+    && parsed.getUTCDate() === Number(match[3]);
 }
 
 function filtersFromSearch(raw: string): Filters {
@@ -198,7 +206,15 @@ function TeacherAttendanceContent() {
     setCorrectionError(undefined);
     setCorrectionNotice(undefined);
     try {
-      await api.post("/api/teacher/attendance/corrections", body);
+      const corrected = await api.post<AttendanceScan>(
+        "/api/teacher/attendance/corrections",
+        body,
+      );
+      if (mode === "VOID") {
+        setSelected((current) => (
+          current?.id === corrected.id ? { ...current, ...corrected } : current
+        ));
+      }
       setCorrectionNotice("보정이 저장되었습니다. 원본 기록과 감사 이력은 그대로 유지됩니다.");
       setAttempt((value) => value + 1);
     } catch (caught) {

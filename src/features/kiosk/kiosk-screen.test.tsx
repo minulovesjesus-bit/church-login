@@ -92,8 +92,9 @@ it("starts with an accessible shared-password form and uses a generic rejection 
 });
 
 it("keeps one QR for the full server lifetime and schedules the next request at expiry", async () => {
+  useStationaryClock();
   const client = createClient();
-  await unlock(client);
+  await submitPassword(client);
 
   expect(client.getQr).toHaveBeenCalledTimes(1);
   const untilExpiry = Date.parse(QR.expires_at) - Date.now();

@@ -4,6 +4,21 @@ import { expect, type Page } from "@playwright/test";
 
 const renderedTokens = new WeakMap<Page, string>();
 
+type ScanResult = {
+  scan_id: string;
+  direction: "IN" | "OUT";
+  scanned_at: string;
+  duplicate: boolean;
+  cooldown_remaining: number | null;
+};
+
+type AttendanceAuditScope = {
+  teacherId: string;
+  correctionScanId: string;
+  adminId: string;
+  kioskSessionId: string;
+};
+
 async function qrResponseToken(page: Page, previous?: string): Promise<string> {
   const response = await page.waitForResponse(async (candidate) => {
     if (!candidate.url().includes("/api/kiosk/qr") || candidate.request().method() !== "GET" || !candidate.ok()) return false;
@@ -49,10 +64,14 @@ export async function submitDecodedQr(
   page: Page,
   token: string,
   requestId: string,
-): Promise<void> {
+): Promise<ScanResult> {
   const scanAgain = page.getByRole("button", { name: "새 QR 스캔" });
   if (await scanAgain.isVisible().catch(() => false)) await scanAgain.click();
   await expect(page.getByText("QR 코드를 화면 안에 맞춰 주세요")).toBeVisible();
+  const scanResponse = page.waitForResponse((response) => (
+    response.url().includes("/api/attendance/scan")
+    && response.request().method() === "POST"
+  ));
   await page.evaluate(({ value, id }) => {
     const originalRandomUuid = crypto.randomUUID;
     Object.defineProperty(crypto, "randomUUID", {
@@ -65,16 +84,31 @@ export async function submitDecodedQr(
       value: originalRandomUuid,
     });
   }, { value: token, id: requestId });
+  const response = await scanResponse;
+  expect(response.ok()).toBe(true);
+  return response.json() as Promise<ScanResult>;
 }
 
 export async function advanceTestClock(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-export function attendanceAuditActions(): Record<string, number> {
+export function attendanceAuditActions(scope: AttendanceAuditScope): Record<string, number> {
   const output = execFileSync(
     "uv",
-    ["run", "python", "tests/e2e/fixtures/attendance_audit.py"],
+    [
+      "run",
+      "python",
+      "tests/e2e/fixtures/attendance_audit.py",
+      "--teacher-id",
+      scope.teacherId,
+      "--correction-scan-id",
+      scope.correctionScanId,
+      "--admin-id",
+      scope.adminId,
+      "--kiosk-session-id",
+      scope.kioskSessionId,
+    ],
     { encoding: "utf8", env: process.env, stdio: ["ignore", "pipe", "pipe"] },
   );
   return JSON.parse(output) as Record<string, number>;

@@ -8,7 +8,7 @@ import {
   unlockKiosk,
   waitForFreshRenderedQrToken,
 } from "./helpers/attendance";
-import { authenticateAs } from "./fixtures/identity";
+import { authenticateAs, identityFixtures } from "./fixtures/identity";
 
 const REQUEST_IN = "00000000-0000-4000-8000-000000000801";
 const REQUEST_COOLDOWN = "00000000-0000-4000-8000-000000000802";
@@ -47,7 +47,7 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
 
     const freshToken = await waitForFreshRenderedQrToken(kiosk, firstToken);
     await advanceTestClock(1_500);
-    await submitDecodedQr(student, freshToken, REQUEST_SECOND_IN);
+    const secondIn = await submitDecodedQr(student, freshToken, REQUEST_SECOND_IN);
     await expect(student.getByRole("heading", { name: "입실 처리됐어요" })).toBeVisible();
 
     await student.goto("/student/attendance");
@@ -77,7 +77,13 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
     await expect(studentRow).toBeVisible();
     await studentRow.getByRole("button", { name: "상세 및 보정" }).click();
     await teacher.getByLabel("보정 사유").fill("E2E 중복 확인");
+    const correctionResponse = teacher.waitForResponse((response) => (
+      response.url().includes("/api/teacher/attendance/corrections")
+      && response.request().method() === "POST"
+    ));
     await teacher.getByRole("button", { name: "원본 기록 취소" }).click();
+    const corrected = await (await correctionResponse).json() as { id: string };
+    expect(corrected.id).toBe(secondIn.scan_id);
     await expect(teacher.getByText(/보정이 저장되었습니다/)).toBeVisible();
     await expect(teacher.getByText("취소된 원본").last()).toBeVisible();
 
@@ -91,9 +97,16 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
     expect(rejectedQr.status()).toBe(401);
     expect((await rejectedQr.json()).error.code).toBe("KIOSK_SESSION_REVOKED");
 
-    const actions = attendanceAuditActions();
-    expect(actions["attendance.corrected"]).toBeGreaterThanOrEqual(1);
-    expect(actions["kiosk.session_revoked"]).toBeGreaterThanOrEqual(1);
+    const actions = attendanceAuditActions({
+      teacherId: identityFixtures.approvedTeacher.id,
+      correctionScanId: corrected.id,
+      adminId: identityFixtures.admin.id,
+      kioskSessionId: unlocked.sessionId,
+    });
+    expect(actions).toEqual({
+      "attendance.corrected": 1,
+      "kiosk.session_revoked": 1,
+    });
   } finally {
     await Promise.all([
       kioskContext.close(),
