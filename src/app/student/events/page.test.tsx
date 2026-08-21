@@ -118,6 +118,24 @@ it.each([
   await vi.waitFor(() => expect(client.api.get).toHaveBeenCalledWith(expectedPath));
 });
 
+it.each([
+  ["0001-01-01", "이전 주", "다음 주", "0001-01-08"],
+  ["9999-12-20", "다음 주", "이전 주", "9999-12-13"],
+])("does not emit an unselectable adjacent link at the %s boundary", async (week, unavailableLabel, availableLabel, availableWeek) => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-19T03:30:00Z"));
+  client.api.get.mockResolvedValue([]);
+
+  await renderPage(week);
+
+  await screen.findByText("이번 주 등록된 일정이 없습니다.");
+  expect(screen.queryByRole("link", { name: unavailableLabel })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: unavailableLabel })).toBeDisabled();
+  expect(screen.getByRole("link", { name: availableLabel })).toHaveAttribute("href", `/student/events?week=${availableWeek}`);
+  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?week=0000-12-25");
+  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?week=9999-12-27");
+});
+
 it("shows distinct loading, retryable error, retry, and auth redirect states", async () => {
   let rejectFirst: (error: Error) => void = () => undefined;
   client.api.get

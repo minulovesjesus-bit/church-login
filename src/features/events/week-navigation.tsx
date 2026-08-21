@@ -64,7 +64,7 @@ function addCalendarDays(date: CalendarDate, amount: number): CalendarDate {
 }
 
 function isBackendCompatibleWeek(date: CalendarDate): boolean {
-  if (dayOfWeek(date) !== 1) return false;
+  if (date.year < MIN_BACKEND_YEAR || date.year > MAX_BACKEND_YEAR || dayOfWeek(date) !== 1) return false;
   const exclusiveEnd = addCalendarDays(date, 7);
   return exclusiveEnd.year >= MIN_BACKEND_YEAR && exclusiveEnd.year <= MAX_BACKEND_YEAR;
 }
@@ -93,20 +93,29 @@ export function resolveSeoulMonday(value: WeekSearchValue, now = new Date()): st
   return currentSeoulMonday(now);
 }
 
-export function adjacentSeoulWeek(week: string, offset: -1 | 1): string {
+export function exclusiveSeoulWeekEnd(week: string): string | undefined {
   const parsed = parseCalendarDate(week);
-  if (!parsed || dayOfWeek(parsed) !== 1) return currentSeoulMonday();
+  if (!parsed || !isBackendCompatibleWeek(parsed)) return undefined;
+  return formatCalendarDate(addCalendarDays(parsed, 7));
+}
+
+export function adjacentSeoulWeek(week: string, offset: -1 | 1): string | undefined {
+  const parsed = parseCalendarDate(week);
+  if (!parsed || !isBackendCompatibleWeek(parsed)) return undefined;
   const adjacent = addCalendarDays(parsed, offset * 7);
-  if (adjacent.year < MIN_BACKEND_YEAR || adjacent.year > MAX_BACKEND_YEAR) return currentSeoulMonday();
+  if (!isBackendCompatibleWeek(adjacent)) return undefined;
   return formatCalendarDate(adjacent);
 }
 
 export function WeekNavigation({ week, currentWeek = currentSeoulMonday() }: { week: string; currentWeek?: string }) {
+  const previousWeek = adjacentSeoulWeek(week, -1);
+  const nextWeek = adjacentSeoulWeek(week, 1);
+
   return (
     <nav className="event-week-navigation" aria-label="주간 일정 탐색">
-      <Link className="secondary-button" href={`/student/events?week=${adjacentSeoulWeek(week, -1)}`}>이전 주</Link>
+      {previousWeek ? <Link className="secondary-button" href={`/student/events?week=${previousWeek}`}>이전 주</Link> : <button className="secondary-button" type="button" disabled>이전 주</button>}
       <Link className="secondary-button" href={`/student/events?week=${currentWeek}`}>이번 주</Link>
-      <Link className="secondary-button" href={`/student/events?week=${adjacentSeoulWeek(week, 1)}`}>다음 주</Link>
+      {nextWeek ? <Link className="secondary-button" href={`/student/events?week=${nextWeek}`}>다음 주</Link> : <button className="secondary-button" type="button" disabled>다음 주</button>}
     </nav>
   );
 }

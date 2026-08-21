@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ApiClientError, api } from "@/lib/api/client";
-import { adjacentSeoulWeek } from "@/features/events/week-navigation";
+import { exclusiveSeoulWeekEnd } from "@/features/events/week-navigation";
 
 export type EventOccurrence = {
   occurrence_id: string;
@@ -99,7 +99,8 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
 
   useEffect(() => {
     let active = true;
-    const to = adjacentSeoulWeek(week, 1);
+    const to = exclusiveSeoulWeekEnd(week);
+    if (!to) return undefined;
 
     api.get<EventOccurrence[]>(`/api/events?from=${week}&to=${to}`)
       .then((events) => {
