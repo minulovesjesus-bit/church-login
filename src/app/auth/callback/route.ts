@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
-const ALLOWED_NEXT_PATHS = new Set(["/onboarding", "/student"]);
+const ALLOWED_NEXT_PATHS = new Set(["/onboarding", "/student", "/teacher/apply"]);
 
 function allowedNextPath(value: string | null): string {
   return value && ALLOWED_NEXT_PATHS.has(value) ? value : "/onboarding";

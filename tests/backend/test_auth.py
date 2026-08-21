@@ -14,7 +14,9 @@ from backend.core import auth
 from backend.core.auth import JwksVerifier
 from backend.core.config import Settings
 from backend.core.errors import ApiError
-from backend.identity.router import get_identity_service
+from backend.identity.models import AuthenticatedUser
+from backend.identity.router import get_identity_service, get_staff_service
+from backend.identity.schemas import TeacherApplicationStatus, TeacherApplicationView
 from backend.main import app
 
 TEST_SUPABASE_URL = "https://test-project.supabase.co"
@@ -259,13 +261,32 @@ async def test_oauth_session_with_authoritative_google_identity_is_accepted(
 ) -> None:
     token = token_factory("email", "oauth", uuid4())
 
-    response = await client.post(
-        "/api/teacher-applications",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"provider": "email"},
-    )
+    class AcceptingStaffService:
+        async def apply(
+            self, user: AuthenticatedUser, *, name: str, phone: str
+        ) -> TeacherApplicationView:
+            return TeacherApplicationView(
+                id=uuid4(),
+                user_id=user.user_id,
+                email=user.email,
+                name=name,
+                phone=phone,
+                status=TeacherApplicationStatus.PENDING,
+                rejection_reason=None,
+            )
 
-    assert response.status_code == 204
+    app.dependency_overrides[get_staff_service] = lambda: AcceptingStaffService()
+    try:
+        response = await client.post(
+            "/api/teacher-applications",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"name": "김교사", "phone": "01011112222"},
+        )
+    finally:
+        app.dependency_overrides.pop(get_staff_service, None)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending"
 
 
 async def test_oauth_session_without_authoritative_google_identity_is_rejected(

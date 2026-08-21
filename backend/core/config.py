@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     supabase_jwks_cache_ttl_seconds: int = 300
     database_url: str | None = None
+    initial_admin_email: str | None = None
 
 
 settings = Settings()
