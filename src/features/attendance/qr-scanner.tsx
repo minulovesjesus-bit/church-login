@@ -2,8 +2,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, CheckCircle2, CircleAlert, RotateCcw } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { api, ApiClientError } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 
 import { browserQrDecoder } from "./browser-qr-decoder";
 
@@ -108,6 +121,7 @@ export function QrScanner({
 }: QrScannerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const stopRef = useRef<(() => void) | null>(null);
+  const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const pendingRef = useRef<ScanBody | null>(null);
   const submittingRef = useRef(false);
   const mountedRef = useRef(false);
@@ -190,6 +204,12 @@ export function QrScanner({
     };
   }, [createRequestId, decoder, scanCycle, submit]);
 
+  useEffect(() => {
+    if (state.kind === "accepted" || state.kind === "cooldown") {
+      resultHeadingRef.current?.focus();
+    }
+  }, [state.kind]);
+
   function startFreshScan() {
     pendingRef.current = null;
     submittingRef.current = false;
@@ -214,77 +234,110 @@ export function QrScanner({
     : undefined;
 
   return (
-    <section className="scanner-card" aria-labelledby="scanner-title">
-      <div className="scanner-card__intro">
-        <p className="eyebrow">학생 출결</p>
-        <h1 id="scanner-title">QR로 출결하기</h1>
-        <p>비치된 기기의 QR 코드를 카메라 화면 안에 맞춰 주세요.</p>
-      </div>
+    <Card className="scanner-card" aria-labelledby="scanner-title">
+      <CardHeader className="scanner-card__intro">
+        <CardDescription>학생 출결</CardDescription>
+        <CardTitle><h1 id="scanner-title">QR로 출결하기</h1></CardTitle>
+        <CardDescription>비치된 기기의 QR 코드를 카메라 화면 안에 맞춰 주세요.</CardDescription>
+      </CardHeader>
 
-      <div className="camera-frame" data-state={state.kind}>
-        <video ref={videoRef} muted playsInline aria-label="QR 스캔 카메라" />
-        <div className="camera-frame__guide" aria-hidden="true" />
-        {state.kind === "requesting-camera" ? (
-          <div className="camera-overlay" role="status">카메라를 준비하고 있어요</div>
-        ) : null}
-        {state.kind === "scanning" ? (
-          <div className="camera-caption" role="status">QR 코드를 화면 안에 맞춰 주세요</div>
-        ) : null}
-        {state.kind === "submitting" ? (
-          <div className="camera-overlay" role="status">출결을 전송하고 있어요</div>
-        ) : null}
-      </div>
+      <CardContent className="scanner-card__camera">
+        <div className="camera-frame" data-state={state.kind}>
+          <video ref={videoRef} muted playsInline aria-label="QR 스캔 카메라" />
+          <div className="camera-frame__guide" aria-hidden="true" />
+          {state.kind === "requesting-camera" ? (
+            <div className="camera-overlay" role="status">
+              <Spinner aria-hidden="true" />
+              <span>카메라를 준비하고 있어요</span>
+            </div>
+          ) : null}
+          {state.kind === "scanning" ? (
+            <div className="camera-caption" role="status">
+              <Camera aria-hidden="true" />
+              <span>QR 코드를 화면 안에 맞춰 주세요</span>
+            </div>
+          ) : null}
+          {state.kind === "submitting" ? (
+            <div className="camera-overlay" role="status">
+              <Spinner aria-hidden="true" />
+              <span>출결을 전송하고 있어요</span>
+            </div>
+          ) : null}
+        </div>
+      </CardContent>
 
       {state.kind === "camera-error" ? (
         <div className="result-panel result-panel--error">
-          <p role="alert">{state.message}</p>
-          <button type="button" className="primary-button" onClick={startFreshScan}>
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>{state.message}</AlertDescription>
+          </Alert>
+          <Button type="button" onClick={startFreshScan}>
+            <RotateCcw data-icon="inline-start" />
             카메라 다시 켜기
-          </button>
+          </Button>
         </div>
       ) : null}
 
       {state.kind === "accepted" ? (
-        <div className={`result-panel result-panel--${state.result.direction.toLowerCase()}`}>
-          <p className="result-panel__mark" aria-hidden="true">✓</p>
-          <h2>{state.result.direction === "IN" ? "입실 처리됐어요" : "퇴실 처리됐어요"}</h2>
+        <CardFooter
+          className={cn(
+            "result-panel",
+            state.result.direction === "IN" ? "result-panel--in" : "result-panel--out",
+          )}
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <CheckCircle2 className="result-panel__mark" aria-hidden="true" />
+          <h2 ref={resultHeadingRef} tabIndex={-1}>
+            {state.result.direction === "IN" ? "입실 처리됐어요" : "퇴실 처리됐어요"}
+          </h2>
           <p>{resultTime} 기준으로 저장했습니다.</p>
           {state.result.duplicate ? <p>이미 처리된 요청의 결과예요.</p> : null}
-          <button type="button" className="primary-button" onClick={startFreshScan} autoFocus>
+          <Button type="button" onClick={startFreshScan}>
             새 QR 스캔
-          </button>
-        </div>
+          </Button>
+        </CardFooter>
       ) : null}
 
       {state.kind === "cooldown" ? (
-        <div className="result-panel result-panel--info">
-          <h2>잠시만 기다려 주세요</h2>
+        <CardFooter
+          className="result-panel result-panel--info"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <h2 ref={resultHeadingRef} tabIndex={-1}>잠시만 기다려 주세요</h2>
           <p>{Math.ceil(state.result.cooldown_remaining ?? 0)}초 후 다시 스캔할 수 있어요.</p>
-          <button type="button" className="primary-button" onClick={startFreshScan} autoFocus>
+          <Button type="button" onClick={startFreshScan}>
             새 QR 스캔
-          </button>
-        </div>
+          </Button>
+        </CardFooter>
       ) : null}
 
       {state.kind === "scan-error" ? (
         <div className="result-panel result-panel--error">
-          <p role="alert">{state.message}</p>
+          <Alert variant="destructive">
+            <CircleAlert aria-hidden="true" />
+            <AlertDescription>{state.message}</AlertDescription>
+          </Alert>
           <div className="button-row">
             {state.retryable ? (
-              <button type="button" className="primary-button" onClick={retryPending} autoFocus>
+              <Button type="button" onClick={retryPending}>
                 같은 출결 다시 전송
-              </button>
+              </Button>
             ) : null}
             {state.code === "AUTH_REQUIRED" ? (
-              <Link className="primary-button" href="/auth/login">학생 로그인</Link>
+              <Button asChild><Link href="/auth/login">학생 로그인</Link></Button>
             ) : (
-              <button type="button" className="secondary-button" onClick={startFreshScan}>
+              <Button type="button" variant="outline" onClick={startFreshScan}>
                 새 QR 스캔
-              </button>
+              </Button>
             )}
           </div>
         </div>
       ) : null}
-    </section>
+    </Card>
   );
 }

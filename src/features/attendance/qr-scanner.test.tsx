@@ -122,6 +122,16 @@ it("shows duplicate success without changing the accepted direction", async () =
   expect(screen.getByText("이미 처리된 요청의 결과예요.")).toBeInTheDocument();
 });
 
+it("announces an accepted result politely and focuses its heading", async () => {
+  const { camera } = await readyScanner();
+  act(() => camera.decode("signed-qr"));
+
+  const heading = await screen.findByRole("heading", { name: "입실 처리됐어요" });
+  const status = heading.closest('[role="status"]');
+  expect(status).toHaveAttribute("aria-live", "polite");
+  await waitFor(() => expect(heading).toHaveFocus());
+});
+
 it("shows cooldown as information and offers a fresh scan", async () => {
   const client = createScanClient();
   vi.mocked(client.scan).mockResolvedValue({
@@ -134,6 +144,21 @@ it("shows cooldown as information and offers a fresh scan", async () => {
   expect(await screen.findByRole("heading", { name: "잠시만 기다려 주세요" })).toBeInTheDocument();
   expect(screen.getByText("5초 후 다시 스캔할 수 있어요.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "새 QR 스캔" })).toBeInTheDocument();
+});
+
+it("announces cooldown politely and focuses its result heading", async () => {
+  const client = createScanClient();
+  vi.mocked(client.scan).mockResolvedValue({
+    ...ACCEPTED_IN,
+    cooldown_remaining: 4.2,
+  });
+  const { camera } = await readyScanner(client);
+  act(() => camera.decode("signed-qr"));
+
+  const heading = await screen.findByRole("heading", { name: "잠시만 기다려 주세요" });
+  const status = heading.closest('[role="status"]');
+  expect(status).toHaveAttribute("aria-live", "polite");
+  await waitFor(() => expect(heading).toHaveFocus());
 });
 
 describe.each([
@@ -152,6 +177,18 @@ describe.each([
     expect(await screen.findByRole("alert")).toHaveTextContent(message);
     expect(screen.queryByText("unsafe server detail")).not.toBeInTheDocument();
   });
+});
+
+it("keeps network failures as alerts without moving focus to a recovery action", async () => {
+  const client = createScanClient();
+  vi.mocked(client.scan).mockRejectedValue(new TypeError("offline"));
+  const { camera } = await readyScanner(client);
+  act(() => camera.decode("signed-qr"));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "네트워크 연결을 확인한 뒤 같은 출결을 다시 전송해 주세요.",
+  );
+  expect(screen.getByRole("button", { name: "같은 출결 다시 전송" })).not.toHaveFocus();
 });
 
 it("distinguishes camera permission denial from an unsupported camera", async () => {

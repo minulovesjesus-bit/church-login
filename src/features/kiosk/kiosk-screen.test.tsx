@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClientError } from "@/lib/api/client";
@@ -25,6 +25,32 @@ const EXPIRED_QR = {
   expires_at: new Date(NOW.getTime() - 1).toISOString(),
 };
 
+let resizeCallback: ResizeObserverCallback | undefined;
+
+class TestResizeObserver implements ResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resizeCallback = callback;
+  }
+
+  disconnect = vi.fn();
+  observe = vi.fn();
+  unobserve = vi.fn();
+}
+
+function resizeQr(width: number) {
+  const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+  const target = canvas.parentElement;
+  if (!target || !resizeCallback) throw new Error("QR resize observer is not ready");
+  act(() => {
+    resizeCallback?.([
+      {
+        target,
+        contentRect: { width },
+      } as unknown as ResizeObserverEntry,
+    ], {} as ResizeObserver);
+  });
+}
+
 function createClient(): KioskClient {
   return {
     login: vi.fn().mockResolvedValue(SESSION),
@@ -40,7 +66,16 @@ async function unlock(client: KioskClient) {
     target: { value: "church-secret" },
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
-  expect(await screen.findByText("20초 후 갱신")).toBeInTheDocument();
+  await flushAsyncWork();
+  expect(screen.getByText("20초 후 갱신")).toBeInTheDocument();
+}
+
+async function flushAsyncWork() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 async function submitPassword(client: KioskClient) {
@@ -49,11 +84,7 @@ async function submitPassword(client: KioskClient) {
     target: { value: "church-secret" },
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+  await flushAsyncWork();
 }
 
 function useStationaryClock() {
@@ -63,12 +94,15 @@ function useStationaryClock() {
 }
 
 beforeEach(() => {
-  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.useFakeTimers();
   vi.setSystemTime(NOW);
   toCanvas.mockClear();
+  resizeCallback = undefined;
+  vi.stubGlobal("ResizeObserver", TestResizeObserver);
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -85,7 +119,8 @@ it("starts with an accessible shared-password form and uses a generic rejection 
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(
+  await flushAsyncWork();
+  expect(screen.getByRole("alert")).toHaveTextContent(
     "관리자 비밀번호를 확인해 주세요.",
   );
   expect(screen.queryByText("server detail must not be echoed")).not.toBeInTheDocument();
@@ -117,7 +152,10 @@ it("uses bounded failure backoff without overlapping QR requests", async () => {
   await unlock(client);
 
   await act(() => vi.advanceTimersByTimeAsync(Date.parse(QR.expires_at) - Date.now()));
-  expect(await screen.findByText("연결을 다시 시도하고 있어요")).toBeInTheDocument();
+  expect(screen.getByText("연결을 다시 시도하고 있어요")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "QR 연결이 끊어졌습니다. 연결을 다시 시도하고 있어요.",
+  );
   expect(screen.queryByRole("img", { name: "학생 출결용 QR 코드" })).not.toBeInTheDocument();
   const untilRetry = Date.parse(QR.expires_at) + 1_000 - Date.now();
   await act(() => vi.advanceTimersByTimeAsync(untilRetry - 1));
@@ -132,7 +170,10 @@ it("uses bounded failure backoff without overlapping QR requests", async () => {
     issued_at: new Date(NOW.getTime() + 31_000).toISOString(),
     expires_at: new Date(NOW.getTime() + 51_000).toISOString(),
   }));
-  expect(await screen.findByText("QR 연결됨")).toBeInTheDocument();
+  expect(screen.getByText("QR 연결됨")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "QR 연결이 복구되고 새 QR 코드가 준비됐습니다.",
+  );
 });
 
 it("removes an expired QR while its replacement request is still pending", async () => {
@@ -146,7 +187,9 @@ it("removes an expired QR while its replacement request is still pending", async
 
   expect(client.getQr).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("img", { name: "학생 출결용 QR 코드" })).not.toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("QR을 준비하고 있어요");
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.",
+  );
 });
 
 it("never renders an already-expired successful response and retries with bounded backoff", async () => {
@@ -220,7 +263,8 @@ it("returns to the password form when automatic cookie refresh cannot recover", 
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
 
-  expect(await screen.findByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
+  await flushAsyncWork();
+  expect(screen.getByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
   expect(screen.getByRole("status")).toHaveTextContent("기기 세션이 종료되었습니다.");
 });
 
@@ -231,10 +275,12 @@ it("resets the device session and clears all scheduled work on unmount", async (
     target: { value: "church-secret" },
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
-  expect(await screen.findByText("20초 후 갱신")).toBeInTheDocument();
+  await flushAsyncWork();
+  expect(screen.getByText("20초 후 갱신")).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole("button", { name: "기기 세션 초기화" }));
-  expect(await screen.findByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "관리자 화면 잠금" }));
+  await flushAsyncWork();
+  expect(screen.getByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
   expect(client.logout).toHaveBeenCalledTimes(1);
 
   view.unmount();
@@ -249,9 +295,10 @@ it("refreshes an expired access cookie before revoking the durable device sessio
     .mockResolvedValueOnce(undefined);
   await unlock(client);
 
-  fireEvent.click(screen.getByRole("button", { name: "기기 세션 초기화" }));
+  fireEvent.click(screen.getByRole("button", { name: "관리자 화면 잠금" }));
 
-  expect(await screen.findByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
+  await flushAsyncWork();
+  expect(screen.getByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
   expect(client.refresh).toHaveBeenCalledTimes(1);
   expect(client.logout).toHaveBeenCalledTimes(2);
   expect(screen.getByRole("status")).toHaveTextContent("기기 세션을 안전하게 초기화했습니다.");
@@ -263,13 +310,77 @@ describe("QR rendering", () => {
     await unlock(client);
 
     expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" })).toBeInTheDocument();
-    await waitFor(() => {
-      expect(toCanvas).toHaveBeenCalledWith(
-        expect.any(HTMLCanvasElement),
-        "signed-attendance-qr",
-        expect.objectContaining({ errorCorrectionLevel: "M" }),
-      );
-    });
+    await flushAsyncWork();
+    expect(toCanvas).toHaveBeenCalledWith(
+      expect.any(HTMLCanvasElement),
+      "signed-attendance-qr",
+      expect.objectContaining({ errorCorrectionLevel: "M" }),
+    );
     expect(document.body).not.toHaveTextContent("signed-attendance-qr");
+  });
+
+  it("keeps the countdown quiet and exposes progress from the same expiry", async () => {
+    const client = createClient();
+    await unlock(client);
+
+    const countdown = screen.getByText("20초 후 갱신");
+    expect(countdown).not.toHaveAttribute("aria-live");
+    expect(countdown.closest("[aria-live]")).toBeNull();
+    expect(screen.getByRole("progressbar", { name: "QR 코드 유효 시간" }))
+      .toHaveAttribute("aria-valuenow", "100");
+
+    await act(() => vi.advanceTimersByTimeAsync(1_000));
+
+    expect(screen.getByText("19초 후 갱신")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar", { name: "QR 코드 유효 시간" }))
+      .toHaveAttribute("aria-valuenow", "95");
+  });
+
+  it("uses ResizeObserver CSS pixels and caps a sharp backing canvas at 2x DPR", async () => {
+    vi.stubGlobal("devicePixelRatio", 3);
+    const client = createClient();
+    await unlock(client);
+
+    resizeQr(447.25);
+
+    const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+    expect(canvas).toHaveStyle({ width: "447.25px", height: "447.25px" });
+    await flushAsyncWork();
+    expect(toCanvas).toHaveBeenLastCalledWith(
+      canvas,
+      "signed-attendance-qr",
+      expect.objectContaining({ width: 895 }),
+    );
+  });
+
+  it("restores CSS pixel dimensions after the QR renderer writes backing dimensions", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    toCanvas.mockImplementationOnce(async (
+      canvas: HTMLCanvasElement,
+      _token: string,
+      options?: { width?: number },
+    ) => {
+      const width = Number(options?.width ?? 0);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${width}px`;
+    });
+    const client = createClient();
+    await unlock(client);
+
+    const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+    expect(canvas).toHaveStyle({ width: "320px", height: "320px" });
+  });
+
+  it("clamps observed QR size between 320 and 520 CSS pixels", async () => {
+    const client = createClient();
+    await unlock(client);
+
+    resizeQr(280);
+    expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" }))
+      .toHaveStyle({ width: "320px", height: "320px" });
+
+    resizeQr(610);
+    expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" }))
+      .toHaveStyle({ width: "520px", height: "520px" });
   });
 });

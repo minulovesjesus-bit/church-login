@@ -1,13 +1,29 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { LockKeyhole } from "lucide-react";
 
+import { BrandLockup } from "@/components/brand/brand-mark";
+import { KioskShell } from "@/components/layout/kiosk-shell";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Spinner } from "@/components/ui/spinner";
 import { ApiClientError } from "@/lib/api/client";
 import {
   kioskApi,
   type KioskQrChallenge,
   type KioskSession,
 } from "@/lib/api/kiosk-client";
+import { cn } from "@/lib/utils";
 
 import { QrCard } from "./qr-card";
 
@@ -57,8 +73,9 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
   const [loginError, setLoginError] = useState<string>();
   const [lockedNotice, setLockedNotice] = useState<string>();
   const [challenge, setChallenge] = useState<KioskQrChallenge>();
-  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [connection, setConnection] = useState<ConnectionState>("connecting");
+  const [announcement, setAnnouncement] = useState("QR을 준비하고 있어요.");
 
   useEffect(() => {
     if (!unlocked) return;
@@ -83,7 +100,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
 
     const updateCountdown = () => {
       if (!active) return;
-      setRemainingSeconds(Math.max(0, Math.ceil((expiresAt - Date.now()) / 1_000)));
+      setNowMs(Date.now());
     };
 
     const scheduleAtExpiry = (requestQr: () => Promise<void>) => {
@@ -110,7 +127,8 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       if (expiresAt > 0 && expiresAt <= Date.now()) {
         clearCountdown();
         setChallenge(undefined);
-        setRemainingSeconds(0);
+        setNowMs(Date.now());
+        setAnnouncement("QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.");
       }
       setConnection("connecting");
       try {
@@ -119,9 +137,15 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
         const nextExpiry = usableChallengeExpiry(nextChallenge, Date.now());
         expiresAt = nextExpiry;
         retryAttempt = 0;
+        const recovered = retrying;
         retrying = false;
         setChallenge(nextChallenge);
         setConnection("connected");
+        setAnnouncement(
+          recovered
+            ? "QR 연결이 복구되고 새 QR 코드가 준비됐습니다."
+            : "새 QR 코드가 준비됐습니다.",
+        );
         clearCountdown();
         updateCountdown();
         countdownTimer = window.setInterval(updateCountdown, 1_000);
@@ -141,9 +165,10 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
         if (expiresAt <= Date.now()) {
           clearCountdown();
           setChallenge(undefined);
-          setRemainingSeconds(0);
+          setNowMs(Date.now());
         }
         setConnection("retrying");
+        setAnnouncement("QR 연결이 끊어졌습니다. 연결을 다시 시도하고 있어요.");
         const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
         retryAttempt += 1;
         issueTimer = window.setTimeout(() => void requestQr(), delay);
@@ -192,6 +217,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       setPassword("");
       setChallenge(undefined);
       setConnection("connecting");
+      setAnnouncement("QR을 준비하고 있어요.");
       setUnlocked(true);
     } catch (error) {
       setLoginError(
@@ -228,69 +254,93 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
 
   if (!unlocked) {
     return (
-      <main className="kiosk-shell">
-        <section className="kiosk-login-card" aria-labelledby="kiosk-login-title">
-          <p className="eyebrow">교회 공용 기기</p>
-          <h1 id="kiosk-login-title">출결 QR 기기</h1>
-          <p className="supporting-copy">
-            관리자 비밀번호를 입력하면 학생들이 스캔할 수 있는 출결 QR이 표시됩니다.
-          </p>
-          {lockedNotice ? <p role="status" className="notice">{lockedNotice}</p> : null}
-          <form onSubmit={handleLogin} className="stack-form">
-            <label htmlFor="kiosk-password">관리자 비밀번호</label>
-            <input
-              id="kiosk-password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              aria-describedby={loginError ? "kiosk-login-error" : undefined}
-            />
-            {loginError ? (
-              <p id="kiosk-login-error" role="alert" className="inline-alert">
-                {loginError}
-              </p>
-            ) : null}
-            <button className="primary-button" type="submit" disabled={submitting}>
-              {submitting ? "확인하고 있어요…" : "QR 화면 열기"}
-            </button>
-          </form>
-        </section>
-      </main>
+      <KioskShell mode="locked">
+        <Card className="kiosk-login-card" aria-labelledby="kiosk-login-title">
+          <CardHeader>
+            <BrandLockup />
+            <CardTitle><h1 id="kiosk-login-title">출결 QR 기기</h1></CardTitle>
+            <CardDescription>
+              관리자 비밀번호를 입력하면 학생들이 스캔할 수 있는 출결 QR이 표시됩니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {lockedNotice ? <p role="status" className="notice">{lockedNotice}</p> : null}
+            <form onSubmit={handleLogin} className="kiosk-login-form">
+              <FieldGroup>
+                <Field data-invalid={Boolean(loginError)}>
+                  <FieldLabel htmlFor="kiosk-password">관리자 비밀번호</FieldLabel>
+                  <Input
+                    id="kiosk-password"
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    aria-invalid={Boolean(loginError)}
+                    aria-describedby={loginError ? "kiosk-login-error" : undefined}
+                  />
+                  {loginError ? (
+                    <FieldError id="kiosk-login-error">{loginError}</FieldError>
+                  ) : null}
+                </Field>
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? <Spinner data-icon="inline-start" aria-label="확인 중" /> : null}
+                  {submitting ? "확인하고 있어요…" : "QR 화면 열기"}
+                </Button>
+              </FieldGroup>
+            </form>
+          </CardContent>
+        </Card>
+      </KioskShell>
     );
   }
 
   return (
-    <main className="kiosk-shell kiosk-shell--unlocked">
-      <div className="kiosk-toolbar">
-        <span className={`connection-pill connection-pill--${connection}`} role="status">
-          <span aria-hidden="true" className="connection-pill__dot" />
-          {connection === "connected"
-            ? "QR 연결됨"
-            : connection === "retrying"
-              ? "연결을 다시 시도하고 있어요"
-              : "QR을 준비하고 있어요"}
-        </span>
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={handleReset}
-          disabled={resetting}
-        >
-          {resetting ? "초기화 중…" : "기기 세션 초기화"}
-        </button>
-      </div>
+    <KioskShell
+      mode="unlocked"
+      toolbar={(
+        <>
+          <span
+            className={cn("connection-pill", `connection-pill--${connection}`)}
+          >
+            <span aria-hidden="true" className="connection-pill__dot" />
+            {connection === "connected"
+              ? "QR 연결됨"
+              : connection === "retrying"
+                ? "연결을 다시 시도하고 있어요"
+                : "QR을 준비하고 있어요"}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleReset}
+            disabled={resetting}
+          >
+            {resetting ? <Spinner data-icon="inline-start" aria-label="잠그는 중" /> : (
+              <LockKeyhole data-icon="inline-start" />
+            )}
+            {resetting ? "잠그는 중…" : "관리자 화면 잠금"}
+          </Button>
+        </>
+      )}
+    >
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
       {challenge ? (
-        <QrCard token={challenge.token} remainingSeconds={remainingSeconds} />
+        <QrCard
+          token={challenge.token}
+          expiresAtMs={Date.parse(challenge.expires_at)}
+          nowMs={nowMs}
+        />
       ) : (
-        <section className="qr-card qr-card--loading" aria-live="polite">
-          <div className="qr-placeholder" aria-hidden="true" />
+        <Card className="qr-card qr-card--loading">
+          <Skeleton className="qr-placeholder" aria-hidden="true" />
           <h1>안전한 QR을 준비하고 있어요</h1>
           <p>잠시만 기다려 주세요.</p>
-        </section>
+        </Card>
       )}
-    </main>
+    </KioskShell>
   );
 }

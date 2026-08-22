@@ -136,88 +136,83 @@ a {
 .kiosk-shell,
 .student-scan-shell {
   min-height: 100dvh;
-  padding: clamp(1rem, 3vw, 2.5rem);
-  background:
-    radial-gradient(circle at 10% 5%, rgb(220 240 225 / 70%), transparent 34rem),
-    #f5f7f2;
+  background: var(--background);
 }
 
 .kiosk-shell {
   display: grid;
   place-items: center;
+  padding: clamp(1rem, 3vw, 2.5rem);
 }
 
 .kiosk-shell--unlocked {
-  align-content: center;
-  gap: 1rem;
+  display: block;
+  place-items: normal;
+  padding: 0;
 }
 
-.kiosk-login-card,
-.qr-card,
-.scanner-card {
-  width: min(100%, 46rem);
-  border: 1px solid #d9e4dc;
-  border-radius: 1.5rem;
-  background: rgb(255 255 255 / 94%);
-  box-shadow: 0 1.5rem 5rem rgb(42 71 54 / 10%);
+.kiosk-shell__content {
+  width: 100%;
+}
+
+.kiosk-shell:not(.kiosk-shell--unlocked) .kiosk-shell__content {
+  display: grid;
+  place-items: center;
 }
 
 .kiosk-login-card {
+  --card-spacing: 1.5rem;
+  width: min(100%, 31rem);
   max-width: 31rem;
-  padding: clamp(1.5rem, 5vw, 3rem);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 1.5rem 5rem color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
-.eyebrow {
-  margin: 0 0 0.55rem;
-  color: #287a4d;
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.kiosk-login-card [data-slot="card-header"] {
+  gap: 1rem;
 }
 
-.kiosk-login-card h1,
-.scanner-card h1,
-.qr-card h2,
-.result-panel h2 {
+.kiosk-login-card h1 {
   margin: 0;
-  line-height: 1.18;
-  text-wrap: balance;
+  color: var(--primary);
+  font-size: clamp(1.9rem, 6vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.2;
 }
 
-.supporting-copy,
-.scanner-card__intro > p:last-child,
-.qr-card__hint {
-  color: #5a6d62;
-  line-height: 1.65;
+.kiosk-login-card [data-slot="card-description"] {
+  line-height: 1.6;
 }
 
-.stack-form {
-  display: grid;
-  gap: 0.75rem;
+.kiosk-login-form {
   margin-top: 1.5rem;
 }
 
-.stack-form label {
-  font-weight: 750;
+.kiosk-header {
+  display: flex;
+  min-height: 5.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding: 1rem clamp(1rem, 3vw, 2.5rem);
+  background: var(--background);
 }
 
-.stack-form input {
-  width: 100%;
-  min-height: 3.25rem;
-  border: 1px solid #aebeb4;
-  border-radius: 0.8rem;
-  padding: 0.75rem 0.9rem;
-  color: #10251c;
-  background: #fff;
+.kiosk-shell--unlocked .kiosk-shell__content {
+  display: grid;
+  min-height: calc(100dvh - 5.5rem);
+  place-items: center;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  background: color-mix(in srgb, var(--secondary) 45%, var(--background));
 }
 
-.stack-form input:focus-visible,
-.primary-button:focus-visible,
-.secondary-button:focus-visible,
-.quiet-button:focus-visible {
-  outline: 3px solid var(--ring);
-  outline-offset: 2px;
+.kiosk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
 }
 
 .primary-button,
@@ -273,8 +268,8 @@ a {
 }
 
 .notice {
-  color: #28513a;
-  background: #eef8f1;
+  color: var(--primary);
+  background: var(--secondary);
 }
 
 .inline-alert {
@@ -283,115 +278,181 @@ a {
   background: #fff0f0;
 }
 
-.kiosk-toolbar {
-  width: min(100%, 46rem);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .connection-pill {
   display: inline-flex;
+  min-height: 2.75rem;
   align-items: center;
   gap: 0.5rem;
-  border: 1px solid #d9e4dc;
   border-radius: 999px;
   padding: 0.55rem 0.8rem;
-  color: #53665b;
-  background: rgb(255 255 255 / 85%);
+  color: var(--muted-foreground);
   font-size: 0.88rem;
+  font-weight: 700;
 }
 
 .connection-pill__dot {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 50%;
-  background: #e0a323;
+  background: var(--warning);
 }
 
 .connection-pill--connected .connection-pill__dot {
-  background: #1e9d5b;
+  background: var(--success);
 }
 
 .connection-pill--retrying .connection-pill__dot {
-  background: #da653e;
+  background: var(--destructive);
 }
 
 .qr-card {
-  padding: clamp(1.25rem, 4vw, 2rem);
+  --card-spacing: clamp(1rem, 2.5vw, 2rem);
+  width: min(100%, 76rem);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 1.5rem 5rem color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
-.qr-card__header {
+.qr-card__content {
+  display: grid;
+  min-width: 0;
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: center;
+}
+
+.qr-card__instructions {
   display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.countdown {
-  flex: 0 0 auto;
-  border-radius: 999px;
-  padding: 0.55rem 0.75rem;
-  color: #28513a;
-  background: #edf7f0;
-  font-variant-numeric: tabular-nums;
-  font-size: 0.9rem;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .qr-card__canvas-wrap {
   display: grid;
+  width: 100%;
+  min-width: 0;
   place-items: center;
-  margin: clamp(1.25rem, 3vw, 2rem) auto 1rem;
 }
 
 .qr-card__canvas {
-  width: min(78vw, 20rem) !important;
-  height: min(78vw, 20rem) !important;
-  border: 0.7rem solid #fff;
-  border-radius: 1rem;
-  box-shadow: 0 0 0 1px #e2e9e4;
+  max-width: none;
+  border: 0.65rem solid var(--background);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.qr-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.qr-card__header > * {
+  margin: 0;
+}
+
+.qr-card__header > p:first-child {
+  color: var(--primary);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.qr-card__header h2 {
+  color: var(--primary);
+  font-size: clamp(2rem, 7vw, 3.8rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+  text-wrap: balance;
+}
+
+.qr-card__header > p:last-child,
+.qr-card__hint {
+  color: var(--muted-foreground);
+  font-size: clamp(1rem, 2vw, 1.25rem);
+  line-height: 1.6;
+}
+
+.qr-card__timer {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.countdown {
+  color: var(--brand-gold-foreground);
+  font-size: clamp(2rem, 6vw, 3.5rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.qr-card__timer [data-slot="progress"] {
+  height: 0.5rem;
+  background: var(--secondary);
+}
+
+.qr-card__timer [data-slot="progress-indicator"] {
+  background: var(--brand-gold);
 }
 
 .qr-card__hint {
   margin: 0;
-  text-align: center;
 }
 
 .qr-card--loading {
   display: grid;
   place-items: center;
-  min-height: 32rem;
+  min-height: min(32rem, calc(100dvh - 10rem));
+  padding: clamp(2rem, 7vw, 5rem);
   text-align: center;
 }
 
 .qr-placeholder {
-  width: 12rem;
+  width: min(50vw, 16rem);
   aspect-ratio: 1;
-  border-radius: 1rem;
-  background: #edf2ee;
-  animation: soft-pulse 1.8s ease-in-out infinite;
+  border-radius: var(--radius-xl);
 }
 
 .student-scan-shell {
   display: grid;
   place-items: center;
+  padding: clamp(0.75rem, 3vw, 2rem);
 }
 
 .scanner-card {
-  overflow: hidden;
+  --card-spacing: 0;
+  width: min(100%, 46rem);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 1.25rem 4rem color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
-.scanner-card__intro,
-.result-panel {
+.scanner-card__intro {
+  gap: 0.65rem;
   padding: clamp(1.25rem, 4vw, 2rem);
+}
+
+.scanner-card__intro [data-slot="card-title"] h1,
+.result-panel h2 {
+  margin: 0;
+  line-height: 1.18;
+  text-wrap: balance;
+}
+
+.scanner-card__intro [data-slot="card-title"] h1 {
+  color: var(--primary);
+  font-size: clamp(1.9rem, 8vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.scanner-card__camera {
+  padding: 0;
 }
 
 .camera-frame {
   position: relative;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  background: #10251c;
+  background: var(--primary);
 }
 
 .camera-frame video {
@@ -412,8 +473,8 @@ a {
 .camera-caption {
   position: absolute;
   z-index: 2;
-  color: #fff;
-  background: rgb(7 25 15 / 76%);
+  color: var(--primary-foreground);
+  background: color-mix(in srgb, var(--primary) 78%, transparent);
   backdrop-filter: blur(0.35rem);
 }
 
@@ -422,6 +483,7 @@ a {
   display: grid;
   place-items: center;
   padding: 1rem;
+  gap: 0.65rem;
 }
 
 .camera-caption {
@@ -433,12 +495,16 @@ a {
   border-radius: 999px;
   padding: 0.65rem 0.9rem;
   text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .result-panel {
   display: grid;
   gap: 0.8rem;
-  border-top: 1px solid #e0e8e2;
+  border-top: 1px solid var(--border);
+  padding: clamp(1.25rem, 4vw, 2rem);
 }
 
 .result-panel > * {
@@ -447,35 +513,41 @@ a {
 
 .result-panel--in,
 .result-panel--out {
-  background: #f1fbf4;
+  background: color-mix(in srgb, var(--success) 8%, var(--background));
 }
 
 .result-panel--error {
-  color: #722a2a;
-  background: #fff5f5;
+  background: color-mix(in srgb, var(--destructive) 5%, var(--background));
 }
 
 .result-panel--info {
-  color: #5f4a18;
-  background: #fff9e8;
+  color: var(--brand-gold-foreground);
+  background: color-mix(in srgb, var(--brand-gold) 9%, var(--background));
 }
 
 .result-panel__mark {
-  display: grid;
-  place-items: center;
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 50%;
-  color: #fff;
-  background: #1d8a51;
-  font-size: 1.4rem;
-  font-weight: 900;
+  color: var(--success);
+  stroke-width: 2.2;
 }
 
 .button-row {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+.student-scan-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.student-scan-loading p {
+  margin: 0;
 }
 
 .sr-only {
@@ -1564,7 +1636,6 @@ a {
 }
 
 @media (max-width: 40rem) {
-  .kiosk-shell,
   .student-scan-shell,
   .events-shell,
   .teacher-events-shell {
@@ -1652,7 +1723,9 @@ a {
   }
 
   .kiosk-toolbar {
+    width: 100%;
     align-items: start;
+    justify-content: space-between;
   }
 
   .quiet-button {
@@ -1661,8 +1734,9 @@ a {
     font-size: 0.85rem;
   }
 
-  .qr-card__header {
-    display: grid;
+  .kiosk-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .countdown {
@@ -1711,6 +1785,12 @@ a {
   .attendance-data-table {
     margin: 0 1rem 1rem;
     width: calc(100% - 2rem);
+  }
+}
+
+@media (min-width: 64rem) {
+  .qr-card__content {
+    grid-template-columns: minmax(20rem, 1fr) minmax(18rem, 0.82fr);
   }
 }
 
