@@ -20,6 +20,14 @@ const application = {
   phone: "01011112222",
   status: "pending" as const,
 };
+const secondApplication = {
+  id: "9e8a4f73-eb18-4e1d-8e20-0ac538746692",
+  user_id: "a383dc81-b3d3-4c1f-8f52-41f538746692",
+  email: "second.teacher@example.com",
+  name: "박교사",
+  phone: "01033334444",
+  status: "pending" as const,
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,7 +45,7 @@ it("shows loading, empty, error, and retry states", async () => {
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
 });
 
-it("confirms approval, locks duplicate actions synchronously, and removes only on success", async () => {
+it("posts the exact approval contract and removes only the approved row on success", async () => {
   mockApi.get.mockResolvedValue([application]);
   let finish: (() => void) | undefined;
   mockApi.post.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
@@ -58,8 +66,11 @@ it("confirms approval, locks duplicate actions synchronously, and removes only o
     .getByRole("button", { name: "김교사 님 승인 확인" });
   expect(confirm).toHaveTextContent("승인");
   fireEvent.click(confirm);
-  fireEvent.click(confirm);
   expect(mockApi.post).toHaveBeenCalledTimes(1);
+  expect(mockApi.post).toHaveBeenCalledWith(
+    "/api/admin/teacher-applications/8d793e62-da07-4d0c-9d19-f9b50dc7b585/approve",
+    {},
+  );
   expect(screen.getByRole("button", { name: "김교사 님 승인 처리 중…" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "김교사 님 거절 처리 중…" })).toBeDisabled();
   await waitFor(() => expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus());
@@ -67,6 +78,28 @@ it("confirms approval, locks duplicate actions synchronously, and removes only o
   finish?.();
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
   expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus();
+});
+
+it("synchronously locks two distinct application approvals before React disables either row", async () => {
+  mockApi.get.mockResolvedValue([application, secondApplication]);
+  mockApi.post.mockReturnValue(new Promise<void>(() => {}));
+  render(<TeacherApplicationsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 승인" }));
+  fireEvent.click(screen.getByRole("button", { name: "박교사 님 승인", hidden: true }));
+  const firstConfirm = screen.getByRole("button", { name: "김교사 님 승인 확인", hidden: true });
+  const secondConfirm = screen.getByRole("button", { name: "박교사 님 승인 확인" });
+
+  act(() => {
+    firstConfirm.click();
+    secondConfirm.click();
+  });
+
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+  expect(mockApi.post).toHaveBeenCalledWith(
+    "/api/admin/teacher-applications/8d793e62-da07-4d0c-9d19-f9b50dc7b585/approve",
+    {},
+  );
 });
 
 it("opens an accessible target-owned rejection dialog and validates a trimmed 1..500 character reason", async () => {

@@ -87,14 +87,37 @@ it("uses a titled identity dialog, cancels with exact focus return, locks revoke
   fireEvent.click(revoke);
   const confirm = screen.getByRole("button", { name: `${active.session_id} 세션 해지 확인` });
   fireEvent.click(confirm);
-  fireEvent.click(confirm);
   expect(mockApi.delete).toHaveBeenCalledTimes(1);
+  expect(mockApi.delete).toHaveBeenCalledWith(
+    "/api/admin/kiosk-sessions/11111111-1111-4111-8111-111111111111",
+  );
   expect(revoke).toBeDisabled();
   await waitFor(() => expect(screen.getByRole("heading", { name: "기기 세션 관리" })).toHaveFocus());
 
   finishDelete?.();
   await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
   expect(await screen.findByText("해지됨")).toBeVisible();
+});
+
+it("synchronously locks two distinct revocations before React disables either row", async () => {
+  mockApi.get.mockResolvedValue(page([active, expired]));
+  mockApi.delete.mockReturnValue(new Promise<void>(() => {}));
+  render(<KioskSessionsPage />);
+
+  fireEvent.click(await screen.findByRole("button", { name: `${active.session_id} 세션 해지` }));
+  fireEvent.click(screen.getByRole("button", { name: `${expired.session_id} 세션 해지`, hidden: true }));
+  const firstConfirm = screen.getByRole("button", { name: `${active.session_id} 세션 해지 확인`, hidden: true });
+  const secondConfirm = screen.getByRole("button", { name: `${expired.session_id} 세션 해지 확인` });
+
+  act(() => {
+    firstConfirm.click();
+    secondConfirm.click();
+  });
+
+  expect(mockApi.delete).toHaveBeenCalledTimes(1);
+  expect(mockApi.delete).toHaveBeenCalledWith(
+    "/api/admin/kiosk-sessions/11111111-1111-4111-8111-111111111111",
+  );
 });
 
 it("keeps the session and action available when revocation fails", async () => {
