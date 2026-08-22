@@ -101,15 +101,16 @@ class KioskSessionService:
     async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
         policy = KIOSK_LOGIN_RATE_LIMIT
         now = self.clock.now()
-        await self.repository.cleanup_expired_rate_limits(
+        allowed = await self.repository.reserve_rate_limit_attempt(
+            rate_limit_key_hash,
             policy.action,
             now,
-            limit=100,
+            window=policy.window,
+            limit=policy.attempt_limit,
+            block_for=policy.block_for,
+            cleanup_limit=100,
         )
-        blocked = await self.repository.rate_limit_is_blocked(
-            rate_limit_key_hash, policy.action, now
-        )
-        if blocked:
+        if not allowed:
             raise KioskLoginRejected
 
         password_matches = await asyncio.to_thread(
@@ -119,14 +120,6 @@ class KioskSessionService:
         )
 
         if not password_matches:
-            await self.repository.record_rate_limit_failure(
-                rate_limit_key_hash,
-                policy.action,
-                now,
-                window=policy.window,
-                limit=policy.attempt_limit,
-                block_for=policy.block_for,
-            )
             raise KioskLoginRejected
 
         await self.repository.clear_rate_limit(rate_limit_key_hash, policy.action)

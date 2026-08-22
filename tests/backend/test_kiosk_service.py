@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
@@ -35,6 +36,26 @@ class InMemoryKioskRepository:
 
     async def rate_limit_is_blocked(self, key_hash: str, action: str, now: datetime) -> bool:
         return key_hash in self.blocked
+
+    async def reserve_rate_limit_attempt(
+        self,
+        key_hash: str,
+        action: str,
+        now: datetime,
+        *,
+        window: timedelta,
+        limit: int,
+        block_for: timedelta,
+        cleanup_limit: int,
+    ) -> bool:
+        self.cleanup_calls.append((action, now, cleanup_limit))
+        if key_hash in self.blocked:
+            return False
+        count = self.failures.get(key_hash, 0) + 1
+        self.failures[key_hash] = count
+        if count >= limit:
+            self.blocked.add(key_hash)
+        return count <= limit
 
     async def record_rate_limit_failure(
         self,
@@ -125,6 +146,31 @@ class RecordingPasswordHasher:
 
     def verify(self, hashed_password: str, password: str) -> bool:
         self.calls.append((hashed_password, password))
+        return self.result
+
+
+class GatedPasswordHasher:
+    def __init__(self, release_after: int, *, result: bool = False) -> None:
+        self.release_after = release_after
+        self.result = result
+        self.calls = 0
+        self.active = 0
+        self.max_active = 0
+        self._lock = threading.Lock()
+        self._release = threading.Event()
+
+    def verify(self, hashed_password: str, password: str) -> bool:
+        del hashed_password, password
+        with self._lock:
+            self.calls += 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            if self.calls >= self.release_after:
+                self._release.set()
+        if not self._release.wait(timeout=5):
+            raise RuntimeError("password verifier concurrency gate timed out")
+        with self._lock:
+            self.active -= 1
         return self.result
 
 
@@ -245,7 +291,66 @@ async def test_password_verification_does_not_block_the_async_event_loop(
     assert event_loop_delay < 0.05
 
 
-async def test_login_runs_bounded_expiry_cleanup_before_bucket_lookup(
+async def test_password_verifier_exception_keeps_the_reserved_attempt(
+    frozen_clock: FrozenClock,
+) -> None:
+    class ExplodingPasswordHasher:
+        def verify(self, hashed_password: str, password: str) -> bool:
+            del hashed_password, password
+            raise RuntimeError("argon verifier failed")
+
+    repository = InMemoryKioskRepository()
+    service = KioskSessionService(
+        repository,
+        password_hash="stored-argon-hash",
+        cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
+        clock=frozen_clock,
+        password_hasher=ExplodingPasswordHasher(),
+    )
+
+    with pytest.raises(RuntimeError, match="argon verifier failed"):
+        await service.login("wrong", "hmac-sha256:client")
+
+    assert repository.failures == {"hmac-sha256:client": 1}
+
+
+async def test_password_verifier_cancellation_keeps_the_reserved_attempt(
+    frozen_clock: FrozenClock,
+) -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    class PausedPasswordHasher:
+        def verify(self, hashed_password: str, password: str) -> bool:
+            del hashed_password, password
+            started.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError("password verifier cancellation gate timed out")
+            return False
+
+    repository = InMemoryKioskRepository()
+    service = KioskSessionService(
+        repository,
+        password_hash="stored-argon-hash",
+        cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
+        clock=frozen_clock,
+        password_hasher=PausedPasswordHasher(),
+    )
+    login = asyncio.create_task(service.login("wrong", "hmac-sha256:client"))
+    try:
+        await asyncio.wait_for(asyncio.to_thread(started.wait, 5), timeout=6)
+        login.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await login
+    finally:
+        release.set()
+
+    assert repository.failures == {"hmac-sha256:client": 1}
+
+
+async def test_login_runs_bounded_expiry_cleanup_during_attempt_reservation(
     frozen_clock: FrozenClock,
 ) -> None:
     repository = InMemoryKioskRepository()
@@ -400,6 +505,12 @@ async def test_postgres_rate_limit_rotation_replay_and_revocation() -> None:
             await service.require_access(rotated.access_token)
     finally:
         await connection.rollback()
+        await connection.execute("set local role app_backend")
+        await connection.execute(
+            "delete from app.rate_limit_buckets where bucket_key_hash = any(%s)",
+            ([rate_key, window_key],),
+        )
+        await connection.commit()
         await connection.close()
 
 
@@ -497,6 +608,90 @@ async def test_postgres_concurrent_refresh_allows_exactly_one_rotation() -> None
             await cleanup_connection.commit()
         finally:
             await cleanup_connection.close()
+
+
+@pytest.mark.parametrize("shared_bucket", [True, False])
+async def test_postgres_concurrent_logins_bound_password_verification_per_bucket(
+    shared_bucket: bool,
+) -> None:
+    database_url = settings.database_url
+    if not database_url or urlsplit(database_url).hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        pytest.skip("A loopback DATABASE_URL is required for the login race test")
+
+    request_count = 8
+    allowed_per_bucket = 5
+    shared_key = f"hmac-sha256:{uuid4().hex}"
+    keys = [
+        shared_key if shared_bucket else f"hmac-sha256:{uuid4().hex}"
+        for _ in range(request_count)
+    ]
+    hasher = GatedPasswordHasher(
+        allowed_per_bucket if shared_bucket else request_count
+    )
+    clock = FrozenClock(datetime(2026, 8, 21, 1, tzinfo=UTC))
+    start = asyncio.Barrier(request_count)
+
+    async def attempt(key: str) -> None:
+        connection = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            await connection.execute("set local role app_backend")
+            service = KioskSessionService(
+                KioskRepository(connection),
+                password_hash="stored-argon-hash",
+                cookie_secret="k" * 32,
+                qr_signing_secret="q" * 32,
+                clock=clock,
+                password_hasher=hasher,
+            )
+            await start.wait()
+            with pytest.raises(KioskLoginRejected):
+                await service.login("wrong", key)
+            await connection.rollback()
+        except BaseException:
+            await connection.rollback()
+            raise
+        finally:
+            await connection.close()
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*(attempt(key) for key in keys)), timeout=15
+        )
+        expected_calls = allowed_per_bucket if shared_bucket else request_count
+        assert hasher.calls == expected_calls
+        if shared_bucket:
+            verification = await psycopg.AsyncConnection.connect(database_url)
+            try:
+                await verification.execute("set local role app_backend")
+                reserved = await verification.execute(
+                    """
+                    select attempt_count, blocked_until > %s
+                    from app.rate_limit_buckets
+                    where bucket_key_hash = %s and action = 'kiosk.login'
+                    """,
+                    (clock.now(), shared_key),
+                )
+                assert await reserved.fetchone() == (allowed_per_bucket, True)
+            finally:
+                await verification.rollback()
+                await verification.close()
+        else:
+            assert hasher.max_active == request_count
+    finally:
+        cleanup = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            await cleanup.execute("set local role app_backend")
+            await cleanup.execute(
+                "delete from app.rate_limit_buckets where bucket_key_hash = any(%s)",
+                (keys,),
+            )
+            await cleanup.commit()
+        finally:
+            await cleanup.close()
 
 
 async def test_postgres_rate_limit_expiry_cleanup_is_bounded() -> None:

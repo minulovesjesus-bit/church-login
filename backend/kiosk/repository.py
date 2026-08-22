@@ -5,6 +5,8 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from backend.core.db import application_transaction
+
 
 @dataclass(frozen=True)
 class KioskSessionRecord:
@@ -31,8 +33,14 @@ class KioskSessionCursorKey:
 
 
 class KioskRepository:
-    def __init__(self, connection: Any) -> None:
+    def __init__(
+        self,
+        connection: Any,
+        *,
+        reservation_database_url: str | None = None,
+    ) -> None:
         self._connection = connection
+        self._reservation_database_url = reservation_database_url
 
     async def create_session(
         self,
@@ -227,6 +235,90 @@ class KioskRepository:
             (action, now, limit),
         )
         return cursor.rowcount
+
+    async def reserve_rate_limit_attempt(
+        self,
+        key_hash: str,
+        action: str,
+        now: datetime,
+        *,
+        window: timedelta,
+        limit: int,
+        block_for: timedelta,
+        cleanup_limit: int,
+    ) -> bool:
+        retention = max(window, block_for)
+        async with application_transaction(
+            database_url=self._reservation_database_url
+        ) as connection:
+            cursor = await connection.execute(
+                """
+                with expired as (
+                  select bucket_key_hash, action
+                  from app.rate_limit_buckets
+                  where action = %(action)s and expires_at <= %(now)s
+                    and bucket_key_hash <> %(key)s
+                  order by expires_at, bucket_key_hash
+                  limit %(cleanup_limit)s
+                  for update skip locked
+                ), cleaned as (
+                  delete from app.rate_limit_buckets bucket
+                  using expired
+                  where bucket.bucket_key_hash = expired.bucket_key_hash
+                    and bucket.action = expired.action
+                ), reserved as (
+                  insert into app.rate_limit_buckets (
+                    bucket_key_hash, action, window_started_at,
+                    attempt_count, blocked_until, updated_at, expires_at
+                  ) values (
+                    %(key)s, %(action)s, %(now)s, 1,
+                    case when 1 >= %(limit)s
+                      then %(now)s + %(block_for)s else null end,
+                    %(now)s, %(now)s + %(retention)s
+                  )
+                  on conflict (bucket_key_hash, action) do update
+                  set window_started_at = case
+                        when app.rate_limit_buckets.window_started_at
+                             + %(window)s <= %(now)s
+                          then %(now)s
+                        else app.rate_limit_buckets.window_started_at
+                      end,
+                      attempt_count = case
+                        when app.rate_limit_buckets.window_started_at
+                             + %(window)s <= %(now)s
+                          then 1
+                        else app.rate_limit_buckets.attempt_count + 1
+                      end,
+                      blocked_until = case
+                        when app.rate_limit_buckets.window_started_at
+                             + %(window)s <= %(now)s
+                          then case when 1 >= %(limit)s
+                            then %(now)s + %(block_for)s else null end
+                        when app.rate_limit_buckets.attempt_count + 1 >= %(limit)s
+                          then %(now)s + %(block_for)s
+                        else null
+                      end,
+                      updated_at = %(now)s,
+                      expires_at = %(now)s + %(retention)s
+                  where app.rate_limit_buckets.blocked_until is null
+                     or app.rate_limit_buckets.blocked_until <= %(now)s
+                  returning true as allowed
+                )
+                select allowed from reserved
+                """,
+                {
+                    "key": key_hash,
+                    "action": action,
+                    "now": now,
+                    "window": window,
+                    "limit": limit,
+                    "block_for": block_for,
+                    "retention": retention,
+                    "cleanup_limit": cleanup_limit,
+                },
+            )
+            row = await cursor.fetchone()
+        return bool(row and row[0])
 
     async def record_rate_limit_failure(
         self,
