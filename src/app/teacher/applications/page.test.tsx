@@ -62,6 +62,11 @@ it("posts the exact approval contract and removes only the approved row on succe
   await waitFor(() => expect(approve).toHaveFocus());
 
   fireEvent.click(approve);
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(mockApi.post).not.toHaveBeenCalled();
+  await waitFor(() => expect(approve).toHaveFocus());
+
+  fireEvent.click(approve);
   const confirm = within(screen.getByRole("alertdialog", { name: "김교사 님 교사 승인" }))
     .getByRole("button", { name: "김교사 님 승인 확인" });
   expect(confirm).toHaveTextContent("승인");
@@ -78,6 +83,14 @@ it("posts the exact approval contract and removes only the approved row on succe
   finish?.();
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
   expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus();
+});
+
+it("preserves the pending admin-status compatibility class", async () => {
+  mockApi.get.mockResolvedValue([application]);
+  render(<TeacherApplicationsPage />);
+
+  expect(await screen.findByText("승인 대기", { selector: ".admin-status" }))
+    .toHaveClass("admin-status", "admin-status--pending");
 });
 
 it("synchronously locks two distinct application approvals before React disables either row", async () => {

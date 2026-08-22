@@ -22,13 +22,13 @@ export function TeacherSummary({ dashboard }: { dashboard: TeacherDashboard }) {
           <CardTitle>출결 요약</CardTitle>
         </CardHeader>
         <CardContent>
-          <dl className="teacher-metric-list" aria-label="출결 요약" role="group">
+          <dl className="teacher-metric-list" aria-label="출결 요약">
             {metrics.map((metric) => (
               <div key={metric.label}>
                 <dt>{metric.label}</dt>
-                <dd aria-label={`${metric.value}명`}>
-                  <strong aria-hidden="true">{metric.value}</strong>
-                  <span aria-hidden="true">명</span>
+                <dd>
+                  <strong>{metric.value}</strong>
+                  <span>명</span>
                 </dd>
               </div>
             ))}

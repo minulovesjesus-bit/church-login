@@ -55,7 +55,7 @@ it("loads only the combined dashboard endpoint immediately and renders its summa
   expect(await screen.findByRole("heading", { name: "교사 대시보드" })).toBeInTheDocument();
   expect(mockApi.get).toHaveBeenCalledTimes(1);
   expect(mockApi.get).toHaveBeenCalledWith("/api/teacher/dashboard", expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  const metrics = screen.getByRole("group", { name: "출결 요약" });
+  const metrics = screen.getByLabelText("출결 요약", { selector: "dl" });
   ([
     ["오늘 출석", "4명"],
     ["현재 입실", "3명"],
@@ -65,7 +65,7 @@ it("loads only the combined dashboard endpoint immediately and renders its summa
     const term = within(metrics).getByText(label);
     const metric = term.closest("div");
     expect(metric, `${label} metric container`).not.toBeNull();
-    expect(within(metric!).getByLabelText(value)).toBeInTheDocument();
+    expect(metric!.querySelector("dd")).toHaveTextContent(value);
   });
   expect(screen.queryByText("Attendance overview")).not.toBeInTheDocument();
   expect(screen.queryByText("Recent attendance")).not.toBeInTheDocument();

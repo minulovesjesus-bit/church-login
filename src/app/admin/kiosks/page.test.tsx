@@ -55,9 +55,12 @@ it("renders bounded safe fields, Seoul timestamps, and active/expired/revoked st
   expect(screen.getByRole("status")).toHaveTextContent("기기 세션을 불러오고 있습니다.");
   await act(async () => {});
   expect(screen.getByText(active.session_id)).toBeVisible();
-  expect(screen.getByText("활성")).toBeVisible();
-  expect(screen.getByText("만료", { selector: ".admin-status" })).toBeVisible();
-  expect(screen.getByText("해지됨")).toBeVisible();
+  expect(screen.getByText("활성", { selector: ".admin-status" }))
+    .toHaveClass("admin-status", "admin-status--active");
+  expect(screen.getByText("만료", { selector: ".admin-status" }))
+    .toHaveClass("admin-status", "admin-status--expired");
+  expect(screen.getByText("해지됨", { selector: ".admin-status" }))
+    .toHaveClass("admin-status", "admin-status--revoked");
   expect(formatSeoulTimestamp("2026-08-22T03:00:00Z")).toContain("2026. 8. 22.");
   expect(screen.getAllByRole("listitem")).toHaveLength(3);
   expect(document.body).not.toHaveTextContent(/refresh_token|hash|cookie|IP|user.?agent/i);
@@ -81,6 +84,12 @@ it("uses a titled identity dialog, cancels with exact focus return, locks revoke
   const firstDialog = screen.getByRole("alertdialog", { name: `${active.session_id} 기기 세션 해지` });
   expect(firstDialog).toHaveTextContent(`${active.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.`);
   fireEvent.keyDown(document, { key: "Escape" });
+  expect(mockApi.delete).not.toHaveBeenCalled();
+  await waitFor(() => expect(revoke).toHaveFocus());
+
+  fireEvent.click(revoke);
+  fireEvent.click(within(screen.getByRole("alertdialog", { name: `${active.session_id} 기기 세션 해지` }))
+    .getByRole("button", { name: "취소" }));
   expect(mockApi.delete).not.toHaveBeenCalled();
   await waitFor(() => expect(revoke).toHaveFocus());
 

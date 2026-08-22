@@ -58,6 +58,11 @@ it("patches the exact promotion contract and replaces only the target with the c
   await waitFor(() => expect(opener).toHaveFocus());
 
   fireEvent.click(opener);
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(mockApi.patch).not.toHaveBeenCalled();
+  await waitFor(() => expect(opener).toHaveFocus());
+
+  fireEvent.click(opener);
   const confirm = screen.getByRole("button", { name: "김교사 님 관리자 승격 확인" });
   fireEvent.click(confirm);
   expect(mockApi.patch).toHaveBeenCalledTimes(1);
@@ -108,11 +113,16 @@ it("preserves the last administrator row and active action on LAST_ADMIN_PROTECT
 });
 
 it("renders the API current role without treating the configured initial email as permanently admin", async () => {
-  mockApi.get.mockResolvedValue([{ ...teacher, email: "initial@example.com", name: "초기관리자" }]);
+  mockApi.get.mockResolvedValue([
+    { ...teacher, email: "initial@example.com", name: "초기관리자" },
+    otherAdmin,
+  ]);
   render(<StaffPage />);
 
   const role = await screen.findByText("교사", { selector: ".admin-status" });
-  expect(role).toBeVisible();
+  expect(role).toHaveClass("admin-status", "admin-status--teacher");
+  expect(screen.getByText("관리자", { selector: ".admin-status" }))
+    .toHaveClass("admin-status", "admin-status--admin");
   expect(screen.getByRole("button", { name: "초기관리자 님 관리자로 승격" })).toBeEnabled();
 });
 

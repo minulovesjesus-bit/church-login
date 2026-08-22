@@ -45,9 +45,8 @@ test("student, teacher, kiosk, attendance, statistics, and events work together"
       await expect(freshStudent.getByText("현재 입실 중", { exact: true })).toBeVisible();
       const personalHistory = freshStudent.getByRole("region", { name: "최근 출결" });
       await expect(personalHistory.getByText("총 1건", { exact: true })).toBeVisible();
-      await expect(
-        personalHistory.locator(".attendance-desktop-only").getByText("입실", { exact: true }),
-      ).toBeVisible();
+      const personalHistoryTable = personalHistory.getByRole("table", { name: "출결 상세 기록" });
+      await expect(personalHistoryTable.getByText("입실", { exact: true })).toBeVisible();
     } finally {
       await freshStudentContext.close();
     }

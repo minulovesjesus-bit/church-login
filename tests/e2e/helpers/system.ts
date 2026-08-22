@@ -57,9 +57,13 @@ function seoulCalendarDate(now = new Date()): string {
 }
 
 async function dashboardTargetCount(page: Page): Promise<number> {
-  const summary = page.getByText(/^통계 대상 \d+명$/);
-  await expect(summary).toBeVisible();
-  const match = (await summary.textContent())?.match(/(\d+)/);
+  const summary = page.locator('dl[aria-label="출결 요약"]');
+  const targetMetric = summary.locator("div").filter({
+    has: page.getByText("통계 대상", { exact: true }),
+  });
+  const value = targetMetric.locator("dd");
+  await expect(value).toBeVisible();
+  const match = (await value.textContent())?.match(/(\d+)/);
   if (!match) throw new Error("Teacher dashboard did not expose the statistics target count.");
   return Number(match[1]);
 }
@@ -164,13 +168,16 @@ export async function approveTeacherAndPromoteAdmin(
     has: adminPage.getByText(applicant.email, { exact: true }),
   });
   await expect(application).toBeVisible();
-  adminPage.once("dialog", (dialog) => dialog.accept());
   const approvalResponse = adminPage.waitForResponse((response) => (
     response.url().includes("/api/admin/teacher-applications/")
     && response.url().endsWith("/approve")
     && response.request().method() === "POST"
   ));
-  await application.getByRole("button", { name: "승인" }).click();
+  await application.getByRole("button", { name: `${applicant.name} 님 승인` }).click();
+  const approvalDialog = adminPage.getByRole("alertdialog", {
+    name: `${applicant.name} 님 교사 승인`,
+  });
+  await approvalDialog.getByRole("button", { name: `${applicant.name} 님 승인 확인` }).click();
   expect((await approvalResponse).ok()).toBe(true);
   await expect(adminPage.getByRole("status").filter({ hasText: "신청을 승인했습니다." })).toBeVisible();
 
@@ -179,12 +186,17 @@ export async function approveTeacherAndPromoteAdmin(
     has: adminPage.getByText(applicant.email, { exact: true }),
   });
   await expect(staff).toBeVisible();
-  adminPage.once("dialog", (dialog) => dialog.accept());
   const promotionResponse = adminPage.waitForResponse((response) => (
     response.url().includes(`/api/admin/staff/${identityFixtures.fullSystemTeacher.id}/role`)
     && response.request().method() === "PATCH"
   ));
-  await staff.getByRole("button", { name: "관리자로 승격" }).click();
+  await staff.getByRole("button", { name: `${applicant.name} 님 관리자로 승격` }).click();
+  const promotionDialog = adminPage.getByRole("alertdialog", {
+    name: `${applicant.name} 님 관리자 승격`,
+  });
+  await promotionDialog.getByRole("button", {
+    name: `${applicant.name} 님 관리자 승격 확인`,
+  }).click();
   expect((await promotionResponse).ok()).toBe(true);
   await expect(adminPage.getByRole("status").filter({ hasText: "관리자로 변경했습니다." })).toBeVisible();
 
@@ -279,7 +291,10 @@ export async function expectTeacherAttendance(
       page.locator(".attendance-desktop-only").getByText(email, { exact: true }).first(),
     ).toBeVisible();
     if (state === "입실 중") {
-      await expect(page.getByText(/^현재 입실 1명$/)).toBeVisible();
+      const currentInside = page.locator('dl[aria-label="출결 요약"] > div').filter({
+        has: page.getByText("현재 입실", { exact: true }),
+      });
+      await expect(currentInside.locator("dd")).toHaveText("1명");
     }
     await page.goto(`/teacher/attendance?search=${encodeURIComponent(email)}`);
     const row = page.locator(".attendance-desktop-only tr").filter({
@@ -367,12 +382,15 @@ export async function revokeKiosk(browser: Browser, kioskPage: Page): Promise<vo
       has: page.getByText(state.sessionId, { exact: true }),
     });
     await expect(session).toBeVisible();
-    page.once("dialog", (dialog) => dialog.accept());
     const revokeResponse = page.waitForResponse((response) => (
       response.url().endsWith(`/api/admin/kiosk-sessions/${state.sessionId}`)
       && response.request().method() === "DELETE"
     ));
-    await session.getByRole("button", { name: "세션 해지" }).click();
+    await session.getByRole("button", { name: `${state.sessionId} 세션 해지` }).click();
+    const revokeDialog = page.getByRole("alertdialog", {
+      name: `${state.sessionId} 기기 세션 해지`,
+    });
+    await revokeDialog.getByRole("button", { name: `${state.sessionId} 세션 해지 확인` }).click();
     expect((await revokeResponse).status()).toBe(204);
     await expect(page.getByRole("status").filter({ hasText: "기기 세션을 해지했습니다." })).toBeVisible();
   } finally {
