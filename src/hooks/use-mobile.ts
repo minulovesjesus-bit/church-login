@@ -1,16 +1,15 @@
 import * as React from "react"
 
-const MOBILE_BREAKPOINT = 768
-const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
+import { DESKTOP_MEDIA_QUERY } from "@/lib/responsive"
 
 function subscribe(onStoreChange: () => void) {
-  const query = window.matchMedia(MOBILE_QUERY)
+  const query = window.matchMedia(DESKTOP_MEDIA_QUERY)
   query.addEventListener("change", onStoreChange)
   return () => query.removeEventListener("change", onStoreChange)
 }
 
 function getSnapshot() {
-  return window.matchMedia(MOBILE_QUERY).matches
+  return !window.matchMedia(DESKTOP_MEDIA_QUERY).matches
 }
 
 function getServerSnapshot() {
