@@ -203,7 +203,11 @@ export default function StaffPage() {
         <ul className="admin-card-list" aria-label="교직원 역할 목록">
           {state.staff.map((member) => (
             <li key={member.user_id} className="admin-card">
-              <div className="admin-card__identity"><strong>{member.name}</strong><p>{member.email}</p></div>
+              <div className="admin-card__identity">
+                <strong>{member.name}</strong>
+                <p>{member.email}</p>
+                {member.phone ? <p><span className="sr-only">연락처 </span><span>{member.phone}</span></p> : null}
+              </div>
               <Badge
                 variant={member.role === "admin" ? "default" : "secondary"}
                 className={`admin-status admin-status--${member.role}`}

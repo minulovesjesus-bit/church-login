@@ -16,7 +16,7 @@ const teacher = {
   user_id: "11111111-1111-4111-8111-111111111111",
   email: "teacher@example.com",
   name: "김교사",
-  phone: null,
+  phone: "01011112222",
   role: "teacher" as const,
 };
 const admin = { ...teacher, role: "admin" as const };
@@ -69,8 +69,10 @@ it("patches the exact promotion contract and replaces only the target with the c
   finish?.(returnedAdmin);
   expect(await screen.findByText("서버반환교사")).toBeVisible();
   expect(screen.getByText("renamed.teacher@example.com")).toBeVisible();
+  expect(screen.getByText("01099998888")).toBeVisible();
   expect(screen.getByRole("button", { name: "서버반환교사 님 교사로 변경" })).toBeEnabled();
   expect(screen.queryByText("teacher@example.com")).not.toBeInTheDocument();
+  expect(screen.queryByText("01011112222")).not.toBeInTheDocument();
   expect(screen.getByText("이관리자")).toBeVisible();
   expect(screen.getByText("other.admin@example.com")).toBeVisible();
   expect(document.body).not.toHaveTextContent(teacher.user_id);
