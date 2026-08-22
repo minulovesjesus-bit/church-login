@@ -2,29 +2,23 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const signUp = vi.hoisted(() => vi.fn());
-const signInWithOAuth = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/client", () => ({
-  createBrowserSupabaseClient: () => ({ auth: { signUp, signInWithOAuth } }),
+  createBrowserSupabaseClient: () => ({ auth: { signUp } }),
 }));
 
 import StudentSignupPage from "./page";
 
 beforeEach(() => {
   signUp.mockReset();
-  signInWithOAuth.mockReset();
 });
 
-it("preserves the Google signup callback target", async () => {
-  signInWithOAuth.mockResolvedValue({ error: null });
+it("offers only the approved email and password signup action", () => {
   render(<StudentSignupPage />);
 
-  fireEvent.click(screen.getByRole("button", { name: "Google로 계속하기" }));
-
-  await vi.waitFor(() => expect(signInWithOAuth).toHaveBeenCalledWith({
-    provider: "google",
-    options: { redirectTo: "http://localhost:3000/auth/callback?next=/student" },
-  }));
+  expect(screen.getByRole("button", { name: "회원가입" })).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Google로 계속하기" })).not.toBeInTheDocument();
+  expect(screen.queryByText("또는")).not.toBeInTheDocument();
 });
 
 it("preserves the signup payload, callback, and success status", async () => {

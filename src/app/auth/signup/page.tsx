@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
-import { CircleUserRound } from "lucide-react";
 
 import { AuthShell } from "@/components/layout/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
@@ -15,12 +14,12 @@ import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 export default function StudentSignupPage() {
   const [message, setMessage] = useState<string>();
   const [hasError, setHasError] = useState(false);
-  const [submitting, setSubmitting] = useState<"google" | "password">();
+  const [submitting, setSubmitting] = useState(false);
 
   async function signup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (submitting) return;
-    setSubmitting("password");
+    setSubmitting(true);
     setMessage(undefined);
     setHasError(false);
     const form = new FormData(event.currentTarget);
@@ -33,41 +32,13 @@ export default function StudentSignupPage() {
       setHasError(Boolean(error));
       setMessage(error?.message ?? "인증 이메일을 확인한 뒤 계속해 주세요.");
     } finally {
-      setSubmitting(undefined);
-    }
-  }
-
-  async function signupWithGoogle() {
-    if (submitting) return;
-    setSubmitting("google");
-    setMessage(undefined);
-    setHasError(false);
-    try {
-      const { error } = await createBrowserSupabaseClient().auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback?next=/student` },
-      });
-      setHasError(Boolean(error));
-      setMessage(error?.message);
-    } finally {
-      setSubmitting(undefined);
+      setSubmitting(false);
     }
   }
 
   return (
     <AuthShell title="학생 회원가입">
       <FieldGroup>
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full"
-          disabled={Boolean(submitting)}
-          onClick={signupWithGoogle}
-        >
-          {submitting === "google" ? <Spinner data-icon="inline-start" aria-hidden /> : <CircleUserRound data-icon="inline-start" />}
-          Google로 계속하기
-        </Button>
-        <FieldSeparator>또는</FieldSeparator>
         <form onSubmit={signup}>
           <FieldGroup>
             <Field data-invalid={hasError}>
@@ -79,7 +50,7 @@ export default function StudentSignupPage() {
                 autoComplete="email"
                 aria-invalid={hasError}
                 aria-describedby={message ? "student-signup-message" : undefined}
-                disabled={Boolean(submitting)}
+                disabled={submitting}
                 required
               />
             </Field>
@@ -93,7 +64,7 @@ export default function StudentSignupPage() {
                 minLength={8}
                 aria-invalid={hasError}
                 aria-describedby={message ? "student-signup-message" : undefined}
-                disabled={Boolean(submitting)}
+                disabled={submitting}
                 required
               />
             </Field>
@@ -108,8 +79,8 @@ export default function StudentSignupPage() {
                 </Alert>
               )
             ) : null}
-            <Button type="submit" className="w-full" disabled={Boolean(submitting)}>
-              {submitting === "password" ? (
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? (
                 <>
                   <Spinner data-icon="inline-start" aria-hidden />
                   가입 중
