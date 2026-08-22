@@ -251,8 +251,14 @@ describe("sidebar 44px target geometry", () => {
       "min-w-11",
       "group-data-[side=left]:-right-5.5",
       "group-data-[side=right]:-left-5.5",
+      "after:start-[calc(50%-1px)]",
     );
-    expect(rail).not.toHaveClass("w-4", "ltr:-translate-x-1/2", "rtl:-translate-x-1/2");
+    expect(rail).not.toHaveClass(
+      "w-4",
+      "after:start-1/2",
+      "ltr:-translate-x-1/2",
+      "rtl:-translate-x-1/2",
+    );
   });
 
   it("reserves a 44px group header row and text gutter for its action", () => {
