@@ -3,7 +3,10 @@ import { expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
 
-vi.mock("@/lib/api/client", () => ({ api: mockApi }));
+vi.mock("@/lib/api/client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api/client")>()),
+  api: mockApi,
+}));
 
 import TeacherApplicationPage from "./page";
 
@@ -49,3 +52,23 @@ it.each(["none", "rejected"] as const)(
     expect(await screen.findByText("교사 가입 승인을 기다리고 있습니다.")).toBeInTheDocument();
   },
 );
+
+it("locks a teacher application while submitting and exposes rejection as an alert", async () => {
+  let finish!: (value: { status: "pending" }) => void;
+  mockApi.get.mockResolvedValue({ status: "rejected", rejection_reason: "연락처 확인 필요" });
+  mockApi.post.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  render(<TeacherApplicationPage />);
+
+  const rejection = await screen.findByRole("alert");
+  expect(rejection).toHaveTextContent("거절 사유: 연락처 확인 필요");
+  fireEvent.change(screen.getByLabelText("이름"), { target: { value: "김교사" } });
+  fireEvent.change(screen.getByLabelText("연락처"), { target: { value: "010-1111-2222" } });
+  fireEvent.click(screen.getByRole("button", { name: "다시 신청" }));
+  fireEvent.click(screen.getByRole("button", { name: "신청 중" }));
+
+  expect(mockApi.post).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole("button", { name: "신청 중" })).toBeDisabled();
+
+  finish({ status: "pending" });
+  expect(await screen.findByText("교사 가입 승인을 기다리고 있습니다.")).toBeVisible();
+});

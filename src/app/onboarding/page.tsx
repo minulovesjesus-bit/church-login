@@ -3,6 +3,19 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import { AuthShell } from "@/components/layout/auth-shell";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 import { api, ApiClientError } from "@/lib/api/client";
 
 const digitsOnly = (value: string) => value.replace(/\D/g, "");
@@ -25,10 +38,13 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string>();
   const [completed, setCompleted] = useState(false);
   const [birthDate, setBirthDate] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const age = ageFromBirthDate(birthDate);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
+    setSubmitting(true);
     setError(undefined);
     const form = new FormData(event.currentTarget);
     try {
@@ -42,35 +58,97 @@ export default function OnboardingPage() {
       router.push("/student");
     } catch (caught) {
       setError(caught instanceof ApiClientError ? caught.message : "가입을 완료하지 못했습니다.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
   return (
-    <main>
-      <h1>학생 정보 등록</h1>
-      <p>나이는 생년월일을 기준으로 화면에서만 계산됩니다.</p>
-      <form onSubmit={submit}>
-        <label>
-          이름
-          <input name="name" required />
-        </label>
-        <label>
-          생년월일
-          <input name="birth_date" type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} required />
-        </label>
-        {age !== undefined ? <p>만 {age}세</p> : null}
-        <label>
-          학생 연락처
-          <input name="phone" inputMode="numeric" required />
-        </label>
-        <label>
-          보호자 연락처
-          <input name="guardian_phone" inputMode="numeric" required />
-        </label>
-        {error ? <p role="alert">{error}</p> : null}
-        {completed ? <p role="status">가입이 완료되었습니다.</p> : null}
-        <button type="submit">가입 완료</button>
-      </form>
-    </main>
+    <AuthShell title="학생 정보 등록">
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle>학생 정보</CardTitle>
+          <CardDescription>나이는 생년월일을 기준으로 화면에서만 계산됩니다.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit}>
+            <FieldGroup>
+              <Field data-invalid={Boolean(error)} data-disabled={submitting}>
+                <FieldLabel htmlFor="onboarding-name">이름</FieldLabel>
+                <Input
+                  id="onboarding-name"
+                  name="name"
+                  autoComplete="name"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "onboarding-error" : undefined}
+                  disabled={submitting}
+                  required
+                />
+              </Field>
+              <Field data-invalid={Boolean(error)} data-disabled={submitting}>
+                <FieldLabel htmlFor="onboarding-birth-date">생년월일</FieldLabel>
+                <Input
+                  id="onboarding-birth-date"
+                  name="birth_date"
+                  type="date"
+                  value={birthDate}
+                  onChange={(event) => setBirthDate(event.target.value)}
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "onboarding-error" : undefined}
+                  disabled={submitting}
+                  required
+                />
+                {age !== undefined ? <FieldDescription>만 {age}세</FieldDescription> : null}
+              </Field>
+              <Field data-invalid={Boolean(error)} data-disabled={submitting}>
+                <FieldLabel htmlFor="onboarding-phone">학생 연락처</FieldLabel>
+                <Input
+                  id="onboarding-phone"
+                  name="phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "onboarding-error" : undefined}
+                  disabled={submitting}
+                  required
+                />
+              </Field>
+              <Field data-invalid={Boolean(error)} data-disabled={submitting}>
+                <FieldLabel htmlFor="onboarding-guardian-phone">보호자 연락처</FieldLabel>
+                <Input
+                  id="onboarding-guardian-phone"
+                  name="guardian_phone"
+                  type="tel"
+                  inputMode="numeric"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby={error ? "onboarding-error" : undefined}
+                  disabled={submitting}
+                  required
+                />
+              </Field>
+              {error ? (
+                <Alert id="onboarding-error" variant="destructive">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+              {completed ? (
+                <Alert role="status">
+                  <AlertDescription>가입이 완료되었습니다.</AlertDescription>
+                </Alert>
+              ) : null}
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? (
+                  <>
+                    <Spinner data-icon="inline-start" aria-hidden />
+                    저장 중
+                  </>
+                ) : "가입 완료"}
+              </Button>
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
+    </AuthShell>
   );
 }

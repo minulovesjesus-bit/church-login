@@ -106,6 +106,33 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
+.auth-shell-image {
+  isolation: isolate;
+}
+
+@media (min-width: 64rem) {
+  .auth-shell-image {
+    mask-image: linear-gradient(to right, transparent, currentColor 5rem);
+  }
+
+  .auth-shell-hero-title {
+    position: relative;
+  }
+
+  .auth-shell-hero-title::after {
+    position: absolute;
+    right: 6rem;
+    bottom: -0.35rem;
+    width: 7rem;
+    height: 0.2rem;
+    border-radius: 999px;
+    background: var(--brand-gold);
+    content: "";
+    transform: rotate(-2deg);
+    transform-origin: right center;
+  }
+}
+
 .kiosk-shell,
 .student-scan-shell {
   min-height: 100dvh;
