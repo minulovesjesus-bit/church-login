@@ -1,8 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api, ApiClientError } from "@/lib/api/client";
 
 type KioskSession = { session_id: string; created_at: string; last_seen_at: string; refresh_expires_at: string; revoked_at: string | null };
@@ -53,6 +68,62 @@ function appendUnique(existing: KioskSession[], incoming: KioskSession[]): Kiosk
   return unique;
 }
 
+type RevokeDialogProps = {
+  session: KioskSession;
+  ready: ReadyState;
+  disabled: boolean;
+  pending: boolean;
+  focusFallbackRef: RefObject<HTMLHeadingElement | null>;
+  onRevoke: (session: KioskSession, ready: ReadyState) => void;
+};
+
+function RevokeDialog({ session, ready, disabled, pending, focusFallbackRef, onRevoke }: RevokeDialogProps) {
+  const confirmedRef = useRef(false);
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="destructive"
+          type="button"
+          disabled={disabled}
+          aria-label={pending ? `${session.session_id} 세션 해지 중…` : `${session.session_id} 세션 해지`}
+        >
+          {pending ? "해지 중…" : "세션 해지"}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          if (!confirmedRef.current) return;
+          confirmedRef.current = false;
+          event.preventDefault();
+          queueMicrotask(() => focusFallbackRef.current?.focus());
+        }}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>{session.session_id} 기기 세션 해지</AlertDialogTitle>
+          <AlertDialogDescription>
+            {session.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            aria-label={`${session.session_id} 세션 해지 확인`}
+            onClick={() => {
+              confirmedRef.current = true;
+              onRevoke(session, ready);
+            }}
+          >
+            세션 해지
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function KioskSessionsPage() {
   const router = useRouter();
   const [state, setState] = useState<ListState>({ status: "loading" });
@@ -67,6 +138,7 @@ export default function KioskSessionsPage() {
   const terminalAuthRef = useRef(false);
   const sequenceRef = useRef(0);
   const operationRef = useRef(false);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -154,7 +226,6 @@ export default function KioskSessionsPage() {
 
   async function revoke(session: KioskSession, ready: ReadyState) {
     if (operationRef.current || terminalAuthRef.current) return;
-    if (!window.confirm(`${session.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.`)) return;
     operationRef.current = true;
     setPendingId(session.session_id);
     setMutationError(undefined);
@@ -198,14 +269,21 @@ export default function KioskSessionsPage() {
   return (
     <main className="admin-page">
       <header className="admin-page__header">
-        <p className="eyebrow">Administrator</p><h1>기기 세션 관리</h1>
+        <p className="eyebrow">Administrator</p><h1 ref={pageHeadingRef} tabIndex={-1}>기기 세션 관리</h1>
         <p className="supporting-copy">교회 공용 기기의 식별자와 최근 사용 상태를 확인하고 즉시 해지할 수 있습니다.</p>
       </header>
-      {mutationError ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
-      {notice ? <p className="notice" role="status">{notice}</p> : null}
+      {mutationError ? <Alert variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
+      {notice ? <Alert role="presentation"><AlertDescription role="status">{notice}</AlertDescription></Alert> : null}
       {state.status === "loading" ? <p role="status">기기 세션을 불러오고 있습니다.</p> : null}
-      {state.status === "error" ? <section className="admin-state"><p className="inline-alert" role="alert">{state.message}</p><button className="secondary-button" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</button></section> : null}
-      {state.status === "ready" && state.sessions.length === 0 ? <p className="admin-state">등록된 기기 세션이 없습니다.</p> : null}
+      {state.status === "error" ? (
+        <section className="admin-state">
+          <Alert variant="destructive"><AlertDescription>{state.message}</AlertDescription></Alert>
+          <Button variant="outline" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</Button>
+        </section>
+      ) : null}
+      {state.status === "ready" && state.sessions.length === 0 ? (
+        <Empty className="admin-state"><EmptyHeader><EmptyTitle>등록된 기기 세션이 없습니다.</EmptyTitle></EmptyHeader></Empty>
+      ) : null}
       {state.status === "ready" && state.sessions.length > 0 ? (
         <>
           <ul className="admin-card-list" aria-label="기기 세션 목록">
@@ -214,21 +292,35 @@ export default function KioskSessionsPage() {
               const label = currentState === "active" ? "활성" : currentState === "expired" ? "만료" : "해지됨";
               return <li key={session.session_id} className="admin-card admin-card--kiosk">
                 <div className="admin-session-id"><span>기기 세션</span><strong>{session.session_id}</strong></div>
-                <span className={`admin-status admin-status--${currentState}`}>{label}</span>
+                <Badge
+                  variant={currentState === "active" ? "default" : currentState === "revoked" ? "destructive" : "secondary"}
+                  className={`admin-status admin-status--${currentState}`}
+                >
+                  {label}
+                </Badge>
                 <dl className="admin-session-times">
                   <div><dt>생성</dt><dd><time dateTime={session.created_at}>{formatSeoulTimestamp(session.created_at)}</time></dd></div>
                   <div><dt>최근 사용</dt><dd><time dateTime={session.last_seen_at}>{formatSeoulTimestamp(session.last_seen_at)}</time></dd></div>
                   <div><dt>만료</dt><dd><time dateTime={session.refresh_expires_at}>{formatSeoulTimestamp(session.refresh_expires_at)}</time></dd></div>
                   <div><dt>해지</dt><dd>{session.revoked_at ? <time dateTime={session.revoked_at}>{formatSeoulTimestamp(session.revoked_at)}</time> : "-"}</dd></div>
                 </dl>
-                <button className="danger-button" type="button" disabled={currentState === "revoked" || competingAction} onClick={() => revoke(session, state)}>
-                  {currentState === "revoked" ? "해지 완료" : pendingId === session.session_id ? "해지 중…" : "세션 해지"}
-                </button>
+                {currentState === "revoked" ? (
+                  <Button variant="destructive" type="button" aria-label={`${session.session_id} 해지 완료`} disabled>해지 완료</Button>
+                ) : (
+                  <RevokeDialog
+                    session={session}
+                    ready={state}
+                    disabled={competingAction}
+                    pending={pendingId === session.session_id}
+                    focusFallbackRef={pageHeadingRef}
+                    onRevoke={(target, ready) => { void revoke(target, ready); }}
+                  />
+                )}
               </li>;
             })}
           </ul>
-          {pageError ? <p className="inline-alert" role="alert">{pageError}</p> : null}
-          {state.nextCursor ? <button className="secondary-button" type="button" disabled={competingAction} onClick={() => loadMoreSessions(state)}>{loadingMore ? "불러오는 중…" : "더 보기"}</button> : null}
+          {pageError ? <Alert variant="destructive"><AlertDescription>{pageError}</AlertDescription></Alert> : null}
+          {state.nextCursor ? <Button variant="outline" type="button" disabled={competingAction} onClick={() => loadMoreSessions(state)}>{loadingMore ? "불러오는 중…" : "더 보기"}</Button> : null}
         </>
       ) : null}
     </main>

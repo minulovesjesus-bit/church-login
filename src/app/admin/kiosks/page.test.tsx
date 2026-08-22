@@ -61,30 +61,36 @@ it("renders bounded safe fields, Seoul timestamps, and active/expired/revoked st
   expect(formatSeoulTimestamp("2026-08-22T03:00:00Z")).toContain("2026. 8. 22.");
   expect(screen.getAllByRole("listitem")).toHaveLength(3);
   expect(document.body).not.toHaveTextContent(/refresh_token|hash|cookie|IP|user.?agent/i);
-  expect(screen.getAllByRole("button", { name: "세션 해지" })).toHaveLength(2);
-  expect(screen.getByRole("button", { name: "해지 완료" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: `${active.session_id} 세션 해지` })).toHaveTextContent("세션 해지");
+  expect(screen.getByRole("button", { name: `${expired.session_id} 세션 해지` })).toHaveTextContent("세션 해지");
+  expect(screen.getByRole("button", { name: `${revoked.session_id} 해지 완료` })).toHaveTextContent("해지 완료");
+  expect(screen.getByRole("button", { name: `${revoked.session_id} 해지 완료` })).toBeDisabled();
 });
 
-it("cancels without a request, locks duplicate revokes, and refetches after 204", async () => {
+it("uses a titled identity dialog, cancels with exact focus return, locks revokes, and refetches after 204", async () => {
   mockApi.get.mockResolvedValueOnce(page([active])).mockResolvedValueOnce(page([revoked]));
   let finishDelete: (() => void) | undefined;
   mockApi.delete.mockReturnValue(new Promise<void>((resolve) => {
     finishDelete = resolve;
   }));
-  vi.spyOn(window, "confirm").mockReturnValueOnce(false).mockReturnValue(true);
   render(<KioskSessionsPage />);
 
-  const revoke = await screen.findByRole("button", { name: "세션 해지" });
+  const revoke = await screen.findByRole("button", { name: `${active.session_id} 세션 해지` });
+  revoke.focus();
   fireEvent.click(revoke);
+  const firstDialog = screen.getByRole("alertdialog", { name: `${active.session_id} 기기 세션 해지` });
+  expect(firstDialog).toHaveTextContent(`${active.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.`);
+  fireEvent.keyDown(document, { key: "Escape" });
   expect(mockApi.delete).not.toHaveBeenCalled();
+  await waitFor(() => expect(revoke).toHaveFocus());
 
   fireEvent.click(revoke);
-  fireEvent.click(revoke);
-  expect(window.confirm).toHaveBeenLastCalledWith(
-    `${active.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.`,
-  );
+  const confirm = screen.getByRole("button", { name: `${active.session_id} 세션 해지 확인` });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
   expect(mockApi.delete).toHaveBeenCalledTimes(1);
   expect(revoke).toBeDisabled();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "기기 세션 관리" })).toHaveFocus());
 
   finishDelete?.();
   await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
@@ -94,14 +100,14 @@ it("cancels without a request, locks duplicate revokes, and refetches after 204"
 it("keeps the session and action available when revocation fails", async () => {
   mockApi.get.mockResolvedValue(page([active]));
   mockApi.delete.mockRejectedValue(new ApiClientError("REQUEST_FAILED", "해지 실패"));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<KioskSessionsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "세션 해지" }));
+  fireEvent.click(await screen.findByRole("button", { name: `${active.session_id} 세션 해지` }));
+  fireEvent.click(screen.getByRole("button", { name: `${active.session_id} 세션 해지 확인` }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("해지 실패");
   expect(screen.getByText(active.session_id)).toBeVisible();
-  expect(screen.getByRole("button", { name: "세션 해지" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: `${active.session_id} 세션 해지` })).toBeEnabled();
 });
 
 it("redirects terminal auth failures and never renders a stale protected list", async () => {
@@ -157,7 +163,7 @@ it("appends a later page without duplicates and locks competing loads", async ()
     "/api/admin/kiosk-sessions?page_size=100&cursor=opaque%2B%2Fcursor%3D",
   );
   expect(loadMore).toBeDisabled();
-  expect(screen.getByRole("button", { name: "세션 해지" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: `${active.session_id} 세션 해지` })).toBeDisabled();
 
   resolveNext?.(page([active, later, later]));
   await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
@@ -202,12 +208,12 @@ it("revokes the exact session loaded from a later page", async () => {
     .mockResolvedValueOnce(page([active], "next-page"))
     .mockResolvedValueOnce(page([{ ...later, revoked_at: "2026-08-22T03:00:00Z" }]));
   mockApi.delete.mockResolvedValue(undefined);
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<KioskSessionsPage />);
 
   fireEvent.click(await screen.findByRole("button", { name: "더 보기" }));
   const laterCard = (await screen.findByText(later.session_id)).closest("li");
-  fireEvent.click(within(laterCard as HTMLElement).getByRole("button", { name: "세션 해지" }));
+  fireEvent.click(within(laterCard as HTMLElement).getByRole("button", { name: `${later.session_id} 세션 해지` }));
+  fireEvent.click(screen.getByRole("button", { name: `${later.session_id} 세션 해지 확인` }));
 
   await waitFor(() => expect(mockApi.delete).toHaveBeenCalledWith(
     `/api/admin/kiosk-sessions/${later.session_id}`,

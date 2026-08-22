@@ -41,19 +41,32 @@ it("confirms approval, locks duplicate actions synchronously, and removes only o
   mockApi.get.mockResolvedValue([application]);
   let finish: (() => void) | undefined;
   mockApi.post.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<TeacherApplicationsPage />);
 
-  const approve = await screen.findByRole("button", { name: "승인" });
+  const approve = await screen.findByRole("button", { name: "김교사 님 승인" });
+  expect(approve).toHaveTextContent("승인");
+  approve.focus();
   fireEvent.click(approve);
+  const dialog = screen.getByRole("alertdialog", { name: "김교사 님 교사 승인" });
+  expect(dialog).toHaveTextContent("김교사 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.");
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+  expect(mockApi.post).not.toHaveBeenCalled();
+  await waitFor(() => expect(approve).toHaveFocus());
+
   fireEvent.click(approve);
-  expect(window.confirm).toHaveBeenCalledWith("김교사 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.");
+  const confirm = within(screen.getByRole("alertdialog", { name: "김교사 님 교사 승인" }))
+    .getByRole("button", { name: "김교사 님 승인 확인" });
+  expect(confirm).toHaveTextContent("승인");
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
   expect(mockApi.post).toHaveBeenCalledTimes(1);
-  expect(screen.getAllByRole("button", { name: "처리 중…" })).toHaveLength(2);
-  expect(screen.getAllByRole("button", { name: "처리 중…" })[0]).toBeDisabled();
+  expect(screen.getByRole("button", { name: "김교사 님 승인 처리 중…" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "김교사 님 거절 처리 중…" })).toBeDisabled();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus());
 
   finish?.();
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus();
 });
 
 it("opens an accessible target-owned rejection dialog and validates a trimmed 1..500 character reason", async () => {
@@ -61,7 +74,8 @@ it("opens an accessible target-owned rejection dialog and validates a trimmed 1.
   mockApi.post.mockResolvedValue({});
   render(<TeacherApplicationsPage />);
 
-  const reject = await screen.findByRole("button", { name: "거절" });
+  const reject = await screen.findByRole("button", { name: "김교사 님 거절" });
+  expect(reject).toHaveTextContent("거절");
   fireEvent.click(reject);
   const dialog = screen.getByRole("dialog", { name: "김교사 님 신청 거절" });
   const reason = screen.getByRole("textbox", { name: "거절 사유" });
@@ -85,10 +99,9 @@ it("preserves the exact rejection draft after failure and reuses it on a locked 
   mockApi.post
     .mockRejectedValueOnce(new ApiClientError("REQUEST_FAILED", "거절 처리 실패"))
     .mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   const reason = screen.getByRole("textbox", { name: "거절 사유" });
   fireEvent.change(reason, { target: { value: "  정보 확인 필요  " } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
@@ -100,10 +113,9 @@ it("preserves the exact rejection draft after failure and reuses it on a locked 
   const submit = screen.getByRole("button", { name: "김교사 님 신청 거절 확정" });
   fireEvent.click(submit);
   fireEvent.click(submit);
-  fireEvent.click(screen.getByRole("button", { name: "승인" }));
+  fireEvent.click(screen.getByLabelText("김교사 님 승인"));
   expect(mockApi.post).toHaveBeenCalledTimes(2);
-  expect(window.confirm).not.toHaveBeenCalled();
-  expect(screen.getByRole("button", { name: "승인" })).toBeDisabled();
+  expect(screen.getByLabelText("김교사 님 승인")).toBeDisabled();
   expect(mockApi.post).toHaveBeenNthCalledWith(
     1,
     `/api/admin/teacher-applications/${application.id}/reject`,
@@ -119,28 +131,34 @@ it("preserves the exact rejection draft after failure and reuses it on a locked 
   finish?.();
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus());
 });
 
 it("clears a rejection draft only when the administrator explicitly cancels", async () => {
   mockApi.get.mockResolvedValue([application]);
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  const opener = await screen.findByRole("button", { name: "김교사 님 거절" });
+  opener.focus();
+  fireEvent.click(opener);
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "취소할 사유" } });
-  fireEvent.click(screen.getByRole("button", { name: "거절 취소" }));
+  fireEvent.keyDown(document, { key: "Escape" });
 
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(mockApi.post).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "거절" }));
+  await waitFor(() => expect(opener).toHaveFocus());
+  fireEvent.click(opener);
   expect(screen.getByRole("textbox", { name: "거절 사유" })).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "거절 취소" }));
+  await waitFor(() => expect(opener).toHaveFocus());
 });
 
 it("refreshes an already-reviewed conflict instead of presenting duplicate success", async () => {
   mockApi.get.mockResolvedValueOnce([application]).mockResolvedValueOnce([]);
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<TeacherApplicationsPage />);
-  fireEvent.click(await screen.findByRole("button", { name: "승인" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 승인" }));
+  fireEvent.click(screen.getByRole("button", { name: "김교사 님 승인 확인" }));
   await waitFor(() => expect(mockApi.get).toHaveBeenCalledTimes(2));
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
   expect(screen.queryByText(/승인했습니다/)).not.toBeInTheDocument();
@@ -151,13 +169,14 @@ it("clears a rejection draft when conflict reconciliation proves the item was re
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "이미 처리됨" } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
 
   expect(await screen.findByText("대기 중인 신청이 없습니다.")).toBeVisible();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(screen.queryByText(/거절했습니다/)).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByRole("heading", { name: "교사 가입 신청 관리" })).toHaveFocus());
 });
 
 it("keeps the successful list and retries only reconciliation after its GET fails", async () => {
@@ -169,7 +188,7 @@ it("keeps the successful list and retries only reconciliation after its GET fail
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  그대로 둘 사유  " } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
 
@@ -182,10 +201,10 @@ it("keeps the successful list and retries only reconciliation after its GET fail
   const retry = within(dialog).getByRole("button", { name: "신청 상태 다시 확인" });
   fireEvent.click(retry);
   fireEvent.click(retry);
-  fireEvent.click(screen.getByRole("button", { name: "승인" }));
+  fireEvent.click(screen.getByLabelText("김교사 님 승인"));
   expect(mockApi.post).toHaveBeenCalledTimes(1);
   expect(mockApi.get).toHaveBeenCalledTimes(3);
-  expect(screen.getByRole("button", { name: "승인" })).toBeDisabled();
+  expect(screen.getByLabelText("김교사 님 승인")).toBeDisabled();
 
   resolveRetry?.([]);
   expect(await screen.findByText("이미 처리된 신청을 목록에서 정리했습니다.")).toHaveAttribute("role", "status");
@@ -201,7 +220,7 @@ it("retains the draft and retry control after repeated reconciliation GET failur
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  실패 후 유지  " } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
   const retry = await screen.findByRole("button", { name: "신청 상태 다시 확인" });
@@ -223,7 +242,7 @@ it("keeps the draft and stable conflict feedback when retry still finds the item
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "  재확인할 사유  " } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
   fireEvent.click(await screen.findByRole("button", { name: "신청 상태 다시 확인" }));
@@ -243,7 +262,7 @@ it("closes once on terminal auth during reconciliation retry", async () => {
   mockApi.post.mockRejectedValue(new ApiClientError("APPLICATION_ALREADY_REVIEWED", "이미 처리된 신청입니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "보이면 안 되는 사유" } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
   fireEvent.click(await screen.findByRole("button", { name: "신청 상태 다시 확인" }));
@@ -260,7 +279,7 @@ it("clears the rejection form and protected queue on terminal mutation auth", as
   mockApi.post.mockRejectedValue(new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
   render(<TeacherApplicationsPage />);
 
-  fireEvent.click(await screen.findByRole("button", { name: "거절" }));
+  fireEvent.click(await screen.findByRole("button", { name: "김교사 님 거절" }));
   fireEvent.change(screen.getByRole("textbox", { name: "거절 사유" }), { target: { value: "보이면 안 되는 사유" } });
   fireEvent.click(screen.getByRole("button", { name: "김교사 님 신청 거절 확정" }));
 

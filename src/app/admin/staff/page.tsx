@@ -1,8 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api, ApiClientError } from "@/lib/api/client";
 
 type StaffRole = "teacher" | "admin";
@@ -20,6 +35,69 @@ function authorizationDestination(error: unknown): string | undefined {
   return undefined;
 }
 
+function roleAction(member: StaffMember): string {
+  return member.role === "admin" ? "교사로 변경" : "관리자로 승격";
+}
+
+type RoleChangeDialogProps = {
+  member: StaffMember;
+  disabled: boolean;
+  pending: boolean;
+  focusFallbackRef: RefObject<HTMLHeadingElement | null>;
+  onChangeRole: (member: StaffMember) => void;
+};
+
+function RoleChangeDialog({ member, disabled, pending, focusFallbackRef, onChangeRole }: RoleChangeDialogProps) {
+  const confirmedRef = useRef(false);
+  const promoting = member.role === "teacher";
+  const action = roleAction(member);
+  const title = promoting ? `${member.name} 님 관리자 승격` : `${member.name} 님 교사 변경`;
+  const description = promoting
+    ? `${member.name} 님을 관리자로 승격하시겠습니까? 관리자 전용 기능을 사용할 수 있게 됩니다.`
+    : `${member.name} 님을 교사로 변경하시겠습니까? 관리자 전용 기능을 더 이상 사용할 수 없습니다.`;
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant={member.role === "admin" ? "destructive" : "default"}
+          type="button"
+          disabled={disabled}
+          aria-label={pending ? `${member.name} 님 역할 변경 중…` : `${member.name} 님 ${action}`}
+        >
+          {pending ? "변경 중…" : action}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          if (!confirmedRef.current) return;
+          confirmedRef.current = false;
+          event.preventDefault();
+          queueMicrotask(() => focusFallbackRef.current?.focus());
+        }}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            variant={member.role === "admin" ? "destructive" : "default"}
+            aria-label={`${title} 확인`}
+            onClick={() => {
+              confirmedRef.current = true;
+              onChangeRole(member);
+            }}
+          >
+            {action}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function StaffPage() {
   const router = useRouter();
   const [attempt, setAttempt] = useState(0);
@@ -31,6 +109,7 @@ export default function StaffPage() {
   const terminalAuthRef = useRef(false);
   const sequenceRef = useRef(0);
   const mutationRef = useRef(false);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -74,10 +153,6 @@ export default function StaffPage() {
   async function changeRole(member: StaffMember) {
     if (mutationRef.current || terminalAuthRef.current) return;
     const nextRole: StaffRole = member.role === "admin" ? "teacher" : "admin";
-    const question = nextRole === "admin"
-      ? `${member.name} 님을 관리자로 승격하시겠습니까? 관리자 전용 기능을 사용할 수 있게 됩니다.`
-      : `${member.name} 님을 교사로 변경하시겠습니까? 관리자 전용 기능을 더 이상 사용할 수 없습니다.`;
-    if (!window.confirm(question)) return;
 
     mutationRef.current = true;
     setPendingId(member.user_id);
@@ -109,33 +184,39 @@ export default function StaffPage() {
     <main className="admin-page">
       <header className="admin-page__header">
         <p className="eyebrow">Administrator</p>
-        <h1>교직원 역할 관리</h1>
+        <h1 ref={pageHeadingRef} tabIndex={-1}>교직원 역할 관리</h1>
         <p className="supporting-copy">역할 변경은 즉시 적용됩니다. 변경 전에 대상과 역할을 다시 확인해 주세요.</p>
       </header>
-      {mutationError ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
-      {notice ? <p className="notice" role="status">{notice}</p> : null}
+      {mutationError ? <Alert variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
+      {notice ? <Alert role="presentation"><AlertDescription role="status">{notice}</AlertDescription></Alert> : null}
       {state.status === "loading" ? <p role="status">교직원 목록을 불러오고 있습니다.</p> : null}
       {state.status === "error" ? (
         <section className="admin-state">
-          <p className="inline-alert" role="alert">{state.message}</p>
-          <button className="secondary-button" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</button>
+          <Alert variant="destructive"><AlertDescription>{state.message}</AlertDescription></Alert>
+          <Button variant="outline" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</Button>
         </section>
       ) : null}
-      {state.status === "ready" && state.staff.length === 0 ? <p className="admin-state">등록된 교직원이 없습니다.</p> : null}
+      {state.status === "ready" && state.staff.length === 0 ? (
+        <Empty className="admin-state"><EmptyHeader><EmptyTitle>등록된 교직원이 없습니다.</EmptyTitle></EmptyHeader></Empty>
+      ) : null}
       {state.status === "ready" && state.staff.length > 0 ? (
         <ul className="admin-card-list" aria-label="교직원 역할 목록">
           {state.staff.map((member) => (
             <li key={member.user_id} className="admin-card">
-              <div><strong>{member.name}</strong><p>{member.email}</p></div>
-              <span className={`admin-status admin-status--${member.role}`}>{member.role === "admin" ? "관리자" : "교사"}</span>
-              <button
-                className={member.role === "admin" ? "danger-button" : "primary-button"}
-                type="button"
-                disabled={pendingId === member.user_id}
-                onClick={() => changeRole(member)}
+              <div className="admin-card__identity"><strong>{member.name}</strong><p>{member.email}</p></div>
+              <Badge
+                variant={member.role === "admin" ? "default" : "secondary"}
+                className={`admin-status admin-status--${member.role}`}
               >
-                {pendingId === member.user_id ? "변경 중…" : member.role === "admin" ? "교사로 변경" : "관리자로 승격"}
-              </button>
+                {member.role === "admin" ? "관리자" : "교사"}
+              </Badge>
+              <RoleChangeDialog
+                member={member}
+                disabled={Boolean(pendingId)}
+                pending={pendingId === member.user_id}
+                focusFallbackRef={pageHeadingRef}
+                onChangeRole={(target) => { void changeRole(target); }}
+              />
             </li>
           ))}
         </ul>

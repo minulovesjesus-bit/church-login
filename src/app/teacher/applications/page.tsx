@@ -1,8 +1,33 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Textarea } from "@/components/ui/textarea";
 import { api, ApiClientError } from "@/lib/api/client";
 
 type Application = { id: string; user_id: string; email: string; name: string; phone: string; status: "pending" };
@@ -25,6 +50,59 @@ function authorizationDestination(error: unknown): string | undefined {
   return undefined;
 }
 
+type ApprovalDialogProps = {
+  application: Application;
+  disabled: boolean;
+  pending: boolean;
+  focusFallbackRef: RefObject<HTMLHeadingElement | null>;
+  onApprove: (application: Application) => void;
+};
+
+function ApprovalDialog({ application, disabled, pending, focusFallbackRef, onApprove }: ApprovalDialogProps) {
+  const confirmedRef = useRef(false);
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          disabled={disabled}
+          aria-label={pending ? `${application.name} 님 승인 처리 중…` : `${application.name} 님 승인`}
+        >
+          {pending ? "처리 중…" : "승인"}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onCloseAutoFocus={(event) => {
+          if (!confirmedRef.current) return;
+          confirmedRef.current = false;
+          event.preventDefault();
+          queueMicrotask(() => focusFallbackRef.current?.focus());
+        }}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>{application.name} 님 교사 승인</AlertDialogTitle>
+          <AlertDialogDescription>
+            {application.name} 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            aria-label={`${application.name} 님 승인 확인`}
+            onClick={() => {
+              confirmedRef.current = true;
+              onApprove(application);
+            }}
+          >
+            승인
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 export default function TeacherApplicationsPage() {
   const router = useRouter();
   const [state, setState] = useState<ListState>({ status: "loading" });
@@ -39,6 +117,9 @@ export default function TeacherApplicationsPage() {
   const sequenceRef = useRef(0);
   const mutationRef = useRef(false);
   const reconciliationRef = useRef(false);
+  const pageHeadingRef = useRef<HTMLHeadingElement>(null);
+  const rejectionOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const rejectionCommittedRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -84,7 +165,6 @@ export default function TeacherApplicationsPage() {
 
   async function approve(application: Application) {
     if (mutationRef.current || terminalAuthRef.current || rejection) return;
-    if (!window.confirm(`${application.name} 님을 교사로 승인하시겠습니까? 즉시 교사 기능을 사용할 수 있게 됩니다.`)) return;
 
     mutationRef.current = true;
     setPendingId(application.id);
@@ -114,8 +194,10 @@ export default function TeacherApplicationsPage() {
     }
   }
 
-  function openRejection(application: Application) {
+  function openRejection(application: Application, opener: HTMLButtonElement) {
     if (mutationRef.current || terminalAuthRef.current || rejection) return;
+    rejectionOpenerRef.current = opener;
+    rejectionCommittedRef.current = false;
     setMutationError(undefined);
     setNotice(undefined);
     setReconciliation({ status: "idle" });
@@ -124,6 +206,7 @@ export default function TeacherApplicationsPage() {
 
   function cancelRejection() {
     if (mutationRef.current || reconciliationRef.current) return;
+    rejectionCommittedRef.current = false;
     setMutationError(undefined);
     setReconciliation({ status: "idle" });
     setRejection(undefined);
@@ -167,6 +250,7 @@ export default function TeacherApplicationsPage() {
     if (reason.length > 500) { setMutationError("거절 사유는 500자 이하여야 합니다."); return; }
 
     const application = rejection.application;
+    rejectionCommittedRef.current = true;
     mutationRef.current = true;
     setPendingId(application.id);
     setMutationError(undefined);
@@ -205,65 +289,113 @@ export default function TeacherApplicationsPage() {
   const reconciliationConflictMessage = reconciliation.status === "idle" ? undefined : reconciliation.conflictMessage;
   return (
     <main className="admin-page">
-      <header className="admin-page__header"><p className="eyebrow">Administrator</p><h1>교사 가입 신청 관리</h1><p className="supporting-copy">신청자의 정보를 확인한 뒤 교사 권한 승인 또는 거절을 결정합니다.</p></header>
-      {mutationError && !rejection ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
-      {notice ? <p className="notice" role="status">{notice}</p> : null}
+      <header className="admin-page__header">
+        <p className="eyebrow">Administrator</p>
+        <h1 ref={pageHeadingRef} tabIndex={-1}>교사 가입 신청 관리</h1>
+        <p className="supporting-copy">신청자의 정보를 확인한 뒤 교사 권한 승인 또는 거절을 결정합니다.</p>
+      </header>
+      {mutationError && !rejection ? <Alert variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
+      {notice ? <Alert role="presentation"><AlertDescription role="status">{notice}</AlertDescription></Alert> : null}
       {state.status === "loading" ? <p role="status">신청 목록을 불러오고 있습니다.</p> : null}
-      {state.status === "error" ? <section className="admin-state"><p className="inline-alert" role="alert">{state.message}</p><button className="secondary-button" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</button></section> : null}
-      {state.status === "ready" && state.applications.length === 0 ? <p className="admin-state">대기 중인 신청이 없습니다.</p> : null}
+      {state.status === "error" ? (
+        <section className="admin-state">
+          <Alert variant="destructive"><AlertDescription>{state.message}</AlertDescription></Alert>
+          <Button variant="outline" type="button" onClick={() => { setState({ status: "loading" }); setAttempt((value) => value + 1); }}>다시 시도</Button>
+        </section>
+      ) : null}
+      {state.status === "ready" && state.applications.length === 0 ? (
+        <Empty className="admin-state"><EmptyHeader><EmptyTitle>대기 중인 신청이 없습니다.</EmptyTitle></EmptyHeader></Empty>
+      ) : null}
       {state.status === "ready" && state.applications.length > 0 ? <ul className="admin-card-list" aria-label="대기 중인 교사 신청">
-        {state.applications.map((application) => <li key={application.id} className="admin-card admin-card--application">
-          <div><strong>{application.name}</strong><p>{application.email}</p><p>{application.phone}</p></div>
-          <div className="button-row">
-            <button className="primary-button" type="button" disabled={actionsLocked} onClick={() => approve(application)}>{pendingId === application.id && !rejection ? "처리 중…" : "승인"}</button>
-            <button className="danger-button" type="button" disabled={actionsLocked} onClick={() => openRejection(application)}>{pendingId === application.id && !rejection ? "처리 중…" : "거절"}</button>
-          </div>
-        </li>)}
+        {state.applications.map((application) => {
+          const pending = pendingId === application.id && !rejection;
+          return (
+            <li key={application.id} className="admin-card admin-card--application">
+              <div className="admin-card__identity">
+                <strong>{application.name}</strong>
+                <p>{application.email}</p>
+                <p>{application.phone}</p>
+              </div>
+              <Badge variant="secondary" className="admin-status admin-status--pending">승인 대기</Badge>
+              <div className="button-row">
+                <ApprovalDialog
+                  application={application}
+                  disabled={actionsLocked}
+                  pending={pending}
+                  focusFallbackRef={pageHeadingRef}
+                  onApprove={(target) => { void approve(target); }}
+                />
+                <Button
+                  variant="destructive"
+                  type="button"
+                  disabled={actionsLocked}
+                  aria-label={pending ? `${application.name} 님 거절 처리 중…` : `${application.name} 님 거절`}
+                  onClick={(event) => openRejection(application, event.currentTarget)}
+                >
+                  {pending ? "처리 중…" : "거절"}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
       </ul> : null}
       {rejection ? (
-        <div className="admin-dialog-backdrop">
-          <section
+        <Dialog open onOpenChange={(open) => { if (!open) cancelRejection(); }}>
+          <DialogContent
             className="admin-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="rejection-dialog-title"
-            aria-describedby="rejection-dialog-description"
+            showCloseButton={false}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              const opener = rejectionOpenerRef.current;
+              const target = !rejectionCommittedRef.current && opener?.isConnected && !opener.disabled
+                ? opener
+                : pageHeadingRef.current;
+              rejectionCommittedRef.current = false;
+              rejectionOpenerRef.current = null;
+              queueMicrotask(() => target?.focus());
+            }}
           >
             <form onSubmit={reject}>
-              <p className="eyebrow">Reject application</p>
-              <h2 id="rejection-dialog-title">{rejection.application.name} 님 신청 거절</h2>
-              <p id="rejection-dialog-description">{rejection.application.name} 님의 교사 신청을 거절합니다. 신청자는 아래 사유를 확인합니다.</p>
-              <label htmlFor="rejection-reason">거절 사유</label>
-              <textarea
-                id="rejection-reason"
-                autoFocus
-                value={rejection.reason}
-                maxLength={500}
-                aria-invalid={Boolean(mutationError)}
-                aria-describedby={[
-                  "rejection-count",
-                  mutationError ? "rejection-error" : undefined,
-                  reconciliationPending ? "reconciliation-status" : undefined,
-                  reconciliationMessage ? "reconciliation-message" : undefined,
-                ].filter(Boolean).join(" ")}
-                disabled={pendingId === rejection.application.id || reconciliationPending}
-                onChange={(event) => {
-                  setMutationError(undefined);
-                  setRejection((current) => current ? { ...current, reason: event.target.value } : current);
-                }}
-              />
-              <p id="rejection-count" className="admin-dialog__count">{rejection.reason.length}/500자</p>
-              {mutationError ? <p id="rejection-error" className="inline-alert" role="alert">{mutationError}</p> : null}
+              <DialogHeader>
+                <DialogTitle>{rejection.application.name} 님 신청 거절</DialogTitle>
+                <DialogDescription>{rejection.application.name} 님의 교사 신청을 거절합니다. 신청자는 아래 사유를 확인합니다.</DialogDescription>
+              </DialogHeader>
+              <FieldGroup>
+                <Field data-invalid={Boolean(mutationError)}>
+                  <FieldLabel htmlFor="rejection-reason">거절 사유</FieldLabel>
+                  <Textarea
+                    id="rejection-reason"
+                    autoFocus
+                    value={rejection.reason}
+                    maxLength={500}
+                    aria-invalid={Boolean(mutationError)}
+                    aria-describedby={[
+                      "rejection-count",
+                      mutationError ? "rejection-error" : undefined,
+                      reconciliationPending ? "reconciliation-status" : undefined,
+                      reconciliationMessage ? "reconciliation-message" : undefined,
+                    ].filter(Boolean).join(" ")}
+                    disabled={pendingId === rejection.application.id || reconciliationPending}
+                    onChange={(event) => {
+                      setMutationError(undefined);
+                      setRejection((current) => current ? { ...current, reason: event.target.value } : current);
+                    }}
+                  />
+                  <FieldDescription id="rejection-count" className="admin-dialog__count">{rejection.reason.length}/500자</FieldDescription>
+                </Field>
+              </FieldGroup>
+              {mutationError ? <Alert id="rejection-error" variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
               {reconciliationPending ? <p id="reconciliation-status" role="status">신청 상태를 확인하고 있습니다.</p> : null}
-              {reconciliationMessage ? <p id="reconciliation-message" className="inline-alert" role="alert">{reconciliationMessage}</p> : null}
-              <div className="button-row">
+              {reconciliationMessage ? <Alert id="reconciliation-message" variant="destructive"><AlertDescription>{reconciliationMessage}</AlertDescription></Alert> : null}
+              <DialogFooter>
+                <Button type="button" variant="outline" disabled={pendingId === rejection.application.id || reconciliationPending} onClick={cancelRejection}>거절 취소</Button>
                 {reconciliation.status === "idle" ? (
-                  <button className="danger-button" type="submit" disabled={pendingId === rejection.application.id}>
+                  <Button variant="destructive" type="submit" disabled={pendingId === rejection.application.id}>
                     {pendingId === rejection.application.id ? "거절 처리 중…" : `${rejection.application.name} 님 신청 거절 확정`}
-                  </button>
+                  </Button>
                 ) : (
-                  <button
-                    className="secondary-button"
+                  <Button
+                    variant="outline"
                     type="button"
                     disabled={reconciliationPending}
                     onClick={() => {
@@ -271,13 +403,12 @@ export default function TeacherApplicationsPage() {
                     }}
                   >
                     {reconciliationPending ? "신청 상태 확인 중…" : "신청 상태 다시 확인"}
-                  </button>
+                  </Button>
                 )}
-                <button className="secondary-button" type="button" disabled={pendingId === rejection.application.id || reconciliationPending} onClick={cancelRejection}>거절 취소</button>
-              </div>
+              </DialogFooter>
             </form>
-          </section>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </main>
   );
