@@ -27,7 +27,7 @@ export default function StayChart({ entries }: { entries: TimeOfDayEntry[] }) {
           <Tooltip formatter={(value) => [`${value}회`, "입실"]} />
           <Bar
             dataKey="entries"
-            fill="#176d42"
+            fill="var(--primary)"
             isAnimationActive={false}
             radius={[6, 6, 0, 0]}
           />

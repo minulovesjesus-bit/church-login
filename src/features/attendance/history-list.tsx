@@ -39,7 +39,7 @@ export function HistoryList({
   onSelect,
 }: {
   scans: AttendanceScan[];
-  onSelect?: (scan: TeacherAttendanceItem) => void;
+  onSelect?: (scan: TeacherAttendanceItem, opener: HTMLButtonElement) => void;
 }) {
   return (
     <ol className="attendance-timeline" aria-label="출결 기록 목록">
@@ -62,7 +62,7 @@ export function HistoryList({
               type="button"
               variant="outline"
               aria-label={`${scan.student_name} 상세 및 보정`}
-              onClick={() => onSelect(scan)}
+              onClick={(event) => onSelect(scan, event.currentTarget)}
             >
               상세 및 보정
             </Button>

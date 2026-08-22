@@ -22,7 +22,7 @@ export function AttendanceTable({
   onSelect,
 }: {
   scans: AttendanceScan[];
-  onSelect?: (scan: TeacherAttendanceItem) => void;
+  onSelect?: (scan: TeacherAttendanceItem, opener: HTMLButtonElement) => void;
 }) {
   const teacherTable = scans.some(isTeacherItem);
   return (
@@ -60,7 +60,7 @@ export function AttendanceTable({
                       type="button"
                       variant="outline"
                       aria-label={`${scan.student_name} 상세 및 보정`}
-                      onClick={() => onSelect(scan)}
+                      onClick={(event) => onSelect(scan, event.currentTarget)}
                     >
                       상세 및 보정
                     </Button>

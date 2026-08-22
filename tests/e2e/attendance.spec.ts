@@ -60,22 +60,50 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
       contentType: "image/png",
     });
 
+    await teacher.setViewportSize({ width: 1440, height: 900 });
     await teacher.goto("/teacher/attendance");
     await expect(teacher.getByRole("heading", { name: "전체 출결 관리" })).toBeVisible();
     await expect(teacher.getByRole("img", { name: "시간대별 입실 차트" })).toBeVisible();
+    await expect(teacher.getByRole("navigation", { name: "교사 메뉴" })).toHaveCount(1);
     await testInfo.attach("teacher-attendance-desktop", {
       body: await teacher.screenshot({ fullPage: true }),
       contentType: "image/png",
     });
+    await teacher.setViewportSize({ width: 1024, height: 768 });
+    await expect(teacher.locator(".attendance-desktop-only")).toBeVisible();
+    expect(await teacher.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await testInfo.attach("teacher-attendance-breakpoint-1024", {
+      body: await teacher.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
     await teacher.setViewportSize({ width: 390, height: 844 });
+    await expect(teacher.locator(".attendance-desktop-only")).toBeHidden();
+    await expect(teacher.getByRole("navigation", { name: "교사 메뉴" })).toHaveCount(1);
+    expect(await teacher.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
     await testInfo.attach("teacher-attendance-mobile", {
       body: await teacher.screenshot({ fullPage: true }),
       contentType: "image/png",
     });
-    await teacher.setViewportSize({ width: 1280, height: 720 });
+    const mobileRecord = teacher.getByRole("listitem").filter({ hasText: "완료 학생" }).first();
+    const mobileOpener = mobileRecord.getByRole("button", { name: "완료 학생 상세 및 보정" });
+    await mobileOpener.click();
+    const mobileDialog = teacher.getByRole("dialog", { name: "완료 학생 출결 상세 및 보정" });
+    await expect(mobileDialog.getByRole("button", { name: "닫기" })).toBeFocused();
+    await teacher.keyboard.press("Shift+Tab");
+    await expect(mobileDialog.locator(":focus")).toHaveCount(1);
+    await teacher.keyboard.press("Escape");
+    await expect(mobileDialog).toBeHidden();
+    await expect(mobileOpener).toBeFocused();
+
+    await teacher.setViewportSize({ width: 1440, height: 900 });
     const studentRow = teacher.locator("tr").filter({ hasText: "완료 학생" }).first();
     await expect(studentRow).toBeVisible();
-    await studentRow.getByRole("button", { name: "완료 학생 상세 및 보정" }).click();
+    const desktopOpener = studentRow.getByRole("button", { name: "완료 학생 상세 및 보정" });
+    await desktopOpener.click();
+    const desktopDialog = teacher.getByRole("dialog", { name: "완료 학생 출결 상세 및 보정" });
+    await expect(desktopDialog.getByRole("button", { name: "닫기" })).toBeFocused();
+    await teacher.keyboard.press("Tab");
+    await expect(desktopDialog.locator(":focus")).toHaveCount(1);
     await teacher.getByLabel("보정 사유").fill("E2E 중복 확인");
     const correctionResponse = teacher.waitForResponse((response) => (
       response.url().includes("/api/teacher/attendance/corrections")
