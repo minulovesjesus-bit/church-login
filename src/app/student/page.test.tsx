@@ -219,6 +219,33 @@ it("renders the QR-first student dashboard in the approved information order", a
   expect(await screen.findByText("이번 주 등록된 일정이 없습니다.")).toBeInTheDocument();
 });
 
+it("keeps each monthly metric as a valid description-list group without decorative siblings", async () => {
+  client.api.get.mockImplementation((path: string) => {
+    if (path === "/api/me") return Promise.resolve(validMe);
+    if (path === "/api/statistics/me") return Promise.resolve(studentStatistics);
+    if (path.startsWith("/api/events?")) return Promise.resolve([]);
+    throw new Error(`Unexpected path: ${path}`);
+  });
+
+  render(<StudentPage />);
+
+  const heading = await screen.findByRole("heading", { name: "나의 이번 달" });
+  const metrics = heading.closest("section")?.querySelector("dl");
+  expect(metrics).not.toBeNull();
+  expect(metrics?.querySelector('[data-slot="separator"]')).not.toBeInTheDocument();
+
+  const groups = Array.from(metrics?.children ?? []);
+  expect(groups).toHaveLength(3);
+  expect(groups.map((group) => [
+    group.querySelector(":scope > dt")?.textContent,
+    group.querySelector(":scope > dd")?.textContent,
+  ])).toEqual([
+    ["출석일", "이번 달 5일"],
+    ["누적 입실", "총 입실 7회"],
+    ["평균 체류", "평균 체류 1시간 30분"],
+  ]);
+});
+
 it("uses shadcn feedback primitives without changing status and retry semantics", async () => {
   const me = deferred<typeof validMe>();
   const statistics = deferred<typeof studentStatistics>();

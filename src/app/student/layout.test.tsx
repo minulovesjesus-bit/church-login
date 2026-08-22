@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
@@ -29,5 +32,23 @@ it("uses one semantic responsive navigation path with only implemented destinati
   expect(nav.closest(".student-shell")).not.toBeNull();
   expect(nav.closest(".student-shell")?.querySelector(".student-shell-content")).toContainElement(
     screen.getByText("학생 내용"),
+  );
+});
+
+it("keeps the scanner as the shell's direct full-bleed child", () => {
+  const { container } = render(
+    <StudentLayout><section className="student-scan-shell">스캐너</section></StudentLayout>,
+  );
+
+  expect(container.querySelector(".student-shell-content > .student-scan-shell")).toBe(
+    screen.getByText("스캐너"),
+  );
+
+  const shellStyles = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
+  expect(shellStyles).toMatch(
+    /\.student-shell-content:has\(> \.student-scan-shell\)\s*\{\s*padding-bottom:\s*0;/,
+  );
+  expect(shellStyles).toMatch(
+    /@media \(min-width: 64rem\)[\s\S]*?\.student-shell-content:has\(> \.student-scan-shell\)\s*\{\s*padding-top:\s*0;/,
   );
 });

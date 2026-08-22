@@ -17,7 +17,6 @@ import { BrandLockup } from "@/components/brand/brand-mark";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
 import type { StudentStatistics } from "@/features/attendance/types";
@@ -149,9 +148,7 @@ export default function StudentPage() {
         <h2 id="student-month-heading">나의 이번 달</h2>
         <dl className="student-month-rail">
           <div><CalendarCheck2 aria-hidden="true" /><dt>출석일</dt><dd>이번 달 {statistics.attendance_days_this_month}일</dd></div>
-          <Separator orientation="vertical" />
           <div><LogIn aria-hidden="true" /><dt>누적 입실</dt><dd>총 입실 {statistics.total_entries}회</dd></div>
-          <Separator orientation="vertical" />
           <div><Clock3 aria-hidden="true" /><dt>평균 체류</dt><dd>평균 체류 {formatDuration(statistics.average_stay_seconds)}</dd></div>
         </dl>
       </section>

@@ -1975,13 +1975,13 @@ a {
 
 .student-month-rail {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 1px minmax(0, 1fr) 1px minmax(0, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
   align-items: stretch;
   margin: 0;
 }
 
-.student-month-rail > div:not([data-slot="separator"]) {
+.student-month-rail > div {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1990,12 +1990,8 @@ a {
   text-align: center;
 }
 
-.student-month-rail > [data-slot="separator"][data-orientation="vertical"] {
-  width: 1px;
-  min-width: 1px;
-  max-width: 1px;
-  inline-size: 1px;
-  justify-self: center;
+.student-month-rail > div + div {
+  border-inline-start: 1px solid var(--border);
 }
 
 .student-month-rail > div > svg {
