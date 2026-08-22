@@ -59,6 +59,7 @@ class JwksVerifier:
         self._keys: OrderedDict[str, jwt.PyJWK] = OrderedDict()
         self._cache_expires_at = 0.0
         self._refresh_failed_until = 0.0
+        self._unknown_kid_refresh_after = 0.0
         self._cache_lock = asyncio.Lock()
 
     @property
@@ -138,11 +139,10 @@ class JwksVerifier:
                 self._keys.move_to_end(kid)
                 return cached
 
-            if now < self._cache_expires_at:
-                raise ValueError("Unknown signing key")
-
             if now < self._refresh_failed_until:
                 raise ValueError("JWKS refresh is temporarily unavailable")
+            if now < self._unknown_kid_refresh_after:
+                raise ValueError("Unknown signing key")
 
             try:
                 jwks = await self._fetch_jwks()
@@ -159,7 +159,11 @@ class JwksVerifier:
             self._refresh_failed_until = 0.0
             key = self._keys.get(kid)
             if key is None or key.algorithm_name != algorithm:
+                self._unknown_kid_refresh_after = (
+                    self._time_source() + self.failed_refresh_backoff_seconds
+                )
                 raise ValueError("Unknown signing key")
+            self._unknown_kid_refresh_after = 0.0
             return key
 
     async def verify(self, token: str) -> dict[str, Any]:

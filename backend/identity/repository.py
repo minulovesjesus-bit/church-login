@@ -58,6 +58,9 @@ class IdentityRepository:
         phone: str,
         guardian_phone: str,
     ) -> StudentProfileRecord:
+        await self._connection.execute(
+            "select set_config('TimeZone', 'Asia/Seoul', true)"
+        )
         cursor = await self._connection.execute(
             """
             with saved_user as (

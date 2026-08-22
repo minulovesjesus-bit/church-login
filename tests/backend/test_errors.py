@@ -163,6 +163,7 @@ async def test_application_transaction_sets_backend_role_before_work_and_commits
     assert events == [
         "connect:postgresql://database.test/app:timeout=3",
         "set local role app_backend",
+        "select set_config('TimeZone', %s, true):Asia/Seoul",
         "select set_config('statement_timeout', %s, true):4000ms",
         "application-query",
         "commit",
@@ -179,6 +180,7 @@ async def test_application_transaction_rolls_back_and_closes_after_failure() -> 
     assert events == [
         "connect:postgresql://database.test/app:timeout=3",
         "set local role app_backend",
+        "select set_config('TimeZone', %s, true):Asia/Seoul",
         "select set_config('statement_timeout', %s, true):4000ms",
         "application-query",
         "rollback",

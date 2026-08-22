@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import json
@@ -100,14 +101,22 @@ class KioskSessionService:
     async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
         policy = KIOSK_LOGIN_RATE_LIMIT
         now = self.clock.now()
+        await self.repository.cleanup_expired_rate_limits(
+            policy.action,
+            now,
+            limit=100,
+        )
         blocked = await self.repository.rate_limit_is_blocked(
             rate_limit_key_hash, policy.action, now
         )
-        password_matches = self._password_hasher.verify(
-            self._password_hash, password
-        )
         if blocked:
             raise KioskLoginRejected
+
+        password_matches = await asyncio.to_thread(
+            self._password_hasher.verify,
+            self._password_hash,
+            password,
+        )
 
         if not password_matches:
             await self.repository.record_rate_limit_failure(

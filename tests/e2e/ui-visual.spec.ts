@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
@@ -30,6 +32,13 @@ const TABBABLE_SELECTOR = [
   "[contenteditable=true]",
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
+
+test.beforeAll(() => {
+  execFileSync("uv", ["run", "python", "tests/e2e/fixtures/identity_seed.py", "setup"], {
+    env: process.env,
+    stdio: "inherit",
+  });
+});
 
 async function stabilize(page: Page, fixTime = true): Promise<void> {
   if (fixTime) await page.clock.setFixedTime(FIXED_TIME);
@@ -239,6 +248,15 @@ test("teacher routes match tablet and desktop baselines", async ({ browser }) =>
   const context = await browser.newContext();
   await authenticateAs(context, "approvedTeacher");
   const page = await context.newPage();
+  await page.clock.setFixedTime(FIXED_TIME);
+  await page.route("**/api/teacher/dashboard", async (route) => {
+    const response = await route.fetch();
+    const dashboard = await response.json() as Record<string, unknown>;
+    await route.fulfill({
+      response,
+      json: { ...dashboard, as_of_date: "2026-08-22" },
+    });
+  });
   const routes = [
     { path: "/teacher", heading: "교사 대시보드", slug: "teacher-dashboard" },
     { path: "/teacher/attendance", heading: "전체 출결 관리", slug: "teacher-attendance" },

@@ -195,6 +195,7 @@ def test_attendance_columns_have_exact_shapes(
         ("rate_limit_buckets", "attempt_count", "pg_catalog", "int4", "NO", None),
         ("rate_limit_buckets", "blocked_until", "pg_catalog", "timestamptz", "YES", None),
         ("rate_limit_buckets", "updated_at", "pg_catalog", "timestamptz", "NO", None),
+        ("rate_limit_buckets", "expires_at", "pg_catalog", "timestamptz", "NO", None),
     ]
 
 
@@ -236,7 +237,8 @@ def test_attendance_indexes_have_exact_shapes(
             'kiosk_sessions_active_refresh_expires_at_idx',
             'kiosk_sessions_refresh_token_hash_key',
             'attendance_scans_non_voided_student_date_scanned_at_idx',
-            'attendance_scans_recent_idx'
+            'attendance_scans_recent_idx',
+            'rate_limit_buckets_action_expires_at_idx'
           )
         """
     ).fetchall()
@@ -283,6 +285,15 @@ def test_attendance_indexes_have_exact_shapes(
             (
                 "CREATE INDEX attendance_scans_recent_idx ON "
                 "app.attendance_scans USING btree (scanned_at DESC, id DESC)"
+            ),
+            None,
+        ),
+        (
+            "rate_limit_buckets_action_expires_at_idx",
+            (
+                "CREATE INDEX rate_limit_buckets_action_expires_at_idx ON "
+                "app.rate_limit_buckets USING btree "
+                "(action, expires_at, bucket_key_hash)"
             ),
             None,
         ),
@@ -590,8 +601,11 @@ def test_backend_can_crud_kiosks_and_hashed_rate_limit_buckets(
         """
         insert into app.rate_limit_buckets (
           bucket_key_hash, action, window_started_at,
-          attempt_count, blocked_until, updated_at
-        ) values ('hmac-sha256:opaque-key', 'kiosk.login', now(), 1, null, now())
+          attempt_count, blocked_until, updated_at, expires_at
+        ) values (
+          'hmac-sha256:opaque-key', 'kiosk.login', now(), 1, null, now(),
+          now() + interval '15 minutes'
+        )
         """
     )
     attendance_connection.execute(
@@ -615,17 +629,27 @@ def test_backend_can_crud_kiosks_and_hashed_rate_limit_buckets(
         """
         select bucket_key_hash, action, attempt_count, blocked_until is not null
         from app.rate_limit_buckets
+        where bucket_key_hash = 'hmac-sha256:opaque-key'
+          and action = 'kiosk.login'
         """
     ).fetchone() == ("hmac-sha256:opaque-key", "kiosk.login", 2, True)
 
     attendance_connection.execute(
-        "delete from app.rate_limit_buckets where action = 'kiosk.login'"
+        """
+        delete from app.rate_limit_buckets
+        where bucket_key_hash = 'hmac-sha256:opaque-key'
+          and action = 'kiosk.login'
+        """
     )
     attendance_connection.execute(
         "delete from app.kiosk_sessions where id = %s", (kiosk_session_id,)
     )
     assert attendance_connection.execute(
-        "select count(*) from app.rate_limit_buckets"
+        """
+        select count(*) from app.rate_limit_buckets
+        where bucket_key_hash = 'hmac-sha256:opaque-key'
+          and action = 'kiosk.login'
+        """
     ).fetchone() == (0,)
 
 

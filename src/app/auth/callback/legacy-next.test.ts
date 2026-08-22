@@ -27,3 +27,17 @@ it("does not accept the legacy unsigned teacher next destination", async () => {
     "https://church.example.test/onboarding",
   );
 });
+
+it("returns a student callback failure to student login", async () => {
+  exchangeCodeForSession.mockResolvedValueOnce({ error: new Error("exchange failed") });
+
+  const response = await GET(
+    new NextRequest(
+      "https://church.example.test/auth/callback?code=pkce-code&next=/student",
+    ),
+  );
+
+  expect(response.headers.get("location")).toBe(
+    "https://church.example.test/auth/login",
+  );
+});

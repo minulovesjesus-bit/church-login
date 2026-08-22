@@ -1,4 +1,5 @@
 import asyncio
+import time
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
@@ -24,6 +25,13 @@ class InMemoryKioskRepository:
         self.failures: dict[str, int] = {}
         self.blocked: set[str] = set()
         self.saved_refresh_hashes: list[str] = []
+        self.cleanup_calls: list[tuple[str, datetime, int]] = []
+
+    async def cleanup_expired_rate_limits(
+        self, action: str, now: datetime, *, limit: int
+    ) -> int:
+        self.cleanup_calls.append((action, now, limit))
+        return 0
 
     async def rate_limit_is_blocked(self, key_hash: str, action: str, now: datetime) -> bool:
         return key_hash in self.blocked
@@ -174,7 +182,7 @@ async def test_wrong_password_and_blocked_client_use_same_safe_error(
     assert wrong.value.message == blocked.value.message
 
 
-async def test_blocked_and_wrong_password_both_perform_password_verification(
+async def test_blocked_client_is_rejected_before_password_verification(
     frozen_clock: FrozenClock,
 ) -> None:
     wrong_repository = InMemoryKioskRepository()
@@ -206,8 +214,54 @@ async def test_blocked_and_wrong_password_both_perform_password_verification(
         await blocked_service.login("correct", "hmac-sha256:blocked")
 
     assert wrong_hasher.calls == [("stored-argon-hash", "wrong")]
-    assert blocked_hasher.calls == [("stored-argon-hash", "correct")]
+    assert blocked_hasher.calls == []
     assert blocked_repository.failures["hmac-sha256:blocked"] == 5
+
+
+async def test_password_verification_does_not_block_the_async_event_loop(
+    frozen_clock: FrozenClock,
+) -> None:
+    class SlowPasswordHasher:
+        def verify(self, hashed_password: str, password: str) -> bool:
+            time.sleep(0.08)
+            return False
+
+    repository = InMemoryKioskRepository()
+    service = KioskSessionService(
+        repository,
+        password_hash="stored-argon-hash",
+        cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
+        clock=frozen_clock,
+        password_hasher=SlowPasswordHasher(),
+    )
+    started = time.monotonic()
+    login = asyncio.create_task(service.login("wrong", "hmac-sha256:client"))
+    await asyncio.sleep(0.01)
+    event_loop_delay = time.monotonic() - started
+
+    with pytest.raises(KioskLoginRejected):
+        await login
+    assert event_loop_delay < 0.05
+
+
+async def test_login_runs_bounded_expiry_cleanup_before_bucket_lookup(
+    frozen_clock: FrozenClock,
+) -> None:
+    repository = InMemoryKioskRepository()
+    service = KioskSessionService(
+        repository,
+        password_hash="stored-argon-hash",
+        cookie_secret="k" * 32,
+        qr_signing_secret="q" * 32,
+        clock=frozen_clock,
+        password_hasher=RecordingPasswordHasher(result=False),
+    )
+
+    with pytest.raises(KioskLoginRejected):
+        await service.login("wrong", "hmac-sha256:client")
+
+    assert repository.cleanup_calls == [("kiosk.login", frozen_clock.now(), 100)]
 
 
 async def test_successful_login_clears_rate_limit_and_persists_only_hash(
@@ -443,3 +497,47 @@ async def test_postgres_concurrent_refresh_allows_exactly_one_rotation() -> None
             await cleanup_connection.commit()
         finally:
             await cleanup_connection.close()
+
+
+async def test_postgres_rate_limit_expiry_cleanup_is_bounded() -> None:
+    database_url = settings.database_url
+    if not database_url or urlsplit(database_url).hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        pytest.skip("A loopback DATABASE_URL is required for the cleanup test")
+
+    connection = await psycopg.AsyncConnection.connect(database_url)
+    action = f"kiosk.cleanup.{uuid4().hex}"
+    repository = KioskRepository(connection)
+    started_at = datetime(2026, 8, 21, 1, tzinfo=UTC)
+    try:
+        await connection.execute("set local role app_backend")
+        for index in range(125):
+            await repository.record_rate_limit_failure(
+                f"hmac-sha256:{index:064x}",
+                action,
+                started_at,
+                window=timedelta(seconds=1),
+                limit=1,
+                block_for=timedelta(seconds=1),
+            )
+
+        first = await repository.cleanup_expired_rate_limits(
+            action, started_at + timedelta(seconds=2), limit=100
+        )
+        remaining = await connection.execute(
+            "select count(*) from app.rate_limit_buckets where action = %s",
+            (action,),
+        )
+        second = await repository.cleanup_expired_rate_limits(
+            action, started_at + timedelta(seconds=2), limit=100
+        )
+
+        assert first == 100
+        assert await remaining.fetchone() == (25,)
+        assert second == 25
+    finally:
+        await connection.rollback()
+        await connection.close()

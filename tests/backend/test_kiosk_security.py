@@ -42,7 +42,13 @@ def test_rate_limit_identity_never_contains_raw_network_values() -> None:
 
     assert result.startswith("hmac-sha256:")
     assert "203.0.113.10" not in result
-    assert "Church Tablet Browser" not in result
+
+
+def test_rate_limit_identity_is_stable_for_one_ip() -> None:
+    first = hash_rate_limit_identity("203.0.113.10", "rotating-agent/1", "c" * 32)
+    second = hash_rate_limit_identity("203.0.113.10", "rotating-agent/2", "c" * 32)
+
+    assert first == second
 
 
 def test_access_token_uses_injected_clock_and_exact_expiry() -> None:

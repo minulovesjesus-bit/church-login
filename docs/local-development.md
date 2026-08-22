@@ -5,8 +5,8 @@ This guide reproduces the local Next.js, FastAPI, Supabase, kiosk, and Playwrigh
 ## Prerequisites
 
 - Docker Desktop, running before Supabase starts
-- Node.js 22.x; the repository was verified with Node 22.22.0
-- Python 3.12 managed by `uv`
+- Node.js 24.x; the repository was verified with Node 24.16.0
+- Python 3.12 managed by `uv` 0.9.25 or newer (required by the pinned Vercel Python builder)
 - The project-local Supabase and Vercel CLIs installed through npm
 - Chromium installed by Playwright when prompted
 
@@ -114,9 +114,9 @@ Set `INITIAL_ADMIN_EMAIL` to the exact lower-case email of a verified Google use
 
 The automated E2E journey injects decoded QR text through a fail-closed loopback-only bridge. That verifies scanner integration, QR expiry, cooldown, attendance, and revocation, but it is not physical camera/webcam evidence. Physical camera proof requires accessible hardware and browser permission.
 
-### Node 22 scanner deployment gate
+### Node 24 scanner deployment gate
 
-The application targets Node 22, but the current lockfile resolves `@zxing/browser@0.2.1` to `@zxing/library@0.23.0`, whose package metadata declares Node `>=24.0.0`. A normal Node 22 install may continue with an engine warning, and passing browser tests/builds alone do not resolve that declared incompatibility.
+The application targets Node 24, matching `@zxing/library@0.23.0`'s declared Node `>=24.0.0` engine. Verify a disposable clean install with strict engine checks, then run the scanner-focused tests and production build:
 
 Before deployment, use a clean checkout in the exact deployment runtime and require all three commands to pass:
 
@@ -126,32 +126,48 @@ npm test -- src/features/attendance/qr-scanner.test.tsx
 npm run build
 ```
 
-Node 22 currently fails the strict clean-install gate on the transitive ZXing engine declaration. Do not claim full scanner/runtime compatibility or deploy until an explicitly reviewed dependency/runtime change makes the strict install pass; do not use a broad upgrade merely to suppress the warning.
+Run these commands under the same Node 24 major used for deployment. Vercel supports `24.x`, and the checked-in `engines.node` selects it for builds and Node Functions.
 
 ## Automated verification
 
 Keep Docker and local Supabase running:
 
 ```bash
+local_db_url=$(npx supabase status -o env | sed -n 's/^DB_URL="\(.*\)"$/\1/p')
+case "$local_db_url" in
+  postgresql://postgres:postgres@127.0.0.1:*) ;;
+  *) echo "Refusing non-loopback test database" >&2; exit 1 ;;
+esac
 git diff --check
 npm test
-uv run pytest tests/backend -v
+TEST_DATABASE_URL="$local_db_url" DATABASE_URL="$local_db_url" uv run pytest tests/backend -v
 uv run ruff check backend api tests/backend
 npm run typecheck
 npm run lint
 npm run build
 npm run test:e2e
+npm run verify:vercel-python
 npx supabase db lint --local --schema app --level warning --fail-on warning
 npx supabase db advisors --local --type all --level warn --fail-on warn
 npm audit --omit=dev
-npm audit
+npm audit --audit-level=critical
 ```
+
+`npm audit --omit=dev` is the production dependency gate and must report zero vulnerabilities. `npm audit --audit-level=critical` is the full-tree blocking gate. A plain `npm audit` is still reviewed and recorded, but the pinned Vercel CLI currently carries dev-only upstream advisories below critical severity; do not claim that informational full audit is clean.
 
 The E2E fixture creates fixed `identity-e2e` users only when `APP_ENV=test`, Supabase/database/backend hosts are loopback, and `VERCEL`/`VERCEL_ENV` are absent. It rejects hosted or overridden destinations before making fixture connections. The full-system identities are dedicated to that journey and are cleaned by exact identity-owned records so other specs remain order-independent.
 
 ## Vercel-shaped local runtime
 
-`api/index.py` exports the ASGI variable `app`. The root `pyproject.toml` pins Python 3.12 and FastAPI dependencies, and `vercel.json` enables Fluid Compute while excluding tests, docs, fixture code, and planning artifacts from the Python Function bundle.
+`api/index.py` exports the ASGI variable `app`. The root `pyproject.toml` pins Python 3.12 and FastAPI dependencies, and `vercel.json` enables Fluid Compute while configuring exactly one Python Function entrypoint and excluding tests, docs, fixture code, and planning artifacts.
+
+Run the production-mode Python builder directly in a disposable directory without a Vercel project, link, or deployment:
+
+```bash
+npm run verify:vercel-python
+```
+
+The command uses pinned `@vercel/python` 7.0.0 and `@vercel/build-utils` 14.3.0. It must report one `fastapi` output, the generated `vc__handler__python.vc_handler`, the catch-all route, and bundled `api/index.py` plus `backend/main.py`. `tests/backend/test_vercel_shape.py` separately imports that exact ASGI app and exercises `/api/health` plus an auth-protected database route.
 
 The installed CLI supports an unlinked local mode:
 
@@ -161,7 +177,7 @@ npm run vercel:dev -- --local --listen 127.0.0.1:3000
 
 Use `--local`; do not run `vercel link` merely to perform local verification. Then check `/api/health`, the root login choices, student onboarding, teacher dashboards, kiosk QR issuance, and the administrator flow. Database migrations run separately through Supabase and must never run inside a Function invocation.
 
-With the repository's pinned Vercel CLI 59.3.0, the 2026-08-22 local verification attempt detected `@vercel/python` 6.58.0, completed the Next.js production build, and then stopped inside the CLI's `deserializeOutput`/`deserializeBuildOutputs` code with `ERR_INVALID_ARG_TYPE` (`Buffer.from` received `undefined`) before the Python builder ran or a server listened. `.vercel/project.json` remained absent. Until that external local-mode CLI failure is resolved, use the separate Next/FastAPI servers above for local flows and keep `vercel dev --local` as an explicit blocked check; do not link or deploy merely to bypass it.
+With Vercel CLI 59.4.0, `vercel dev --local` starts without the earlier `deserializeBuildOutputs` crash. In this combined Next.js repository, development `/api` requests intentionally use `next.config.ts` to proxy to the separately running `FASTAPI_ORIGIN`, so this command validates the combined local routing surface but does not invoke the production Python builder. Use the deterministic builder command above for packaging evidence. Do not run `vercel build --yes` in an unlinked directory: it performs project discovery and may offer project creation.
 
 For deployment, configure the two public Supabase values plus all server-only database/Auth/kiosk secrets in Vercel environment settings. Keep routes short-lived, store durable state only in PostgreSQL, and use a production pooler URL appropriate for serverless transactions.
 
@@ -169,6 +185,8 @@ Vercel runtime and plan behavior changes over time. Re-check the official docume
 
 - [Vercel Python runtime](https://vercel.com/docs/functions/runtimes/python)
 - [FastAPI on Vercel](https://vercel.com/docs/frameworks/backend/fastapi)
+- [Supported Node.js versions](https://vercel.com/docs/functions/runtimes/node-js/node-js-versions)
+- [Vercel request headers](https://vercel.com/docs/headers/request-headers)
 - [Vercel Function limits](https://vercel.com/docs/functions/limitations)
 - [Vercel Hobby plan](https://vercel.com/docs/plans/hobby)
 

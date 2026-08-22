@@ -700,3 +700,118 @@ async def test_jwks_key_cache_never_exceeds_configured_bound(
 
     assert verifier.max_cached_keys == 4
     assert verifier.cached_key_count == verifier.max_cached_keys
+
+
+def token_with_key_id(
+    token_factory: Callable[..., str],
+    private_key: rsa.RSAPrivateKey,
+    kid: str,
+) -> str:
+    source = token_factory("email", "oauth", uuid4())
+    payload = jwt.decode(source, options={"verify_signature": False})
+    return jwt.encode(
+        payload,
+        private_key,
+        algorithm="RS256",
+        headers={"kid": kid},
+    )
+
+
+async def test_unseen_rotated_kid_refreshes_immediately_during_active_ttl(
+    rsa_jwks: tuple[rsa.RSAPrivateKey, dict[str, Any]],
+    token_factory: Callable[..., str],
+) -> None:
+    _, initial_jwks = rsa_jwks
+    rotated_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    rotated_jwk = RSAAlgorithm.to_jwk(rotated_key.public_key(), as_dict=True)
+    rotated_jwk.update({"kid": "rotated-key", "use": "sig", "alg": "RS256"})
+    responses = [initial_jwks, {"keys": [*initial_jwks["keys"], rotated_jwk]}]
+    fetch_count = [0]
+
+    async def fetch_jwks() -> dict[str, Any]:
+        response = responses[min(fetch_count[0], len(responses) - 1)]
+        fetch_count[0] += 1
+        return response
+
+    verifier = JwksVerifier(
+        supabase_url=TEST_SUPABASE_URL,
+        audience="authenticated",
+        cache_ttl_seconds=300,
+        fetch_jwks=fetch_jwks,
+    )
+    await verifier.verify(token_factory("email", "oauth", uuid4()))
+
+    claims = await verifier.verify(
+        token_with_key_id(token_factory, rotated_key, "rotated-key")
+    )
+
+    assert UUID(claims["sub"])
+    assert fetch_count == [2]
+
+
+async def test_concurrent_unseen_kid_uses_one_single_flight_refresh(
+    rsa_jwks: tuple[rsa.RSAPrivateKey, dict[str, Any]],
+    token_factory: Callable[..., str],
+) -> None:
+    _, initial_jwks = rsa_jwks
+    rotated_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    rotated_jwk = RSAAlgorithm.to_jwk(rotated_key.public_key(), as_dict=True)
+    rotated_jwk.update({"kid": "rotated-key", "use": "sig", "alg": "RS256"})
+    fetch_count = [0]
+
+    async def fetch_jwks() -> dict[str, Any]:
+        fetch_count[0] += 1
+        await asyncio.sleep(0.01)
+        return initial_jwks if fetch_count[0] == 1 else {
+            "keys": [*initial_jwks["keys"], rotated_jwk]
+        }
+
+    verifier = JwksVerifier(
+        supabase_url=TEST_SUPABASE_URL,
+        audience="authenticated",
+        cache_ttl_seconds=300,
+        fetch_jwks=fetch_jwks,
+    )
+    await verifier.verify(token_factory("email", "oauth", uuid4()))
+    rotated_token = token_with_key_id(token_factory, rotated_key, "rotated-key")
+
+    claims = await asyncio.gather(*(verifier.verify(rotated_token) for _ in range(8)))
+
+    assert all(UUID(item["sub"]) for item in claims)
+    assert fetch_count == [2]
+
+
+async def test_unknown_kids_share_a_negative_refresh_backoff(
+    rsa_jwks: tuple[rsa.RSAPrivateKey, dict[str, Any]],
+    token_factory: Callable[..., str],
+) -> None:
+    _, initial_jwks = rsa_jwks
+    fetch_count = [0]
+    clock = [100.0]
+
+    async def fetch_jwks() -> dict[str, Any]:
+        fetch_count[0] += 1
+        return initial_jwks
+
+    verifier = JwksVerifier(
+        supabase_url=TEST_SUPABASE_URL,
+        audience="authenticated",
+        cache_ttl_seconds=300,
+        failed_refresh_backoff_seconds=5,
+        fetch_jwks=fetch_jwks,
+        time_source=lambda: clock[0],
+    )
+    await verifier.verify(token_factory("email", "oauth", uuid4()))
+    attacker_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    for kid in ("random-kid-1", "random-kid-2", "random-kid-1"):
+        with pytest.raises(ApiError):
+            await verifier.verify(token_with_key_id(token_factory, attacker_key, kid))
+    assert fetch_count == [2]
+
+    clock[0] += 6
+    with pytest.raises(ApiError):
+        await verifier.verify(
+            token_with_key_id(token_factory, attacker_key, "random-kid-3")
+        )
+    assert fetch_count == [3]

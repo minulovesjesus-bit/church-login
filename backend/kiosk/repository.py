@@ -203,6 +203,31 @@ class KioskRepository:
         row = await cursor.fetchone()
         return bool(row and row[0])
 
+    async def cleanup_expired_rate_limits(
+        self,
+        action: str,
+        now: datetime,
+        *,
+        limit: int,
+    ) -> int:
+        cursor = await self._connection.execute(
+            """
+            with expired as (
+              select bucket_key_hash, action
+              from app.rate_limit_buckets
+              where action = %s and expires_at <= %s
+              order by expires_at, bucket_key_hash
+              limit %s
+            )
+            delete from app.rate_limit_buckets bucket
+            using expired
+            where bucket.bucket_key_hash = expired.bucket_key_hash
+              and bucket.action = expired.action
+            """,
+            (action, now, limit),
+        )
+        return cursor.rowcount
+
     async def record_rate_limit_failure(
         self,
         key_hash: str,
@@ -213,12 +238,13 @@ class KioskRepository:
         limit: int,
         block_for: timedelta,
     ) -> bool:
+        retention = max(window, block_for)
         cursor = await self._connection.execute(
             """
             insert into app.rate_limit_buckets (
               bucket_key_hash, action, window_started_at,
-              attempt_count, blocked_until, updated_at
-            ) values (%s, %s, %s, 1, null, %s)
+              attempt_count, blocked_until, updated_at, expires_at
+            ) values (%s, %s, %s, 1, null, %s, %s + %s)
             on conflict (bucket_key_hash, action) do update
             set window_started_at = case
                   when app.rate_limit_buckets.window_started_at + %s <= %s
@@ -243,7 +269,8 @@ class KioskRepository:
                     then %s + %s
                   else null
                 end,
-                updated_at = %s
+                updated_at = %s,
+                expires_at = %s + %s
             returning blocked_until > %s
             """,
             (
@@ -251,6 +278,8 @@ class KioskRepository:
                 action,
                 now,
                 now,
+                now,
+                retention,
                 window,
                 now,
                 now,
@@ -263,6 +292,8 @@ class KioskRepository:
                 now,
                 block_for,
                 now,
+                now,
+                retention,
                 now,
             ),
         )

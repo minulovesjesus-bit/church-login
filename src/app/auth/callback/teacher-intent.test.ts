@@ -41,6 +41,14 @@ function callbackRequest(intent: string, includeCookie = true): NextRequest {
   });
 }
 
+function callbackRequestWithoutCode(intent: string): NextRequest {
+  const url = new URL("https://church.example.test/auth/callback");
+  url.searchParams.set("teacher_intent", intent);
+  return new NextRequest(url, {
+    headers: { cookie: `teacher_oauth_intent=${intent}` },
+  });
+}
+
 it("consumes a valid browser-bound teacher intent after the PKCE exchange", async () => {
   const intent = createTeacherOAuthIntent(secret);
 
@@ -80,4 +88,28 @@ it("falls back safely when a teacher intent is invalid or expired", async () => 
   expect(expiredResponse.headers.get("location")).toBe(
     "https://church.example.test/onboarding",
   );
+});
+
+it("returns a validated teacher flow to teacher login when the code is missing", async () => {
+  const intent = createTeacherOAuthIntent(secret);
+
+  const response = await GET(callbackRequestWithoutCode(intent));
+
+  expect(response.headers.get("location")).toBe(
+    "https://church.example.test/teacher/login?error=oauth_callback",
+  );
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(exchangeCodeForSession).not.toHaveBeenCalled();
+});
+
+it("returns a validated teacher flow to teacher login when exchange fails", async () => {
+  const intent = createTeacherOAuthIntent(secret);
+  exchangeCodeForSession.mockResolvedValueOnce({ error: new Error("exchange failed") });
+
+  const response = await GET(callbackRequest(intent));
+
+  expect(response.headers.get("location")).toBe(
+    "https://church.example.test/teacher/login?error=oauth_callback",
+  );
+  expect(response.headers.get("set-cookie")).toBeNull();
 });

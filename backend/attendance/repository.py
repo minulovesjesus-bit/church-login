@@ -495,10 +495,25 @@ class AttendanceRepository:
         policy = ATTENDANCE_SCAN_RATE_LIMIT
         cursor = await self.connection.execute(
             """
+            with expired as (
+              select bucket_key_hash, action
+              from app.rate_limit_buckets
+              where action = %(action)s and expires_at <= %(now)s
+              order by expires_at, bucket_key_hash
+              limit 100
+            ), cleaned as (
+              delete from app.rate_limit_buckets bucket
+              using expired
+              where bucket.bucket_key_hash = expired.bucket_key_hash
+                and bucket.action = expired.action
+            )
             insert into app.rate_limit_buckets (
               bucket_key_hash, action, window_started_at,
-              attempt_count, blocked_until, updated_at
-            ) values (%(key)s, %(action)s, %(now)s, 1, null, %(now)s)
+              attempt_count, blocked_until, updated_at, expires_at
+            ) values (
+              %(key)s, %(action)s, %(now)s, 1, null, %(now)s,
+              %(now)s + %(retention)s
+            )
             on conflict (bucket_key_hash, action) do update
             set window_started_at = case
                   when app.rate_limit_buckets.window_started_at + %(window)s <= %(now)s
@@ -523,7 +538,8 @@ class AttendanceRepository:
                     then %(now)s + %(block_for)s
                   else null
                 end,
-                updated_at = %(now)s
+                updated_at = %(now)s,
+                expires_at = %(now)s + %(retention)s
             returning blocked_until is null or blocked_until <= %(now)s
             """,
             {
@@ -533,6 +549,7 @@ class AttendanceRepository:
                 "window": policy.window,
                 "limit": policy.attempt_limit,
                 "block_for": policy.block_for,
+                "retention": max(policy.window, policy.block_for),
             },
         )
         row = await cursor.fetchone()

@@ -1,7 +1,8 @@
 import os
-from datetime import date
+from datetime import date, datetime
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -136,6 +137,41 @@ async def test_live_student_onboarding_returns_profile_fields_in_schema_order() 
         assert profile.birth_date == date(2012, 4, 5)
         assert profile.phone == "01011111003"
         assert profile.guardian_phone == "01099990003"
+    finally:
+        await connection.rollback()
+        await connection.close()
+
+
+async def test_student_upsert_sets_the_database_transaction_to_seoul() -> None:
+    database_url = os.environ.get("TEST_DATABASE_URL") or settings.database_url
+    if database_url is None or urlsplit(database_url).hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
+        pytest.skip("A local TEST_DATABASE_URL is required")
+    user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="seoul-boundary@example.test",
+        provider="password",
+        email_verified=True,
+    )
+    connection = await psycopg.AsyncConnection.connect(database_url)
+    try:
+        await connection.execute("set local timezone to 'UTC'")
+        await connection.execute("insert into auth.users (id) values (%s)", (user.user_id,))
+        seoul_today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+
+        await IdentityRepository(connection).upsert_student_profile(
+            user,
+            name="서울 경계 학생",
+            birth_date=seoul_today,
+            phone="01011111004",
+            guardian_phone="01099990004",
+        )
+        timezone = await connection.execute("show timezone")
+
+        assert await timezone.fetchone() == ("Asia/Seoul",)
     finally:
         await connection.rollback()
         await connection.close()

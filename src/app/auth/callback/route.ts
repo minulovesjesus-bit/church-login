@@ -38,10 +38,14 @@ function teacherDestination(request: NextRequest): string | undefined {
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const next =
-    teacherDestination(request) ??
-    allowedNextPath(request.nextUrl.searchParams.get("next"));
+  const teacherNext = teacherDestination(request);
+  const next = teacherNext ?? allowedNextPath(request.nextUrl.searchParams.get("next"));
   if (!code) {
+    if (teacherNext) {
+      return NextResponse.redirect(
+        new URL("/teacher/login?error=oauth_callback", request.url),
+      );
+    }
     return consumeTeacherIntentCookie(
       NextResponse.redirect(new URL("/auth/login", request.url)),
       request,
@@ -50,6 +54,11 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error && teacherNext) {
+    return NextResponse.redirect(
+      new URL("/teacher/login?error=oauth_callback", request.url),
+    );
+  }
   const destination = error ? "/auth/login" : next;
   return consumeTeacherIntentCookie(
     NextResponse.redirect(new URL(destination, request.url)),

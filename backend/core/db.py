@@ -38,6 +38,10 @@ async def application_transaction(
     try:
         await connection.execute("set local role app_backend")
         await connection.execute(
+            "select set_config('TimeZone', %s, true)",
+            (settings.app_timezone,),
+        )
+        await connection.execute(
             "select set_config('statement_timeout', %s, true)",
             (f"{resolved_statement_timeout}ms",),
         )

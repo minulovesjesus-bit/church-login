@@ -1,10 +1,13 @@
 import re
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+
+SEOUL_TIMEZONE = ZoneInfo("Asia/Seoul")
 
 
 class StudentProfileInput(BaseModel):
@@ -18,7 +21,7 @@ class StudentProfileInput(BaseModel):
     @field_validator("birth_date")
     @classmethod
     def birth_date_cannot_be_in_the_future(cls, value: date) -> date:
-        if value > datetime.now(UTC).date():
+        if value > datetime.now(SEOUL_TIMEZONE).date():
             raise ValueError("생년월일은 미래일 수 없습니다.")
         return value
 

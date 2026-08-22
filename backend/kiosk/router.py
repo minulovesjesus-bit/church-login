@@ -1,3 +1,4 @@
+import ipaddress
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -131,6 +132,16 @@ def _cookie_secure() -> bool:
     return settings.kiosk_cookies_secure()
 
 
+def canonical_client_ip(request: Request) -> str:
+    candidate = request.client.host if request.client else "unknown"
+    if settings.vercel or settings.vercel_env:
+        candidate = request.headers.get("x-vercel-forwarded-for", candidate)
+    try:
+        return ipaddress.ip_address(candidate.strip()).compressed
+    except ValueError:
+        return "unknown"
+
+
 @router.post(
     "/sessions",
     response_model=KioskSessionView,
@@ -143,7 +154,7 @@ async def create_kiosk_session(
     _trusted_origin: TrustedOrigin,
     service: KioskServiceDependency,
 ) -> KioskSessionView | Response:
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = canonical_client_ip(request)
     cookie_secret = (
         settings.kiosk_cookie_secret.get_secret_value()
         if settings.kiosk_cookie_secret
@@ -151,7 +162,7 @@ async def create_kiosk_session(
     )
     rate_limit_key_hash = hash_rate_limit_identity(
         client_ip,
-        request.headers.get("user-agent", ""),
+        "",
         cookie_secret,
     )
     try:

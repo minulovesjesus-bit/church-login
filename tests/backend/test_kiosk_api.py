@@ -140,6 +140,47 @@ async def test_login_sets_strict_httponly_cookies_without_exposing_tokens(
     assert "Church Tablet" not in kiosk_api.login_calls[0][1]
 
 
+async def test_user_agent_rotation_cannot_change_the_rate_limit_bucket(
+    client: httpx.AsyncClient, kiosk_api: FakeKioskService
+) -> None:
+    origin = settings.allowed_frontend_origins[0]
+    for user_agent in ("rotating-agent/1", "rotating-agent/2"):
+        response = await client.post(
+            "/api/kiosk/sessions",
+            json={"password": "wrong"},
+            headers={"Origin": origin, "User-Agent": user_agent},
+        )
+        assert response.status_code == 201
+
+    assert kiosk_api.login_calls[0][1] == kiosk_api.login_calls[1][1]
+
+
+async def test_forwarded_ip_is_trusted_only_inside_the_vercel_boundary(
+    client: httpx.AsyncClient,
+    kiosk_api: FakeKioskService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    origin = settings.allowed_frontend_origins[0]
+    headers = {
+        "Origin": origin,
+        "x-vercel-forwarded-for": "203.0.113.10",
+        "x-forwarded-for": "198.51.100.99",
+    }
+    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    local_key = kiosk_api.login_calls[-1][1]
+
+    monkeypatch.setattr(settings, "vercel", "1")
+    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    vercel_key = kiosk_api.login_calls[-1][1]
+
+    headers["x-vercel-forwarded-for"] = "203.0.113.11"
+    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    second_vercel_key = kiosk_api.login_calls[-1][1]
+
+    assert vercel_key != local_key
+    assert second_vercel_key != vercel_key
+
+
 @pytest.mark.parametrize(
     ("method", "path", "cookies", "json"),
     [

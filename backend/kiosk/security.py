@@ -70,7 +70,8 @@ def hash_opaque_token(token: str, pepper: str) -> str:
 
 
 def hash_rate_limit_identity(ip_address: str, user_agent: str, secret: str) -> str:
-    identity = f"kiosk-login\0{ip_address}\0{user_agent}".encode()
+    del user_agent
+    identity = f"kiosk-login\0{ip_address}".encode()
     digest = hmac.new(secret.encode(), identity, hashlib.sha256).hexdigest()
     return f"hmac-sha256:{digest}"
 
