@@ -6,8 +6,10 @@ import { expect, it, vi } from "vitest";
 
 const navigation = vi.hoisted(() => ({ pathname: "/student" }));
 vi.mock("next/navigation", () => ({ usePathname: () => navigation.pathname }));
+vi.mock("./scan/scan-client", () => ({ StudentScanClient: () => <p>스캐너 본문</p> }));
 
 import StudentLayout from "./layout";
+import StudentScanPage from "./scan/page";
 
 it("uses one semantic responsive navigation path with only implemented destinations", () => {
   navigation.pathname = "/student";
@@ -35,13 +37,13 @@ it("uses one semantic responsive navigation path with only implemented destinati
   );
 });
 
-it("keeps the scanner as the shell's direct full-bleed child", () => {
+it("keeps the real student scan page root as the shell's direct full-bleed child", () => {
   const { container } = render(
-    <StudentLayout><section className="student-scan-shell">스캐너</section></StudentLayout>,
+    <StudentLayout><StudentScanPage /></StudentLayout>,
   );
 
   expect(container.querySelector(".student-shell-content > .student-scan-shell")).toBe(
-    screen.getByText("스캐너"),
+    screen.getByRole("main"),
   );
 
   const shellStyles = readFileSync(resolve(process.cwd(), "src/app/globals.css"), "utf8");
