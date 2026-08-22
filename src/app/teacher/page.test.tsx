@@ -55,10 +55,17 @@ it("loads only the combined dashboard endpoint immediately and renders its summa
   expect(await screen.findByRole("heading", { name: "교사 대시보드" })).toBeInTheDocument();
   expect(mockApi.get).toHaveBeenCalledTimes(1);
   expect(mockApi.get).toHaveBeenCalledWith("/api/teacher/dashboard", expect.objectContaining({ signal: expect.any(AbortSignal) }));
-  expect(screen.getByText("오늘 출석 4명")).toBeInTheDocument();
-  expect(screen.getByText("현재 입실 3명")).toBeInTheDocument();
-  expect(screen.getByText("이번 주 8명")).toBeInTheDocument();
-  expect(screen.getByText("통계 대상 23명")).toBeInTheDocument();
+  const metrics = screen.getByRole("group", { name: "출결 요약" });
+  expect(within(metrics).getByText("오늘 출석")).toBeInTheDocument();
+  expect(within(metrics).getByText("현재 입실")).toBeInTheDocument();
+  expect(within(metrics).getByText("이번 주")).toBeInTheDocument();
+  expect(within(metrics).getByText("통계 대상")).toBeInTheDocument();
+  expect(within(metrics).getByLabelText("4명")).toBeInTheDocument();
+  expect(within(metrics).getByLabelText("3명")).toBeInTheDocument();
+  expect(within(metrics).getByLabelText("8명")).toBeInTheDocument();
+  expect(within(metrics).getByLabelText("23명")).toBeInTheDocument();
+  expect(screen.queryByText("Attendance overview")).not.toBeInTheDocument();
+  expect(screen.queryByText("Recent attendance")).not.toBeInTheDocument();
 });
 
 it("renders equivalent desktop rows and mobile cards without student numbers or add controls", async () => {
@@ -95,12 +102,12 @@ it("retains the last successful dashboard and marks it stale after a refresh fai
     .mockResolvedValueOnce(dashboard)
     .mockRejectedValueOnce(new TestApiClientError("REQUEST_FAILED", "새로고침 실패"));
   render(<TeacherPage />);
-  expect(await screen.findByText("오늘 출석 4명")).toBeInTheDocument();
+  expect(await screen.findByText("오늘 출석")).toBeInTheDocument();
 
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("마지막으로 확인된 정보");
-  expect(screen.getByText("오늘 출석 4명")).toBeInTheDocument();
+  expect(screen.getByText("오늘 출석")).toBeInTheDocument();
 });
 
 it.each([
