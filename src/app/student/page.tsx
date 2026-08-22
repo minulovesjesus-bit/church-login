@@ -3,7 +3,22 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  CalendarCheck2,
+  ChevronRight,
+  CircleAlert,
+  Clock3,
+  LogIn,
+  QrCode,
+  UserRoundCheck,
+} from "lucide-react";
 
+import { BrandLockup } from "@/components/brand/brand-mark";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
 import type { StudentStatistics } from "@/features/attendance/types";
 import { EventOccurrences } from "@/features/events/event-card";
@@ -75,9 +90,27 @@ export default function StudentPage() {
   }, [attempt, router]);
 
   if (error) {
-    return <main className="student-home-shell"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={retry}>다시 시도</button></main>;
+    return (
+      <main className="student-home-shell student-home-state">
+        <Alert variant="destructive">
+          <CircleAlert aria-hidden="true" />
+          <AlertTitle>학생 정보를 불러오지 못했습니다.</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+        <Button type="button" onClick={retry}>다시 시도</Button>
+      </main>
+    );
   }
-  if (!statistics) return <main className="student-home-shell"><p role="status">학생 정보를 확인하고 있습니다.</p></main>;
+  if (!statistics) {
+    return (
+      <main className="student-home-shell student-home-state" role="status">
+        <span className="sr-only">학생 정보를 확인하고 있습니다.</span>
+        <Skeleton className="h-8 w-2/5" />
+        <Skeleton className="h-36 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </main>
+    );
+  }
 
   const openStay = statistics.currently_inside && statistics.open_stay_started_at
     ? `${formatSeoulTime(statistics.open_stay_started_at)}부터 머물고 있어요.`
@@ -86,33 +119,49 @@ export default function StudentPage() {
   return (
     <main className="student-home-shell student-dashboard">
       <header className="student-dashboard__header">
-        <p className="eyebrow">Student home</p>
+        <BrandLockup />
         <h1>반가워요!</h1>
-        <p>오늘도 안전하고 편안한 하루 보내세요.</p>
+        <p>오늘도 편안한 하루 보내세요.</p>
       </header>
 
-      <section className="student-today-card" aria-labelledby="student-today-heading">
-        <p className="eyebrow">Today</p>
+      <section className="student-today" aria-labelledby="student-today-heading">
         <h2 id="student-today-heading">오늘 출결 상태</h2>
-        <strong>{statistics.currently_inside ? "현재 입실 중" : "퇴실 또는 출석 전"}</strong>
-        <p>{openStay}</p>
+        <Card className="student-today-card">
+          <CardHeader>
+            <div className="student-today-card__icon" aria-hidden="true">
+              <UserRoundCheck />
+            </div>
+            <CardTitle>
+              <strong>{statistics.currently_inside ? "현재 입실 중" : "퇴실 또는 출석 전"}</strong>
+            </CardTitle>
+            <CardDescription className="student-today-card__detail">
+              <Clock3 aria-hidden="true" /><span>{openStay}</span>
+            </CardDescription>
+          </CardHeader>
+        </Card>
       </section>
 
-      <Link href="/student/scan" className="student-qr-action">QR로 출결하기</Link>
+      <Button asChild size="lg" className="student-qr-action">
+        <Link href="/student/scan"><QrCode data-icon="inline-start" />QR로 출결하기</Link>
+      </Button>
 
-      <section className="student-month-card" aria-labelledby="student-month-heading">
-        <div><p className="eyebrow">Monthly attendance</p><h2 id="student-month-heading">나의 이번 달</h2></div>
-        <dl>
-          <div><dt>출석일</dt><dd>이번 달 {statistics.attendance_days_this_month}일</dd></div>
-          <div><dt>누적 입실</dt><dd>총 입실 {statistics.total_entries}회</dd></div>
-          <div><dt>평균 체류</dt><dd>평균 체류 {formatDuration(statistics.average_stay_seconds)}</dd></div>
+      <section className="student-month" aria-labelledby="student-month-heading">
+        <h2 id="student-month-heading">나의 이번 달</h2>
+        <dl className="student-month-rail">
+          <div><CalendarCheck2 aria-hidden="true" /><dt>출석일</dt><dd>이번 달 {statistics.attendance_days_this_month}일</dd></div>
+          <Separator orientation="vertical" />
+          <div><LogIn aria-hidden="true" /><dt>누적 입실</dt><dd>총 입실 {statistics.total_entries}회</dd></div>
+          <Separator orientation="vertical" />
+          <div><Clock3 aria-hidden="true" /><dt>평균 체류</dt><dd>평균 체류 {formatDuration(statistics.average_stay_seconds)}</dd></div>
         </dl>
       </section>
 
       <section className="student-home-events" aria-labelledby="student-home-events-heading">
         <div className="student-home-events__heading">
-          <div><p className="eyebrow">This week</p><h2 id="student-home-events-heading">이번 주 일정</h2></div>
-          <Link href="/student/events">전체 일정</Link>
+          <h2 id="student-home-events-heading">이번 주 일정</h2>
+          <Button asChild variant="ghost">
+            <Link href="/student/events">전체 일정<ChevronRight data-icon="inline-end" /></Link>
+          </Button>
         </div>
         <EventOccurrences week={currentSeoulMonday()} limit={2} />
       </section>

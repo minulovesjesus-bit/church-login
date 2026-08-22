@@ -208,9 +208,38 @@ it("renders the QR-first student dashboard in the approved information order", a
   expect(qr.compareDocumentPosition(statistics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(statistics.compareDocumentPosition(events) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(qr).toHaveAttribute("href", "/student/scan");
+  expect(qr).toHaveAttribute("data-slot", "button");
+  expect(screen.getAllByRole("link", { name: "QR로 출결하기" })).toHaveLength(1);
+  expect(screen.queryByText(/Student home|Today|Monthly attendance|This week/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/민준/)).not.toBeInTheDocument();
   expect(screen.getByText("현재 입실 중")).toBeInTheDocument();
   expect(screen.getByText("이번 달 5일")).toBeInTheDocument();
   expect(screen.getByText("총 입실 7회")).toBeInTheDocument();
   expect(screen.getByText("평균 체류 1시간 30분")).toBeInTheDocument();
   expect(await screen.findByText("이번 주 등록된 일정이 없습니다.")).toBeInTheDocument();
+});
+
+it("uses shadcn feedback primitives without changing status and retry semantics", async () => {
+  const me = deferred<typeof validMe>();
+  const statistics = deferred<typeof studentStatistics>();
+  client.api.get.mockImplementation((path: string) => path === "/api/me" ? me.promise : statistics.promise);
+  const { unmount } = render(<StudentPage />);
+
+  const loading = screen.getByRole("status");
+  expect(loading).toHaveTextContent("학생 정보를 확인하고 있습니다.");
+  expect(loading.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+
+  unmount();
+  await act(async () => {
+    me.resolve(validMe);
+    statistics.resolve(studentStatistics);
+  });
+
+  client.api.get.mockRejectedValue(new client.ApiClientError("REQUEST_FAILED", "잠시 후 다시 시도해 주세요."));
+  render(<StudentPage />);
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveAttribute("data-slot", "alert");
+  expect(alert).toHaveTextContent("잠시 후 다시 시도해 주세요.");
+  expect(screen.getByRole("button", { name: "다시 시도" })).toHaveAttribute("data-slot", "button");
 });

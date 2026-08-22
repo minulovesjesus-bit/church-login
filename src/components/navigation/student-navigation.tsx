@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CalendarDays, ClipboardList, Home, ScanLine } from "lucide-react";
 
 const LINKS = [
-  { href: "/student", label: "홈" },
-  { href: "/student/scan", label: "QR 출결" },
-  { href: "/student/attendance", label: "출결 기록" },
-  { href: "/student/events", label: "일정" },
+  { href: "/student", label: "홈", icon: Home },
+  { href: "/student/scan", label: "QR 출결", icon: ScanLine },
+  { href: "/student/attendance", label: "출결 기록", icon: ClipboardList },
+  { href: "/student/events", label: "일정", icon: CalendarDays },
 ] as const;
 
 function isCurrent(pathname: string, href: string): boolean {
@@ -19,10 +20,11 @@ export function StudentNavigation() {
   return (
     <nav className="student-navigation" aria-label="학생 메뉴">
       <ul>
-        {LINKS.map((link) => (
-          <li key={link.href}>
-            <Link href={link.href} aria-current={isCurrent(pathname, link.href) ? "page" : undefined}>
-              {link.label}
+        {LINKS.map(({ href, icon: Icon, label }) => (
+          <li key={href}>
+            <Link href={href} aria-current={isCurrent(pathname, href) ? "page" : undefined}>
+              <Icon aria-hidden="true" />
+              <span>{label}</span>
             </Link>
           </li>
         ))}

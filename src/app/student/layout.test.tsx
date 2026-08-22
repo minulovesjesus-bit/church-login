@@ -20,4 +20,14 @@ it("uses one semantic responsive navigation path with only implemented destinati
   ]);
   expect(within(nav).getByRole("link", { name: "홈" })).toHaveAttribute("aria-current", "page");
   expect(within(nav).queryByRole("link", { name: /프로필/ })).not.toBeInTheDocument();
+
+  for (const link of within(nav).getAllByRole("link")) {
+    expect(link.querySelectorAll('svg[aria-hidden="true"]')).toHaveLength(1);
+    expect(link.querySelector("span")).toHaveTextContent(link.textContent ?? "");
+  }
+
+  expect(nav.closest(".student-shell")).not.toBeNull();
+  expect(nav.closest(".student-shell")?.querySelector(".student-shell-content")).toContainElement(
+    screen.getByText("학생 내용"),
+  );
 });
