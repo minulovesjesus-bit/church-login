@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Badge } from "./badge";
@@ -33,6 +33,7 @@ import {
   SheetTrigger,
 } from "./sheet";
 import {
+  Sidebar,
   SidebarGroup,
   SidebarGroupAction,
   SidebarGroupLabel,
@@ -70,6 +71,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  document.cookie = "sidebar_state=; path=/; max-age=0";
   vi.unstubAllGlobals();
 });
 
@@ -309,5 +311,28 @@ describe("sidebar 44px target geometry", () => {
       "min-w-11",
       "peer-data-[size=lg]/menu-button:top-0.5",
     );
+  });
+});
+
+describe("sidebar keyboard shortcut", () => {
+  it("preserves the default Cmd+B toggle and state cookie for collapsible consumers", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <Sidebar>메뉴</Sidebar>
+      </SidebarProvider>,
+    );
+    const sidebar = container.querySelector<HTMLElement>('[data-slot="sidebar"][data-state]');
+    const shortcut = new KeyboardEvent("keydown", {
+      key: "b",
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    fireEvent(window, shortcut);
+
+    expect(shortcut.defaultPrevented).toBe(true);
+    expect(sidebar).toHaveAttribute("data-state", "collapsed");
+    expect(document.cookie).toContain("sidebar_state=false");
   });
 });

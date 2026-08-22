@@ -41,6 +41,7 @@ beforeEach(() => {
 afterEach(() => {
   navigation.pathname = "/teacher";
   navigation.replace.mockReset();
+  document.cookie = "sidebar_state=; path=/; max-age=0";
   vi.unstubAllGlobals();
 });
 
@@ -119,6 +120,29 @@ it("shows administrator links only when the API grants admin capability", async 
   expect(within(nav).getByRole("link", { name: "교사 신청" })).toHaveAttribute("href", "/teacher/applications");
   expect(within(nav).getByRole("link", { name: "교사 권한" })).toHaveAttribute("href", "/admin/staff");
   expect(within(nav).getByRole("link", { name: "키오스크" })).toHaveAttribute("href", "/admin/kiosks");
+});
+
+it.each([
+  ["Meta", { metaKey: true }],
+  ["Control", { ctrlKey: true }],
+])("leaves %s+B unclaimed and the fixed staff sidebar open", async (_modifier, modifier) => {
+  mockApi.get.mockResolvedValue({ capabilities: { teacher: true, admin: false } });
+  const { container } = render(<TeacherLayout><h1>보호 화면</h1></TeacherLayout>);
+  const navigationLandmark = await screen.findByRole("navigation", { name: "교사 메뉴" });
+  const sidebar = container.querySelector<HTMLElement>('[data-slot="sidebar"]');
+  const shortcut = new KeyboardEvent("keydown", {
+    key: "b",
+    bubbles: true,
+    cancelable: true,
+    ...modifier,
+  });
+
+  fireEvent(window, shortcut);
+
+  expect(shortcut.defaultPrevented).toBe(false);
+  expect(document.cookie).not.toContain("sidebar_state=");
+  expect(sidebar).toBeVisible();
+  expect(navigationLandmark).toBeInTheDocument();
 });
 
 it("exposes one labelled staff navigation and restores focus after closing the Sheet with Escape", async () => {

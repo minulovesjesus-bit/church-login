@@ -12,7 +12,7 @@ export type StaffShellProps = {
 
 export function StaffShell({ children, admin }: StaffShellProps) {
   return (
-    <SidebarProvider open onOpenChange={() => undefined}>
+    <SidebarProvider open enableKeyboardShortcut={false} onOpenChange={() => undefined}>
       <div className="staff-shell">
         <TeacherNavigation admin={admin} />
         <div className="staff-shell__content">{children}</div>
