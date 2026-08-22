@@ -177,8 +177,8 @@ it("shows only ongoing or upcoming current-week occurrences below the existing a
   const attendanceCopy = await screen.findByRole("heading", { name: "오늘 출결 상태" });
   const eventsHeading = await screen.findByRole("heading", { name: "이번 주 일정" });
   expect(attendanceCopy.compareDocumentPosition(eventsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByText("진행 중 일정")).toBeInTheDocument();
-  expect(screen.getByText("곧 시작할 일정")).toBeInTheDocument();
+  expect(await screen.findByText("진행 중 일정")).toBeInTheDocument();
+  expect(await screen.findByText("곧 시작할 일정")).toBeInTheDocument();
   expect(screen.queryByText("끝난 일정")).not.toBeInTheDocument();
   expect(screen.queryByText("나중 일정")).not.toBeInTheDocument();
   expect(client.api.get).toHaveBeenCalledWith("/api/events?from=2026-08-17&to=2026-08-24");

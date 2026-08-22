@@ -21,6 +21,15 @@ const INTERACTIVE_SELECTOR = [
   "[role=checkbox]",
   "[role=radio]",
 ].join(",");
+const TABBABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled]):not([type=hidden])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[contenteditable=true]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(",");
 
 async function stabilize(page: Page, fixTime = true): Promise<void> {
   if (fixTime) await page.clock.setFixedTime(FIXED_TIME);
@@ -57,16 +66,19 @@ async function stabilize(page: Page, fixTime = true): Promise<void> {
   }
 }
 
-async function expectNoSeriousAxeViolations(page: Page): Promise<void> {
+async function expectNoSeriousAxeViolations(page: Page, surface = page.url()): Promise<void> {
   const result = await new AxeBuilder({ page }).analyze();
   const violations = result.violations.filter(({ impact }) => (
     impact === "serious" || impact === "critical"
   ));
-  expect(violations, violations.map(({ id, nodes }) => `${id}: ${nodes.length}`).join("\n")).toEqual([]);
+  expect(
+    violations,
+    [`Accessibility violations on ${surface}`, ...violations.map(({ id, nodes }) => `${id}: ${nodes.length}`)].join("\n"),
+  ).toEqual([]);
 }
 
-async function expectVisibleControlsAtLeast44px(page: Page): Promise<void> {
-  const failures = await page.locator(INTERACTIVE_SELECTOR).evaluateAll((elements) => (
+async function expectVisibleControlsAtLeast44px(root: Page | Locator): Promise<void> {
+  const failures = await root.locator(INTERACTIVE_SELECTOR).evaluateAll((elements) => (
     elements.flatMap((element) => {
       const node = element as HTMLElement;
       const style = getComputedStyle(node);
@@ -99,9 +111,14 @@ async function expectStableScreenshot(
   page: Page,
   name: string,
   ready: Locator,
-  { fixTime = true, mask = [] }: { fixTime?: boolean; mask?: Locator[] } = {},
+  {
+    fixTime = true,
+    mask = [],
+    settled,
+  }: { fixTime?: boolean; mask?: Locator[]; settled?: Locator } = {},
 ): Promise<void> {
   await expect(ready).toBeVisible();
+  if (settled) await expect(settled).toBeVisible();
   await stabilize(page, fixTime);
   await expectVisibleControlsAtLeast44px(page);
   await expect(page).toHaveScreenshot(name, {
@@ -127,10 +144,29 @@ async function expectTrappedAndReturned(
   await opener.focus();
   await opener.click();
   await expectFocusInside(page, overlay);
+  await stabilize(page);
+  await expectVisibleControlsAtLeast44px(overlay);
+
+  const candidates = overlay.locator(TABBABLE_SELECTOR);
+  const tabbables: Locator[] = [];
+  for (let index = 0; index < await candidates.count(); index += 1) {
+    const candidate = candidates.nth(index);
+    if (await candidate.isVisible() && await candidate.isEnabled()) tabbables.push(candidate);
+  }
+  expect(tabbables.length, "the open overlay must expose both focus-trap boundaries").toBeGreaterThan(1);
+  const first = tabbables[0];
+  const last = tabbables.at(-1)!;
+
+  await last.focus();
+  await expect(last).toBeFocused();
   await page.keyboard.press("Tab");
-  await expectFocusInside(page, overlay);
+  await expect(first).toBeFocused();
+
+  await first.focus();
+  await expect(first).toBeFocused();
   await page.keyboard.press("Shift+Tab");
-  await expectFocusInside(page, overlay);
+  await expect(last).toBeFocused();
+
   await page.keyboard.press("Escape");
   await expect(overlay).toBeHidden();
   await expect(opener).toBeFocused();
@@ -157,13 +193,9 @@ test("root and authentication surfaces match mobile and desktop baselines", asyn
         `${route.slug}-${sizeName}.png`,
         page.getByRole("heading", { name: route.heading }),
       );
+      await expectNoSeriousAxeViolations(page, route.path);
     }
   }
-
-  await page.setViewportSize(viewports.desktop);
-  await page.goto("/");
-  await expect(page.getByRole("heading", { name: routes[0].heading })).toBeVisible();
-  await expectNoSeriousAxeViolations(page);
 });
 
 test("student routes match phone and tablet baselines", async ({ browser }) => {
@@ -227,6 +259,13 @@ test("teacher routes match tablet and desktop baselines", async ({ browser }) =>
           page,
           `${route.slug}-${sizeName}.png`,
           page.getByRole("heading", { name: route.heading }),
+          {
+            settled: route.path === "/teacher/attendance"
+              ? page.getByRole("img", { name: "시간대별 입실 차트" }).or(
+                page.getByText("선택한 기간의 입실 시간대 데이터가 없어요."),
+              )
+              : undefined,
+          },
         );
       }
     }
