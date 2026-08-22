@@ -33,9 +33,12 @@ import {
   SheetTrigger,
 } from "./sheet";
 import {
+  SidebarGroup,
   SidebarGroupAction,
+  SidebarGroupLabel,
   SidebarMenuAction,
   SidebarMenuButton,
+  SidebarMenuItem,
   SidebarMenuSubButton,
   SidebarProvider,
   SidebarRail,
@@ -230,5 +233,75 @@ describe("responsive and focus source contracts", () => {
   it("uses solid focus indicators without translucent ring tokens", () => {
     expect(focusSources).not.toMatch(/ring-(?:ring|destructive)\/\d+/);
     expect(globalSource).not.toMatch(/outline-ring\/\d+/);
+  });
+});
+
+describe("sidebar 44px target geometry", () => {
+  it("centers the 44px rail hit box on either sidebar boundary", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <SidebarRail />
+      </SidebarProvider>,
+    );
+    const rail = container.querySelector<HTMLElement>('[data-slot="sidebar-rail"]');
+
+    expect(rail).toHaveClass(
+      "w-11",
+      "min-h-11",
+      "min-w-11",
+      "group-data-[side=left]:-right-5.5",
+      "group-data-[side=right]:-left-5.5",
+    );
+    expect(rail).not.toHaveClass("w-4", "ltr:-translate-x-1/2", "rtl:-translate-x-1/2");
+  });
+
+  it("reserves a 44px group header row and text gutter for its action", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <SidebarGroup>
+          <SidebarGroupLabel>분반</SidebarGroupLabel>
+          <SidebarGroupAction aria-label="분반 행동" />
+        </SidebarGroup>
+      </SidebarProvider>,
+    );
+    const group = container.querySelector<HTMLElement>('[data-slot="sidebar-group"]');
+    const label = container.querySelector<HTMLElement>('[data-slot="sidebar-group-label"]');
+    const action = container.querySelector<HTMLElement>('[data-slot="sidebar-group-action"]');
+
+    expect(group).toHaveClass(
+      "group/sidebar-group",
+      "has-data-[sidebar=group-action]:min-h-15",
+      "group-data-[collapsible=icon]:min-h-0",
+    );
+    expect(label).toHaveClass(
+      "h-11",
+      "group-data-[collapsible=icon]:-mt-11",
+      "group-has-data-[sidebar=group-action]/sidebar-group:pr-12",
+    );
+    expect(label).not.toHaveClass("min-h-11", "min-w-11");
+    expect(action).toHaveClass("top-2", "right-2", "size-11", "min-h-11", "min-w-11");
+  });
+
+  it("reserves menu text space and centers its 44px action in each row size", () => {
+    const { container } = render(
+      <SidebarProvider>
+        <SidebarMenuItem>
+          <SidebarMenuButton>출석 메뉴</SidebarMenuButton>
+          <SidebarMenuAction aria-label="메뉴 행동" />
+        </SidebarMenuItem>
+      </SidebarProvider>,
+    );
+    const button = container.querySelector<HTMLElement>('[data-slot="sidebar-menu-button"]');
+    const action = container.querySelector<HTMLElement>('[data-slot="sidebar-menu-action"]');
+
+    expect(button).toHaveClass("group-has-data-[sidebar=menu-action]/menu-item:pr-12");
+    expect(action).toHaveClass(
+      "top-0",
+      "right-0",
+      "size-11",
+      "min-h-11",
+      "min-w-11",
+      "peer-data-[size=lg]/menu-button:top-0.5",
+    );
   });
 });
