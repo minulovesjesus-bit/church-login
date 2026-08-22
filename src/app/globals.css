@@ -1,7 +1,86 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
   color-scheme: light;
+  --background: #ffffff;
+  --foreground: #202521;
+  --card: #ffffff;
+  --card-foreground: #202521;
+  --popover: #ffffff;
+  --popover-foreground: #202521;
+  --primary: #173d2b;
+  --primary-foreground: #ffffff;
+  --secondary: #e9f0ea;
+  --secondary-foreground: #173d2b;
+  --muted: #f4f6f4;
+  --muted-foreground: #667169;
+  --accent: #e9f0ea;
+  --accent-foreground: #173d2b;
+  --destructive: #b24a4a;
+  --border: #d8e1da;
+  --input: #d8e1da;
+  --ring: #245c41;
+  --brand-gold: #c9a75b;
+  --brand-gold-foreground: #74561b;
+  --success: #2d7a50;
+  --warning: #8a641e;
+  --radius: 0.75rem;
+  --motion-fast: 140ms;
+  --motion-normal: 200ms;
+  --sidebar: #173d2b;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #173d2b;
+  --sidebar-accent: #e9f0ea;
+  --sidebar-accent-foreground: #173d2b;
+  --sidebar-border: rgb(255 255 255 / 16%);
+  --sidebar-ring: #ffffff;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand-gold: var(--brand-gold);
+  --color-brand-gold-foreground: var(--brand-gold-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 * {
@@ -10,7 +89,7 @@
 
 body {
   margin: 0;
-  font-family: Arial, sans-serif;
+  font-family: var(--font-sans), sans-serif;
   color: #10251c;
   background: #f5f7f2;
 }
@@ -110,8 +189,8 @@ a {
 .primary-button:focus-visible,
 .secondary-button:focus-visible,
 .quiet-button:focus-visible {
-  outline: 3px solid #83d6a4;
-  outline-offset: 3px;
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .primary-button,
@@ -1167,8 +1246,8 @@ a {
 .teacher-event-form input:focus-visible,
 .teacher-event-form textarea:focus-visible,
 .danger-button:focus-visible {
-  outline: 3px solid #83d6a4;
-  outline-offset: 3px;
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .teacher-event-form input[aria-invalid="true"],
@@ -1684,6 +1763,7 @@ a {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
 
@@ -2013,7 +2093,7 @@ a {
 .admin-dialog h2, .admin-dialog p { margin: 0; }
 .admin-dialog label { color: #355445; font-size: 0.9rem; font-weight: 800; }
 .admin-dialog textarea { width: 100%; min-height: 8rem; resize: vertical; border: 1px solid #aebeb4; border-radius: 0.8rem; padding: 0.75rem 0.9rem; color: #10251c; background: #fff; }
-.admin-dialog textarea:focus-visible { outline: 3px solid #83d6a4; outline-offset: 3px; }
+.admin-dialog textarea:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
 .admin-dialog textarea[aria-invalid="true"] { border-color: #bd5555; }
 .admin-dialog__count { justify-self: end; color: #65776c; font-size: 0.8rem; }
 
@@ -2096,5 +2176,17 @@ a {
     translate: 0;
     visibility: visible;
     box-shadow: none;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
   }
 }
