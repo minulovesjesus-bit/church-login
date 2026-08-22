@@ -75,7 +75,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
   const [challenge, setChallenge] = useState<KioskQrChallenge>();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [connection, setConnection] = useState<ConnectionState>("connecting");
-  const [announcement, setAnnouncement] = useState("QR을 준비하고 있어요.");
+  const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
     if (!unlocked) return;
@@ -83,6 +83,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
     let active = true;
     let inFlight = false;
     let retrying = false;
+    let awaitingReplacement = false;
     let retryAttempt = 0;
     let expiresAt = 0;
     let issueTimer: number | undefined;
@@ -128,7 +129,10 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
         clearCountdown();
         setChallenge(undefined);
         setNowMs(Date.now());
-        setAnnouncement("QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.");
+        if (!awaitingReplacement) {
+          setAnnouncement("QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.");
+          awaitingReplacement = true;
+        }
       }
       setConnection("connecting");
       try {
@@ -138,13 +142,17 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
         expiresAt = nextExpiry;
         retryAttempt = 0;
         const recovered = retrying;
+        const replacedExpiredQr = awaitingReplacement;
         retrying = false;
+        awaitingReplacement = false;
         setChallenge(nextChallenge);
         setConnection("connected");
         setAnnouncement(
           recovered
             ? "QR 연결이 복구되고 새 QR 코드가 준비됐습니다."
-            : "새 QR 코드가 준비됐습니다.",
+            : replacedExpiredQr
+              ? "새 QR 코드가 준비됐습니다."
+              : "",
         );
         clearCountdown();
         updateCountdown();
@@ -217,7 +225,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       setPassword("");
       setChallenge(undefined);
       setConnection("connecting");
-      setAnnouncement("QR을 준비하고 있어요.");
+      setAnnouncement("");
       setUnlocked(true);
     } catch (error) {
       setLoginError(

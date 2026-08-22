@@ -20,6 +20,7 @@ const MAX_QR_SIZE = 520;
 export function QrCard({ expiresAtMs, nowMs, token }: QrCardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
+  const renderGenerationRef = useRef(0);
   const [renderFailed, setRenderFailed] = useState(false);
   const [cssSize, setCssSize] = useState(MIN_QR_SIZE);
 
@@ -40,26 +41,43 @@ export function QrCard({ expiresAtMs, nowMs, token }: QrCardProps) {
   }, []);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const visibleCanvas = canvasRef.current;
+    if (!visibleCanvas) return;
     let active = true;
+    const generation = renderGenerationRef.current + 1;
+    renderGenerationRef.current = generation;
     setRenderFailed(false);
     const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
     const backingSize = Math.round(cssSize * pixelRatio);
-    const keepCssPixelSize = () => {
-      canvas.style.width = `${cssSize}px`;
-      canvas.style.height = `${cssSize}px`;
+    const renderCanvas = document.createElement("canvas");
+
+    const isCurrent = () => active && renderGenerationRef.current === generation;
+    const commitRender = () => {
+      if (!isCurrent()) return;
+      const context = visibleCanvas.getContext("2d");
+      if (!context) throw new TypeError("Canvas rendering is unavailable");
+      visibleCanvas.width = renderCanvas.width;
+      visibleCanvas.height = renderCanvas.height;
+      visibleCanvas.style.width = `${cssSize}px`;
+      visibleCanvas.style.height = `${cssSize}px`;
+      context.clearRect(0, 0, visibleCanvas.width, visibleCanvas.height);
+      context.drawImage(renderCanvas, 0, 0);
     };
-    const renderQr = QRCode.toCanvas(canvas, token, {
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: backingSize,
-      color: { dark: "#202521", light: "#ffffff" },
-    });
-    keepCssPixelSize();
-    renderQr.then(keepCssPixelSize).catch(() => {
-      if (active) setRenderFailed(true);
-    });
+
+    try {
+      const renderQr = QRCode.toCanvas(renderCanvas, token, {
+        errorCorrectionLevel: "M",
+        margin: 2,
+        width: backingSize,
+        color: { dark: "#202521", light: "#ffffff" },
+      });
+      Promise.resolve(renderQr).then(commitRender).catch(() => {
+        if (isCurrent()) setRenderFailed(true);
+      });
+    } catch {
+      if (isCurrent()) setRenderFailed(true);
+    }
+
     return () => {
       active = false;
     };

@@ -7,6 +7,7 @@ const toCanvas = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("qrcode", () => ({ default: { toCanvas } }));
 
 import { KioskScreen, type KioskClient } from "./kiosk-screen";
+import { QrCard } from "./qr-card";
 
 const NOW = new Date("2026-08-21T01:00:00.000Z");
 const SESSION = {
@@ -26,6 +27,11 @@ const EXPIRED_QR = {
 };
 
 let resizeCallback: ResizeObserverCallback | undefined;
+let announcementObservers: MutationObserver[] = [];
+
+type DeferredRender = {
+  resolve: () => void;
+};
 
 class TestResizeObserver implements ResizeObserver {
   constructor(callback: ResizeObserverCallback) {
@@ -49,6 +55,49 @@ function resizeQr(width: number) {
       } as unknown as ResizeObserverEntry,
     ], {} as ResizeObserver);
   });
+}
+
+function useDeferredQrRenderer(): DeferredRender[] {
+  const renders: DeferredRender[] = [];
+  toCanvas.mockImplementation((
+    canvas: HTMLCanvasElement,
+    token: string,
+    options?: { width?: number },
+  ) => {
+    const width = Number(options?.width ?? 0);
+    let resolveRender: (() => void) | undefined;
+    const render = new Promise<void>((resolve) => {
+      resolveRender = resolve;
+    }).then(() => {
+      canvas.width = width;
+      canvas.height = width;
+      canvas.dataset.pixelMarker = token;
+    });
+    renders.push({ resolve: () => resolveRender?.() });
+    return render;
+  });
+  return renders;
+}
+
+function observeKioskAnnouncements() {
+  const messages: string[] = [];
+  const capture = () => {
+    const message = document
+      .querySelector('[role="status"][aria-live="polite"]')
+      ?.textContent?.trim();
+    if (message && messages.at(-1) !== message) messages.push(message);
+  };
+  const observer = new MutationObserver(capture);
+  announcementObservers.push(observer);
+  observer.observe(document.body, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  return {
+    disconnect: () => observer.disconnect(),
+    messages,
+  };
 }
 
 function createClient(): KioskClient {
@@ -96,12 +145,38 @@ function useStationaryClock() {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  toCanvas.mockClear();
+  toCanvas.mockReset();
+  toCanvas.mockImplementation(async (
+    canvas: HTMLCanvasElement,
+    token: string,
+    options?: { width?: number },
+  ) => {
+    const width = Number(options?.width ?? 0);
+    canvas.width = width;
+    canvas.height = width;
+    canvas.dataset.pixelMarker = token;
+  });
   resizeCallback = undefined;
+  announcementObservers = [];
   vi.stubGlobal("ResizeObserver", TestResizeObserver);
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (
+    this: HTMLCanvasElement,
+    contextId: string,
+  ) {
+    if (contextId !== "2d") return null;
+    const target = this;
+    return {
+      clearRect: vi.fn(),
+      drawImage(source: HTMLCanvasElement) {
+        target.dataset.pixelMarker = source.dataset.pixelMarker ?? "";
+      },
+    } as unknown as CanvasRenderingContext2D;
+  } as typeof HTMLCanvasElement.prototype.getContext);
 });
 
 afterEach(() => {
+  announcementObservers.forEach((observer) => observer.disconnect());
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -138,6 +213,79 @@ it("keeps one QR for the full server lifetime and schedules the next request at 
 
   await act(() => vi.advanceTimersByTimeAsync(1));
   expect(client.getQr).toHaveBeenCalledTimes(2);
+});
+
+it("keeps first issuance and timer ticks silent, then announces expiry and replacement", async () => {
+  const replacement = {
+    ...QR,
+    token: "replacement-token",
+    issued_at: new Date(NOW.getTime() + 20_000).toISOString(),
+    expires_at: new Date(NOW.getTime() + 40_000).toISOString(),
+  };
+  let finishReplacement: ((value: typeof replacement) => void) | undefined;
+  const client = createClient();
+  vi.mocked(client.getQr)
+    .mockResolvedValueOnce(QR)
+    .mockImplementationOnce(() => new Promise((resolve) => {
+      finishReplacement = resolve;
+    }));
+  const announcements = observeKioskAnnouncements();
+
+  await unlock(client);
+
+  expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  expect(announcements.messages).toEqual([]);
+  await act(() => vi.advanceTimersByTimeAsync(19_000));
+  expect(announcements.messages).toEqual([]);
+
+  await act(() => vi.advanceTimersByTimeAsync(1_000));
+  await flushAsyncWork();
+  expect(announcements.messages).toEqual([
+    "QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.",
+  ]);
+
+  await act(async () => finishReplacement?.(replacement));
+  await flushAsyncWork();
+  expect(announcements.messages).toEqual([
+    "QR 코드가 만료되었습니다. 새 QR을 준비하고 있어요.",
+    "새 QR 코드가 준비됐습니다.",
+  ]);
+  announcements.disconnect();
+});
+
+it("announces connection loss and recovery in order without retry-timer chatter", async () => {
+  const recovered = {
+    ...QR,
+    token: "recovered-token",
+    issued_at: new Date(NOW.getTime() + 1_000).toISOString(),
+    expires_at: new Date(NOW.getTime() + 21_000).toISOString(),
+  };
+  let finishRecovery: ((value: typeof recovered) => void) | undefined;
+  const client = createClient();
+  vi.mocked(client.getQr)
+    .mockRejectedValueOnce(new TypeError("offline"))
+    .mockImplementationOnce(() => new Promise((resolve) => {
+      finishRecovery = resolve;
+    }));
+  const announcements = observeKioskAnnouncements();
+
+  await submitPassword(client);
+  expect(announcements.messages).toEqual([
+    "QR 연결이 끊어졌습니다. 연결을 다시 시도하고 있어요.",
+  ]);
+
+  await act(() => vi.advanceTimersByTimeAsync(999));
+  expect(announcements.messages).toHaveLength(1);
+  await act(() => vi.advanceTimersByTimeAsync(1));
+  expect(announcements.messages).toHaveLength(1);
+
+  await act(async () => finishRecovery?.(recovered));
+  await flushAsyncWork();
+  expect(announcements.messages).toEqual([
+    "QR 연결이 끊어졌습니다. 연결을 다시 시도하고 있어요.",
+    "QR 연결이 복구되고 새 QR 코드가 준비됐습니다.",
+  ]);
+  announcements.disconnect();
 });
 
 it("uses bounded failure backoff without overlapping QR requests", async () => {
@@ -346,11 +494,13 @@ describe("QR rendering", () => {
     const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
     expect(canvas).toHaveStyle({ width: "447.25px", height: "447.25px" });
     await flushAsyncWork();
-    expect(toCanvas).toHaveBeenLastCalledWith(
-      canvas,
-      "signed-attendance-qr",
-      expect.objectContaining({ width: 895 }),
-    );
+    const [renderCanvas, renderToken, renderOptions] = toCanvas.mock.lastCall ?? [];
+    expect(renderCanvas).not.toBe(canvas);
+    expect(renderCanvas).not.toBeInTheDocument();
+    expect(renderToken).toBe("signed-attendance-qr");
+    expect(renderOptions).toEqual(expect.objectContaining({ width: 895 }));
+    expect(canvas).toHaveProperty("width", 895);
+    expect(canvas).toHaveProperty("height", 895);
   });
 
   it("restores CSS pixel dimensions after the QR renderer writes backing dimensions", async () => {
@@ -382,5 +532,75 @@ describe("QR rendering", () => {
     resizeQr(610);
     expect(screen.getByRole("img", { name: "학생 출결용 QR 코드" }))
       .toHaveStyle({ width: "520px", height: "520px" });
+  });
+
+  it("keeps the newest resized render when an older render resolves last", async () => {
+    vi.stubGlobal("devicePixelRatio", 2);
+    const renders = useDeferredQrRenderer();
+    render(
+      <QrCard
+        token="resized-token"
+        expiresAtMs={NOW.getTime() + 20_000}
+        nowMs={NOW.getTime()}
+      />,
+    );
+
+    resizeQr(447.25);
+    expect(renders).toHaveLength(2);
+    await act(async () => renders[1].resolve());
+
+    const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+    expect(canvas).toHaveProperty("width", 895);
+    expect(canvas).toHaveStyle({ width: "447.25px", height: "447.25px" });
+    expect(canvas).toHaveAttribute("data-pixel-marker", "resized-token");
+
+    await act(async () => renders[0].resolve());
+
+    expect(canvas).toHaveProperty("width", 895);
+    expect(canvas).toHaveStyle({ width: "447.25px", height: "447.25px" });
+    expect(canvas).toHaveAttribute("data-pixel-marker", "resized-token");
+  });
+
+  it("keeps the newest token pixels when an older token render resolves last", async () => {
+    const renders = useDeferredQrRenderer();
+    const view = render(
+      <QrCard
+        token="old-token"
+        expiresAtMs={NOW.getTime() + 20_000}
+        nowMs={NOW.getTime()}
+      />,
+    );
+    view.rerender(
+      <QrCard
+        token="new-token"
+        expiresAtMs={NOW.getTime() + 20_000}
+        nowMs={NOW.getTime()}
+      />,
+    );
+
+    expect(renders).toHaveLength(2);
+    await act(async () => renders[1].resolve());
+    const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+    expect(canvas).toHaveAttribute("data-pixel-marker", "new-token");
+
+    await act(async () => renders[0].resolve());
+    expect(canvas).toHaveAttribute("data-pixel-marker", "new-token");
+  });
+
+  it("does not commit a detached render after the QR card unmounts", async () => {
+    const renders = useDeferredQrRenderer();
+    const view = render(
+      <QrCard
+        token="unmounted-token"
+        expiresAtMs={NOW.getTime() + 20_000}
+        nowMs={NOW.getTime()}
+      />,
+    );
+    const canvas = screen.getByRole("img", { name: "학생 출결용 QR 코드" });
+
+    view.unmount();
+    await act(async () => renders[0].resolve());
+
+    expect(canvas).not.toHaveAttribute("data-pixel-marker");
   });
 });
