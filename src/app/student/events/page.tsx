@@ -17,7 +17,6 @@ export default function StudentEventsPage({ searchParams }: StudentEventsPagePro
     <main className="events-shell">
       <header className="events-page-header">
         <div>
-          <p className="eyebrow">Student events</p>
           <h1>주간 일정</h1>
           <p>서울 시간을 기준으로 이번 주 교회 일정을 확인하세요.</p>
         </div>

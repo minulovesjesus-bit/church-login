@@ -110,7 +110,8 @@ it("keeps excluded students visible and distinguishes manual and voided original
   expect(await screen.findByRole("heading", { name: "전체 출결 관리" })).toBeInTheDocument();
   const mobileTimeline = screen.getByRole("list", { name: "출결 기록 목록" });
   expect(within(mobileTimeline).getAllByRole("listitem")).toHaveLength(2);
-  expect(within(mobileTimeline).getAllByRole("button", { name: "상세 및 보정" })).toHaveLength(2);
+  expect(within(mobileTimeline).getByRole("button", { name: "통계 제외 학생 상세 및 보정" })).toBeInTheDocument();
+  expect(within(mobileTimeline).getByRole("button", { name: "수동 기록 학생 상세 및 보정" })).toBeInTheDocument();
   expect(screen.getAllByText("통계 제외 학생").length).toBeGreaterThan(0);
   expect(screen.getAllByText("통계 제외").length).toBeGreaterThan(0);
   expect(screen.getAllByText("수동 기록").length).toBeGreaterThan(0);
@@ -206,7 +207,7 @@ it("requires a correction reason, submits a void, and preserves the original row
 
   const row = (await screen.findAllByText("excluded@example.test")).map((element) => element.closest("tr")).find(Boolean);
   expect(row).not.toBeNull();
-  fireEvent.click(within(row!).getByRole("button", { name: "상세 및 보정" }));
+  fireEvent.click(within(row!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" }));
 
   fireEvent.click(screen.getByRole("button", { name: "원본 기록 취소" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("보정 사유를 입력해 주세요.");
@@ -233,7 +234,7 @@ it("appends a timezone-aware manual record for the selected student", async () =
   render(<TeacherAttendancePage />);
 
   const row = (await screen.findAllByText("excluded@example.test")).map((element) => element.closest("tr")).find(Boolean);
-  fireEvent.click(within(row!).getByRole("button", { name: "상세 및 보정" }));
+  fireEvent.click(within(row!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" }));
   fireEvent.change(screen.getByLabelText("수동 출결 방향"), { target: { value: "OUT" } });
   fireEvent.change(screen.getByLabelText("수동 출결 시각"), { target: { value: "2026-08-21T18:30" } });
   fireEvent.change(screen.getByLabelText("보정 사유"), { target: { value: "퇴실 누락" } });
@@ -261,7 +262,7 @@ it("keeps the original visible when a correction request fails safely", async ()
   const row = (await screen.findAllByText("excluded@example.test"))
     .map((element) => element.closest("tr"))
     .find(Boolean);
-  fireEvent.click(within(row!).getByRole("button", { name: "상세 및 보정" }));
+  fireEvent.click(within(row!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" }));
   fireEvent.change(screen.getByLabelText("보정 사유"), { target: { value: "확인 필요" } });
   fireEvent.click(screen.getByRole("button", { name: "원본 기록 취소" }));
 

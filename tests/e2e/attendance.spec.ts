@@ -75,7 +75,7 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
     await teacher.setViewportSize({ width: 1280, height: 720 });
     const studentRow = teacher.locator("tr").filter({ hasText: "완료 학생" }).first();
     await expect(studentRow).toBeVisible();
-    await studentRow.getByRole("button", { name: "상세 및 보정" }).click();
+    await studentRow.getByRole("button", { name: "완료 학생 상세 및 보정" }).click();
     await teacher.getByLabel("보정 사유").fill("E2E 중복 확인");
     const correctionResponse = teacher.waitForResponse((response) => (
       response.url().includes("/api/teacher/attendance/corrections")

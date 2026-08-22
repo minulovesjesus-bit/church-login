@@ -136,6 +136,23 @@ it.each([
   expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?week=9999-12-27");
 });
 
+it("keeps exact week destinations, Lucide controls, and occurrence time semantics", async () => {
+  client.api.get.mockResolvedValue([event()]);
+
+  await renderPage();
+  await screen.findByText("새벽 기도회");
+
+  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", "/student/events?week=2026-08-10");
+  expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", expect.stringMatching(/^\/student\/events\?week=\d{4}-\d{2}-\d{2}$/));
+  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", "/student/events?week=2026-08-24");
+  expect(screen.getByRole("link", { name: "이전 주" }).querySelector('[data-icon="inline-start"]')).not.toBeNull();
+  expect(screen.getByRole("link", { name: "다음 주" }).querySelector('[data-icon="inline-end"]')).not.toBeNull();
+
+  const occurrence = screen.getByText("새벽 기도회").closest("li");
+  expect(occurrence?.querySelector('time[datetime="2026-08-16T15:30:00Z"]')).not.toBeNull();
+  expect(occurrence?.querySelector('time[datetime="2026-08-16T16:30:00Z"]')).not.toBeNull();
+});
+
 it("shows distinct loading, retryable error, retry, and auth redirect states", async () => {
   let rejectFirst: (error: Error) => void = () => undefined;
   client.api.get
@@ -145,6 +162,7 @@ it("shows distinct loading, retryable error, retry, and auth redirect states", a
   await renderPage();
 
   expect(screen.getByRole("status")).toHaveTextContent("일정을 불러오고 있습니다.");
+  expect(document.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   await act(async () => {
     rejectFirst(new client.ApiClientError("REQUEST_FAILED", "일정을 불러오지 못했습니다."));
     await Promise.resolve();

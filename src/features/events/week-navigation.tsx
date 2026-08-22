@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { CalendarDaysIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 const SEOUL = "Asia/Seoul";
 const MIN_BACKEND_YEAR = 1;
@@ -113,9 +116,23 @@ export function WeekNavigation({ week, currentWeek = currentSeoulMonday() }: { w
 
   return (
     <nav className="event-week-navigation" aria-label="주간 일정 탐색">
-      {previousWeek ? <Link className="secondary-button" href={`/student/events?week=${previousWeek}`}>이전 주</Link> : <button className="secondary-button" type="button" disabled>이전 주</button>}
-      <Link className="secondary-button" href={`/student/events?week=${currentWeek}`}>이번 주</Link>
-      {nextWeek ? <Link className="secondary-button" href={`/student/events?week=${nextWeek}`}>다음 주</Link> : <button className="secondary-button" type="button" disabled>다음 주</button>}
+      {previousWeek ? (
+        <Button asChild variant="outline">
+          <Link href={`/student/events?week=${previousWeek}`}><ChevronLeftIcon data-icon="inline-start" />이전 주</Link>
+        </Button>
+      ) : (
+        <Button type="button" variant="outline" disabled><ChevronLeftIcon data-icon="inline-start" />이전 주</Button>
+      )}
+      <Button asChild variant="secondary">
+        <Link href={`/student/events?week=${currentWeek}`}><CalendarDaysIcon data-icon="inline-start" />이번 주</Link>
+      </Button>
+      {nextWeek ? (
+        <Button asChild variant="outline">
+          <Link href={`/student/events?week=${nextWeek}`}>다음 주<ChevronRightIcon data-icon="inline-end" /></Link>
+        </Button>
+      ) : (
+        <Button type="button" variant="outline" disabled>다음 주<ChevronRightIcon data-icon="inline-end" /></Button>
+      )}
     </nav>
   );
 }

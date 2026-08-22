@@ -1,3 +1,6 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+
 import { formatSeoulDateTime } from "./format";
 import type { AttendanceScan, TeacherAttendanceItem } from "./types";
 
@@ -7,9 +10,9 @@ function isTeacherItem(scan: AttendanceScan): scan is TeacherAttendanceItem {
 
 export function DirectionBadge({ direction }: { direction: AttendanceScan["direction"] }) {
   return (
-    <span className={`attendance-badge attendance-badge--${direction.toLowerCase()}`}>
+    <Badge data-direction={direction} variant={direction === "IN" ? "default" : "secondary"}>
       {direction === "IN" ? "입실" : "퇴실"}
-    </span>
+    </Badge>
   );
 }
 
@@ -17,15 +20,15 @@ export function RecordBadges({ scan }: { scan: AttendanceScan }) {
   return (
     <span className="attendance-badge-row">
       {scan.source === "MANUAL" ? (
-        <span className="attendance-badge attendance-badge--manual">수동 기록</span>
+        <Badge variant="secondary">수동 기록</Badge>
       ) : (
-        <span className="attendance-badge attendance-badge--qr">QR 기록</span>
+        <Badge variant="outline">QR 기록</Badge>
       )}
       {scan.voided_at ? (
-        <span className="attendance-badge attendance-badge--void">취소된 원본</span>
+        <Badge variant="destructive">취소된 원본</Badge>
       ) : null}
       {isTeacherItem(scan) && scan.excluded_from_statistics ? (
-        <span className="attendance-badge attendance-badge--excluded">통계 제외</span>
+        <Badge variant="outline">통계 제외</Badge>
       ) : null}
     </span>
   );
@@ -55,9 +58,14 @@ export function HistoryList({
           <RecordBadges scan={scan} />
           {scan.void_reason ? <p className="attendance-void-reason">사유: {scan.void_reason}</p> : null}
           {onSelect && isTeacherItem(scan) ? (
-            <button type="button" className="secondary-button" onClick={() => onSelect(scan)}>
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={`${scan.student_name} 상세 및 보정`}
+              onClick={() => onSelect(scan)}
+            >
               상세 및 보정
-            </button>
+            </Button>
           ) : null}
         </li>
       ))}

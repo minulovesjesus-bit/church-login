@@ -98,6 +98,27 @@ it("renders personal totals, the open stay, and recent records in Seoul time", a
   expect(client.api.get.mock.calls.flat().join(" ")).not.toContain("student_id");
 });
 
+it("keeps tokenized summary and both responsive record representations in the DOM", async () => {
+  client.api.get.mockImplementation(resolveStudentApi);
+
+  render(<StudentAttendancePage />);
+
+  await screen.findByRole("heading", { name: "내 출결 기록" });
+
+  const summaryRail = screen.getByRole("group", { name: "출결 요약" });
+  expect(summaryRail.closest('[data-slot="card"]')).not.toBeNull();
+
+  const mobileList = screen.getByRole("list", { name: "출결 기록 목록" });
+  const desktopRegion = document.querySelector(".attendance-desktop-only");
+  expect(mobileList).toBeInTheDocument();
+  expect(desktopRegion).not.toBeNull();
+  expect(desktopRegion?.querySelector('[data-slot="table"]')).not.toBeNull();
+
+  const badgeLabels = Array.from(document.querySelectorAll('[data-slot="badge"]'))
+    .map((badge) => badge.textContent);
+  expect(badgeLabels).toEqual(expect.arrayContaining(["입실", "퇴실", "QR 기록", "수동 기록", "취소된 원본"]));
+});
+
 it("renders an accessible empty state", async () => {
   client.api.get.mockImplementation((path: string) => {
     if (path === "/api/statistics/me") {
@@ -151,5 +172,5 @@ it("uses bounded pagination for older personal records", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "다음 페이지" }));
 
   await vi.waitFor(() => expect(client.api.get).toHaveBeenCalledWith("/api/attendance/me?page=2&page_size=20"));
-  await vi.waitFor(() => expect(screen.getByText((_, element) => element?.textContent === "2 / 2 페이지")).toBeInTheDocument());
+  await vi.waitFor(() => expect(screen.getByText("2 / 2 페이지", { selector: "span" })).toBeInTheDocument());
 });

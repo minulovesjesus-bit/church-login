@@ -3,7 +3,30 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+} from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
 import { AttendanceTable } from "@/features/attendance/attendance-table";
 import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
 import { HistoryList } from "@/features/attendance/history-list";
@@ -60,18 +83,28 @@ export default function StudentAttendancePage() {
   if (error?.key === requestKey) {
     return (
       <main className="attendance-shell">
-        <section className="attendance-error-card">
-          <p role="alert">{error.message}</p>
-          <button type="button" className="primary-button" onClick={() => setAttempt((value) => value + 1)}>
+        <Alert className="attendance-error-card" variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+          <Button type="button" onClick={() => setAttempt((value) => value + 1)}>
             다시 시도
-          </button>
-        </section>
+          </Button>
+        </Alert>
       </main>
     );
   }
 
   if (!history || !summary) {
-    return <main className="attendance-shell"><p role="status">출결 기록을 불러오고 있어요.</p></main>;
+    return (
+      <main className="attendance-shell">
+        <section className="attendance-loading-state" role="status">
+          <p>출결 기록을 불러오고 있어요.</p>
+          <div aria-hidden="true" className="attendance-loading-state__rail">
+            {Array.from({ length: 5 }, (_, index) => <Skeleton className="h-20" key={index} />)}
+          </div>
+          <Skeleton aria-hidden="true" className="h-64 w-full" />
+        </section>
+      </main>
+    );
   }
 
   const totalPages = Math.max(1, Math.ceil(history.total / history.page_size));
@@ -87,7 +120,7 @@ export default function StudentAttendancePage() {
           <h1>내 출결 기록</h1>
           <p>모든 시각은 한국 시간 기준으로 표시됩니다.</p>
         </div>
-        <Link href="/student/scan" className="primary-button">QR 스캔하기</Link>
+        <Button asChild size="lg"><Link href="/student/scan">QR 스캔하기</Link></Button>
       </header>
 
       <SummaryCards items={[
@@ -108,25 +141,42 @@ export default function StudentAttendancePage() {
         },
       ]} />
 
-      <section className="attendance-records-card" aria-label="최근 출결">
-        <div className="attendance-section-heading">
-          <div><p className="eyebrow">최근 기록</p><h2>입실·퇴실 내역</h2></div>
-          <span>총 {history.total}건</span>
-        </div>
+      <Card className="attendance-records-card" aria-label="최근 출결" role="region">
+        <CardHeader className="attendance-section-heading">
+          <div><p className="eyebrow">최근 기록</p><CardTitle><h2>입실·퇴실 내역</h2></CardTitle></div>
+          <CardDescription>총 {history.total}건</CardDescription>
+        </CardHeader>
+        <CardContent className="attendance-records-content">
         {history.items.length === 0 ? (
-          <div className="attendance-empty-state"><p>아직 출결 기록이 없어요.</p><Link href="/student/scan">첫 QR 스캔하기</Link></div>
+          <Empty className="attendance-empty-state">
+            <EmptyHeader><EmptyTitle>아직 출결 기록이 없어요.</EmptyTitle></EmptyHeader>
+            <EmptyContent><Button asChild variant="outline"><Link href="/student/scan">첫 QR 스캔하기</Link></Button></EmptyContent>
+          </Empty>
         ) : (
           <>
             <div className="attendance-mobile-only"><HistoryList scans={history.items} /></div>
             <div className="attendance-desktop-only"><AttendanceTable scans={history.items} /></div>
           </>
         )}
-        <nav className="attendance-pagination" aria-label="개인 출결 페이지">
-          <button type="button" className="secondary-button" disabled={history.page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>이전 페이지</button>
-          <span>{history.page} / {totalPages} 페이지</span>
-          <button type="button" className="secondary-button" disabled={history.page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>다음 페이지</button>
-        </nav>
-      </section>
+        </CardContent>
+        <CardFooter>
+          <Pagination className="attendance-pagination" aria-label="개인 출결 페이지">
+            <PaginationContent>
+              <PaginationItem>
+                <Button type="button" variant="outline" disabled={history.page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+                  <ChevronLeftIcon data-icon="inline-start" />이전 페이지
+                </Button>
+              </PaginationItem>
+              <PaginationItem><span>{history.page} / {totalPages} 페이지</span></PaginationItem>
+              <PaginationItem>
+                <Button type="button" variant="outline" disabled={history.page >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))}>
+                  다음 페이지<ChevronRightIcon data-icon="inline-end" />
+                </Button>
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </CardFooter>
+      </Card>
     </main>
   );
 }

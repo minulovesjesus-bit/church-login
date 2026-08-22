@@ -2,7 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { MapPinIcon } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ApiClientError, api } from "@/lib/api/client";
 import { exclusiveSeoulWeekEnd } from "@/features/events/week-navigation";
 
@@ -80,7 +90,7 @@ export function EventCard({ event }: { event: EventOccurrence }) {
           <time dateTime={event.local_end}>{formatSeoulTime(event.local_end)}</time>
         </p>
       </div>
-      {event.location ? <p className="event-card__location">{event.location}</p> : null}
+      {event.location ? <p className="event-card__location"><MapPinIcon aria-hidden="true" />{event.location}</p> : null}
       {event.description ? <p className="event-card__description">{event.description}</p> : null}
     </article>
   );
@@ -141,18 +151,34 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
     return [...groups.entries()];
   }, [events]);
 
-  if (isLoading) return <p className="event-loading" role="status">일정을 불러오고 있습니다.</p>;
+  if (isLoading) {
+    return (
+      <div className="event-loading" role="status">
+        <p>일정을 불러오고 있습니다.</p>
+        <div aria-hidden="true" className="event-loading__rows">
+          {Array.from({ length: 3 }, (_, index) => <Skeleton className="h-20 w-full" key={index} />)}
+        </div>
+      </div>
+    );
+  }
   if (state.status === "auth") return <p className="event-loading" role="status">로그인 페이지로 이동하고 있습니다.</p>;
   if (state.status === "error") {
-    return <div className="event-error" role="alert"><p>{state.message}</p><button className="secondary-button" type="button" onClick={() => { setState({ week, status: "loading", events: [] }); setAttempt((value) => value + 1); }}>다시 시도</button></div>;
+    return (
+      <Alert className="event-error" variant="destructive">
+        <AlertDescription>{state.message}</AlertDescription>
+        <Button type="button" variant="outline" onClick={() => { setState({ week, status: "loading", events: [] }); setAttempt((value) => value + 1); }}>다시 시도</Button>
+      </Alert>
+    );
   }
-  if (!events.length) return <p className="event-empty">이번 주 등록된 일정이 없습니다.</p>;
+  if (!events.length) {
+    return <Empty className="event-empty"><EmptyHeader><EmptyTitle>이번 주 등록된 일정이 없습니다.</EmptyTitle></EmptyHeader></Empty>;
+  }
 
   return (
     <ul className="event-list" aria-label="주간 일정 목록">
       {grouped.flatMap(([date, groupedEvents]) => [
         <li className="event-list__date" key={`${date}-heading`} role="presentation"><h2>{formatSeoulDateLabel(groupedEvents[0].local_start)}</h2></li>,
-        ...groupedEvents.map((event) => <li className="event-list__item" key={event.occurrence_id}><EventCard event={event} /></li>),
+        ...groupedEvents.map((event) => <li className="event-list__item" key={event.occurrence_id}><EventCard event={event} /><Separator /></li>),
       ])}
     </ul>
   );
