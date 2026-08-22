@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const client = vi.hoisted(() => {
@@ -124,6 +124,17 @@ it("clears and disables the repeat end when recurrence is turned off", () => {
   fireEvent.click(screen.getByLabelText("매주 반복"));
   expect(repeatUntil).toBeDisabled();
   expect(repeatUntil).toHaveValue("");
+});
+
+it("groups recurrence controls under a named fieldset with a 44px weekly target", () => {
+  render(<EventForm />);
+
+  const recurrence = screen.getByRole("group", { name: "반복 설정" });
+  const weekly = within(recurrence).getByLabelText("매주 반복");
+  const weeklyTarget = weekly.closest("label");
+
+  expect(within(recurrence).getByLabelText("반복 종료일")).toBeDisabled();
+  expect(weeklyTarget).toHaveClass("min-h-11");
 });
 
 it("converts Seoul local values and edit instants independently of the machine timezone", () => {

@@ -50,6 +50,7 @@ export function TeacherEventsManager({ initialPage = 1 }: { initialPage?: number
   const authorizationGenerationRef = useRef(0);
   const mutationSequenceRef = useRef(0);
   const activeMutationRef = useRef<number | null>(null);
+  const eventListHeadingRef = useRef<HTMLHeadingElement>(null);
   const requestKey = `${page}:${attempt}`;
 
   useEffect(() => {
@@ -223,7 +224,16 @@ export function TeacherEventsManager({ initialPage = 1 }: { initialPage?: number
 
         <Card className="teacher-event-list-card" aria-labelledby="event-list-title">
           <CardHeader className="teacher-event-section-heading">
-            <CardTitle><h2 id="event-list-title">등록된 일정</h2></CardTitle>
+            <CardTitle>
+              <h2
+                ref={eventListHeadingRef}
+                id="event-list-title"
+                tabIndex={-1}
+                className="rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring"
+              >
+                등록된 일정
+              </h2>
+            </CardTitle>
             {response ? <span>총 {response.total}건</span> : null}
           </CardHeader>
           <CardContent className="teacher-event-list-content">
@@ -234,7 +244,16 @@ export function TeacherEventsManager({ initialPage = 1 }: { initialPage?: number
               <Button type="button" onClick={refresh}>다시 시도</Button>
             </Alert>
           ) : null}
-          {response ? <EventList events={response.items} deletingId={deletingId} disabled={mutationPending} onEdit={setSelected} onDelete={(event) => void deleteEvent(event)} /> : null}
+          {response ? (
+            <EventList
+              events={response.items}
+              deletingId={deletingId}
+              disabled={mutationPending}
+              focusAfterDeleteRef={eventListHeadingRef}
+              onEdit={setSelected}
+              onDelete={(event) => void deleteEvent(event)}
+            />
+          ) : null}
           </CardContent>
           {response ? (
             <CardFooter>

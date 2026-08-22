@@ -1,3 +1,7 @@
+"use client";
+
+import { useRef, type RefObject } from "react";
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,7 +39,16 @@ type EventListProps = {
   events: EventSeries[];
   deletingId?: string;
   disabled?: boolean;
+  focusAfterDeleteRef: RefObject<HTMLElement | null>;
   onEdit: (event: EventSeries) => void;
+  onDelete: (event: EventSeries) => void;
+};
+
+type EventDeleteDialogProps = {
+  event: EventSeries;
+  deleting: boolean;
+  disabled: boolean;
+  focusAfterDeleteRef: RefObject<HTMLElement | null>;
   onDelete: (event: EventSeries) => void;
 };
 
@@ -51,7 +64,66 @@ function deletionDescription(event: EventSeries): string {
     : `${event.title} 일정을 삭제하시겠습니까?`;
 }
 
-export default function EventList({ events, deletingId, disabled = false, onEdit, onDelete }: EventListProps) {
+function EventDeleteDialog({
+  event,
+  deleting,
+  disabled,
+  focusAfterDeleteRef,
+  onDelete,
+}: EventDeleteDialogProps) {
+  const confirmedRef = useRef(false);
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button
+          variant="destructive"
+          size="sm"
+          type="button"
+          disabled={disabled || deleting}
+          aria-label={`${event.title} 삭제`}
+        >
+          {deleting ? "삭제 중…" : "삭제"}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        onCloseAutoFocus={(closeEvent) => {
+          if (!confirmedRef.current) return;
+          confirmedRef.current = false;
+          closeEvent.preventDefault();
+          focusAfterDeleteRef.current?.focus();
+        }}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>{deletionTitle(event)}</AlertDialogTitle>
+          <AlertDialogDescription>{deletionDescription(event)}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            aria-label={`${event.title} 삭제 확인`}
+            onClick={() => {
+              confirmedRef.current = true;
+              onDelete(event);
+            }}
+          >
+            삭제
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+export default function EventList({
+  events,
+  deletingId,
+  disabled = false,
+  focusAfterDeleteRef,
+  onEdit,
+  onDelete,
+}: EventListProps) {
   if (!events.length) {
     return (
       <Empty className="teacher-event-empty">
@@ -72,35 +144,13 @@ export default function EventList({ events, deletingId, disabled = false, onEdit
               </div>
               <div className="teacher-event-card__actions">
                 <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => onEdit(event)} aria-label={`${event.title} 수정`}>수정</Button>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      type="button"
-                      disabled={disabled || deletingId === event.id}
-                      aria-label={`${event.title} 삭제`}
-                    >
-                      {deletingId === event.id ? "삭제 중…" : "삭제"}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{deletionTitle(event)}</AlertDialogTitle>
-                      <AlertDialogDescription>{deletionDescription(event)}</AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>취소</AlertDialogCancel>
-                      <AlertDialogAction
-                        variant="destructive"
-                        aria-label={`${event.title} 삭제 확인`}
-                        onClick={() => onDelete(event)}
-                      >
-                        삭제
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <EventDeleteDialog
+                  event={event}
+                  deleting={deletingId === event.id}
+                  disabled={disabled}
+                  focusAfterDeleteRef={focusAfterDeleteRef}
+                  onDelete={onDelete}
+                />
               </div>
             </CardHeader>
             <CardContent>

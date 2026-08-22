@@ -184,6 +184,27 @@ it("opens a named AlertDialog for recurring deletion and cancels without a reque
   await vi.waitFor(() => expect(opener).toHaveFocus());
 });
 
+it("moves focus to the persistent event-list heading while confirmed deletion is pending", async () => {
+  let resolveDelete: () => void = () => undefined;
+  client.api.get.mockResolvedValue(page([series()]));
+  client.api.delete.mockImplementation(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
+  render(<TeacherEventsPage />);
+  await screen.findByText("주일예배");
+
+  fireEvent.click(screen.getByRole("button", { name: "주일예배 삭제" }));
+  fireEvent.click(await screen.findByRole("button", { name: "주일예배 삭제 확인" }));
+
+  const heading = screen.getByRole("heading", { name: "등록된 일정" });
+  await vi.waitFor(() => expect(client.api.delete).toHaveBeenCalledTimes(1));
+  await vi.waitFor(() => expect(heading).toHaveFocus());
+  expect(screen.getByRole("button", { name: "주일예배 삭제" })).toBeDisabled();
+
+  await act(async () => {
+    resolveDelete();
+    await Promise.resolve();
+  });
+});
+
 it("handles DELETE 204, announces success, and moves back after deleting a sole later-page item", async () => {
   client.api.get
     .mockResolvedValueOnce(page([series({ id: "event-101", title: "마지막 반복 일정" })], { total: 101, page: 2 }))
@@ -199,6 +220,8 @@ it("handles DELETE 204, announces success, and moves back after deleting a sole 
   expect(await screen.findByText("이전 페이지 일정")).toBeInTheDocument();
   expect(client.api.get).toHaveBeenLastCalledWith("/api/teacher/events?page=1&page_size=100");
   expect(screen.getByRole("status")).toHaveTextContent("일정 전체를 삭제했습니다.");
+  expect(screen.getByRole("heading", { name: "등록된 일정" })).toHaveFocus();
+  expect(screen.queryByRole("button", { name: "마지막 반복 일정 삭제" })).not.toBeInTheDocument();
 });
 
 it("preserves an event and restores deletion controls when deletion fails", async () => {
