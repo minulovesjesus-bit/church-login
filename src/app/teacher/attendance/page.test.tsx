@@ -276,6 +276,58 @@ it("requires a correction reason, submits a void, and preserves the original row
   expect(screen.getAllByText("통계 제외 학생").length).toBeGreaterThan(0);
 });
 
+it("immediately reconciles a successful void in both views and prevents repeat voids", async () => {
+  let resolveCorrection: (value: unknown) => void = () => undefined;
+  client.api.get.mockImplementation(resolveTeacherApi);
+  client.api.post.mockImplementation(() => new Promise<unknown>((resolve) => {
+    resolveCorrection = resolve;
+  }));
+  render(<TeacherAttendancePage />);
+
+  const table = await screen.findByRole("table", { name: "출결 상세 기록" });
+  const list = screen.getByRole("list", { name: "출결 기록 목록" });
+  const mobileRecord = within(list).getByText("excluded@example.test").closest("li");
+  expect(mobileRecord).not.toBeNull();
+  fireEvent.click(within(mobileRecord!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" }));
+  fireEvent.change(screen.getByLabelText("보정 사유"), { target: { value: "중복 스캔" } });
+  fireEvent.click(screen.getByRole("button", { name: "원본 기록 취소" }));
+
+  await waitFor(() => expect(client.api.post).toHaveBeenCalledTimes(1));
+  client.api.get.mockImplementation(() => new Promise<never>(() => undefined));
+  resolveCorrection({
+    ...history.items[0],
+    voided_at: "2026-08-21T01:00:00Z",
+    void_reason: "중복 스캔",
+  });
+
+  expect(await screen.findByRole("status")).toHaveTextContent("보정이 저장되었습니다.");
+  const desktopRecord = within(table).getByText("excluded@example.test").closest("tr");
+  expect(desktopRecord).not.toBeNull();
+  expect(within(desktopRecord!).getByText("취소된 원본")).toBeInTheDocument();
+  expect(within(desktopRecord!).getByText("사유: 중복 스캔")).toBeInTheDocument();
+  expect(within(mobileRecord!).getByText("취소된 원본")).toBeInTheDocument();
+  expect(within(mobileRecord!).getByText("사유: 중복 스캔")).toBeInTheDocument();
+  const desktopRows = table.querySelectorAll("tbody tr");
+  expect(desktopRows[0]).toHaveTextContent("excluded@example.test");
+  expect(desktopRows[1]).toHaveTextContent("manual@example.test");
+  expect(screen.getByText("1 / 2 페이지 · 총 31건")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const desktopOpener = within(desktopRecord!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" });
+  fireEvent.click(desktopOpener);
+  expect(within(screen.getByRole("dialog")).getByRole("button", { name: "원본 기록 취소" })).toBeDisabled();
+
+  fireEvent.click(screen.getByRole("button", { name: "닫기" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  const mobileOpener = within(mobileRecord!).getByRole("button", { name: "통계 제외 학생 상세 및 보정" });
+  fireEvent.click(mobileOpener);
+  const repeatVoid = within(screen.getByRole("dialog")).getByRole("button", { name: "원본 기록 취소" });
+  expect(repeatVoid).toBeDisabled();
+  fireEvent.click(repeatVoid);
+  expect(client.api.post).toHaveBeenCalledTimes(1);
+});
+
 it("appends a timezone-aware manual record for the selected student", async () => {
   client.api.get.mockImplementation(resolveTeacherApi);
   client.api.post.mockResolvedValue({ ...history.items[0], id: "00000000-0000-4000-8000-000000000799", source: "MANUAL" });

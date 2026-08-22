@@ -251,6 +251,12 @@ function TeacherAttendanceContent() {
         body,
       );
       if (mode === "VOID") {
+        setHistory((current) => current ? {
+          ...current,
+          items: current.items.map((item) => (
+            item.id === corrected.id ? { ...item, ...corrected } : item
+          )),
+        } : current);
         setSelected((current) => (
           current?.id === corrected.id ? { ...current, ...corrected } : current
         ));
