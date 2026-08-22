@@ -162,18 +162,26 @@ it("prefills an edit, warns about the whole series, and preserves the row on upd
   expect(client.api.get).toHaveBeenCalledTimes(1);
 });
 
-it("cancels recurring deletion without a request and confirms whole-series wording", async () => {
+it("opens a named AlertDialog for recurring deletion and cancels without a request", async () => {
   client.api.get.mockResolvedValue(page([series()]));
-  const confirm = vi.fn().mockReturnValue(false);
+  const confirm = vi.fn();
   vi.stubGlobal("confirm", confirm);
   render(<TeacherEventsPage />);
   await screen.findByText("주일예배");
 
-  fireEvent.click(screen.getByRole("button", { name: "주일예배 삭제" }));
+  const opener = screen.getByRole("button", { name: "주일예배 삭제" });
+  opener.focus();
+  fireEvent.click(opener);
 
-  expect(confirm).toHaveBeenCalledWith("주일예배 반복 일정 전체를 삭제하시겠습니까?");
+  const dialog = await screen.findByRole("alertdialog", { name: "주일예배 반복 일정 삭제" });
+  expect(within(dialog).getByText("주일예배 반복 일정 전체를 삭제하시겠습니까?")).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "주일예배 삭제 확인" })).toHaveTextContent("삭제");
+  fireEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+
+  expect(confirm).not.toHaveBeenCalled();
   expect(client.api.delete).not.toHaveBeenCalled();
   expect(screen.getByText("주일예배")).toBeInTheDocument();
+  await vi.waitFor(() => expect(opener).toHaveFocus());
 });
 
 it("handles DELETE 204, announces success, and moves back after deleting a sole later-page item", async () => {
@@ -181,11 +189,11 @@ it("handles DELETE 204, announces success, and moves back after deleting a sole 
     .mockResolvedValueOnce(page([series({ id: "event-101", title: "마지막 반복 일정" })], { total: 101, page: 2 }))
     .mockResolvedValueOnce(page([series({ id: "event-100", title: "이전 페이지 일정" })], { total: 100, page: 1 }));
   client.api.delete.mockResolvedValue(undefined);
-  vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
   render(<TeacherEventsManager initialPage={2} />);
   await screen.findByText("마지막 반복 일정");
 
   fireEvent.click(screen.getByRole("button", { name: "마지막 반복 일정 삭제" }));
+  fireEvent.click(await screen.findByRole("button", { name: "마지막 반복 일정 삭제 확인" }));
 
   await vi.waitFor(() => expect(client.api.delete).toHaveBeenCalledWith("/api/teacher/events/event-101"));
   expect(await screen.findByText("이전 페이지 일정")).toBeInTheDocument();
@@ -198,11 +206,11 @@ it("preserves an event and restores deletion controls when deletion fails", asyn
   client.api.delete.mockRejectedValue(
     new client.ApiClientError("DELETE_FAILED", "일정을 삭제하지 못했습니다."),
   );
-  vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
   render(<TeacherEventsPage />);
   await screen.findByText("주일예배");
 
   fireEvent.click(screen.getByRole("button", { name: "주일예배 삭제" }));
+  fireEvent.click(await screen.findByRole("button", { name: "주일예배 삭제 확인" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent("일정을 삭제하지 못했습니다.");
   expect(screen.getByText("주일예배")).toBeInTheDocument();

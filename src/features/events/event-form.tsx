@@ -5,6 +5,19 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { api, ApiClientError } from "@/lib/api/client";
 import {
   isoInstantToSeoulLocal,
@@ -125,8 +138,8 @@ function valuesFromEvent(event?: EventSeries): EventFormValues {
   };
 }
 
-function fieldError(message?: string) {
-  return message ? <span className="event-form__error" role="alert">{message}</span> : null;
+function fieldError(id: string, message?: string) {
+  return <FieldError id={id}>{message}</FieldError>;
 }
 
 type EventFormProps = {
@@ -221,74 +234,127 @@ export default function EventForm({
   const controlsDisabled = isSubmitting || mutationPending;
 
   return (
-    <section className="teacher-event-form-card" aria-labelledby="event-form-title">
-      <div className="teacher-event-section-heading">
-        <div>
-          <p className="eyebrow">Event series</p>
-          <h2 id="event-form-title">{event ? "일정 수정" : "새 일정 등록"}</h2>
-        </div>
-        {event && onCancel ? <button className="quiet-button" type="button" disabled={controlsDisabled} onClick={onCancel}>수정 취소</button> : null}
-      </div>
-      {event?.repeat_weekly ? <p className="event-series-warning">반복 일정 전체가 변경됩니다.</p> : null}
-      <form className="teacher-event-form" noValidate onSubmit={handleSubmit(save)}>
-        <label>
-          제목
-          <input type="text" maxLength={121} disabled={controlsDisabled} aria-invalid={Boolean(errors.title)} {...register("title")} />
-          {fieldError(errors.title?.message)}
-        </label>
-        <label className="teacher-event-form__wide">
-          설명 <span>(선택)</span>
-          <textarea aria-label="설명" rows={4} maxLength={2001} disabled={controlsDisabled} aria-invalid={Boolean(errors.description)} {...register("description")} />
-          {fieldError(errors.description?.message)}
-        </label>
-        <label>
-          장소 <span>(선택)</span>
-          <input aria-label="장소" type="text" maxLength={201} disabled={controlsDisabled} aria-invalid={Boolean(errors.location)} {...register("location")} />
-          {fieldError(errors.location?.message)}
-        </label>
-        <label>
-          시작
-          <input type="datetime-local" disabled={controlsDisabled} aria-invalid={Boolean(errors.startsAtLocal)} {...register("startsAtLocal")} />
-          {fieldError(errors.startsAtLocal?.message)}
-        </label>
-        <label>
-          종료
-          <input type="datetime-local" disabled={controlsDisabled} aria-invalid={Boolean(errors.endsAtLocal)} {...register("endsAtLocal")} />
-          {fieldError(errors.endsAtLocal?.message)}
-        </label>
-        <label className="teacher-event-form__checkbox">
-          <input
-            type="checkbox"
-            disabled={controlsDisabled}
-            {...repeatRegistration}
-            onChange={(changeEvent) => {
-              void repeatRegistration.onChange(changeEvent);
-              if (!changeEvent.target.checked) {
-                setValue("repeatUntil", "", { shouldDirty: true, shouldValidate: true });
-              }
-            }}
-          />
-          매주 반복
-        </label>
-        <label>
-          반복 종료일 <span>(선택)</span>
-          <input
-            aria-label="반복 종료일"
-            type="date"
-            disabled={controlsDisabled || !repeatWeekly}
-            aria-invalid={Boolean(errors.repeatUntil)}
-            {...register("repeatUntil")}
-          />
-          {fieldError(errors.repeatUntil?.message)}
-        </label>
-        {requestError ? <p className="inline-alert teacher-event-form__wide" role="alert">{requestError}</p> : null}
-        <div className="button-row teacher-event-form__actions">
-          <button className="primary-button" type="submit" disabled={controlsDisabled}>
-            {isSubmitting ? "저장 중…" : "일정 저장"}
-          </button>
-          {event && onCancel ? <button className="secondary-button" type="button" disabled={controlsDisabled} onClick={onCancel}>취소</button> : null}
-        </div>
-      </form>
-    </section>
+    <Card className="teacher-event-form-card" aria-labelledby="event-form-title">
+      <CardHeader className="teacher-event-section-heading">
+        <CardTitle><h2 id="event-form-title">{event ? "일정 수정" : "새 일정 등록"}</h2></CardTitle>
+        {event && onCancel ? <Button variant="ghost" type="button" disabled={controlsDisabled} onClick={onCancel}>수정 취소</Button> : null}
+      </CardHeader>
+      <CardContent>
+        {event?.repeat_weekly ? (
+          <Alert className="event-series-warning" role="note"><AlertDescription>반복 일정 전체가 변경됩니다.</AlertDescription></Alert>
+        ) : null}
+        <form noValidate onSubmit={handleSubmit(save)}>
+          <FieldGroup className="teacher-event-form">
+            <Field data-invalid={Boolean(errors.title)}>
+              <FieldLabel htmlFor="event-title">제목</FieldLabel>
+              <Input
+                id="event-title"
+                type="text"
+                maxLength={121}
+                disabled={controlsDisabled}
+                aria-invalid={Boolean(errors.title)}
+                aria-describedby={errors.title ? "event-title-error" : undefined}
+                {...register("title")}
+              />
+              {fieldError("event-title-error", errors.title?.message)}
+            </Field>
+            <Field className="teacher-event-form__wide" data-invalid={Boolean(errors.description)}>
+              <FieldLabel htmlFor="event-description">설명 <span>(선택)</span></FieldLabel>
+              <Textarea
+                id="event-description"
+                aria-label="설명"
+                rows={4}
+                maxLength={2001}
+                disabled={controlsDisabled}
+                aria-invalid={Boolean(errors.description)}
+                aria-describedby={errors.description ? "event-description-error" : undefined}
+                {...register("description")}
+              />
+              {fieldError("event-description-error", errors.description?.message)}
+            </Field>
+            <Field data-invalid={Boolean(errors.location)}>
+              <FieldLabel htmlFor="event-location">장소 <span>(선택)</span></FieldLabel>
+              <Input
+                id="event-location"
+                aria-label="장소"
+                type="text"
+                maxLength={201}
+                disabled={controlsDisabled}
+                aria-invalid={Boolean(errors.location)}
+                aria-describedby={errors.location ? "event-location-error" : undefined}
+                {...register("location")}
+              />
+              {fieldError("event-location-error", errors.location?.message)}
+            </Field>
+            <Field data-invalid={Boolean(errors.startsAtLocal)}>
+              <FieldLabel htmlFor="event-starts-at">시작</FieldLabel>
+              <Input
+                id="event-starts-at"
+                type="datetime-local"
+                disabled={controlsDisabled}
+                aria-invalid={Boolean(errors.startsAtLocal)}
+                aria-describedby={errors.startsAtLocal ? "event-starts-at-error" : undefined}
+                {...register("startsAtLocal")}
+              />
+              {fieldError("event-starts-at-error", errors.startsAtLocal?.message)}
+            </Field>
+            <Field data-invalid={Boolean(errors.endsAtLocal)}>
+              <FieldLabel htmlFor="event-ends-at">종료</FieldLabel>
+              <Input
+                id="event-ends-at"
+                type="datetime-local"
+                disabled={controlsDisabled}
+                aria-invalid={Boolean(errors.endsAtLocal)}
+                aria-describedby={errors.endsAtLocal ? "event-ends-at-error" : undefined}
+                {...register("endsAtLocal")}
+              />
+              {fieldError("event-ends-at-error", errors.endsAtLocal?.message)}
+            </Field>
+            <FieldSet className="teacher-event-form__wide">
+              <FieldLegend>반복 설정</FieldLegend>
+              <FieldGroup className="teacher-event-recurrence">
+                <Field orientation="horizontal">
+                  <FieldLabel className="teacher-event-form__checkbox min-h-11" htmlFor="event-repeat-weekly">
+                    <input
+                      id="event-repeat-weekly"
+                      type="checkbox"
+                      disabled={controlsDisabled}
+                      {...repeatRegistration}
+                      onChange={(changeEvent) => {
+                        void repeatRegistration.onChange(changeEvent);
+                        if (!changeEvent.target.checked) {
+                          setValue("repeatUntil", "", { shouldDirty: true, shouldValidate: true });
+                        }
+                      }}
+                    />
+                    매주 반복
+                  </FieldLabel>
+                </Field>
+                <Field data-disabled={controlsDisabled || !repeatWeekly} data-invalid={Boolean(errors.repeatUntil)}>
+                  <FieldLabel htmlFor="event-repeat-until">반복 종료일 <span>(선택)</span></FieldLabel>
+                  <Input
+                    id="event-repeat-until"
+                    aria-label="반복 종료일"
+                    type="date"
+                    disabled={controlsDisabled || !repeatWeekly}
+                    aria-invalid={Boolean(errors.repeatUntil)}
+                    aria-describedby={errors.repeatUntil ? "event-repeat-until-error" : undefined}
+                    {...register("repeatUntil")}
+                  />
+                  {fieldError("event-repeat-until-error", errors.repeatUntil?.message)}
+                </Field>
+              </FieldGroup>
+            </FieldSet>
+            {requestError ? (
+              <Alert className="teacher-event-form__wide" variant="destructive"><AlertDescription>{requestError}</AlertDescription></Alert>
+            ) : null}
+            <div className="teacher-event-form__actions">
+              <Button type="submit" disabled={controlsDisabled}>{isSubmitting ? "저장 중…" : "일정 저장"}</Button>
+              {event && onCancel ? <Button variant="outline" type="button" disabled={controlsDisabled} onClick={onCancel}>취소</Button> : null}
+            </div>
+          </FieldGroup>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

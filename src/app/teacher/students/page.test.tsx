@@ -85,6 +85,10 @@ it("calculates Seoul-date international age immediately before and on the birthd
 });
 
 it("normalizes URL state, preserves valid filters and cursor, then clears cursor on new filters", async () => {
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: vi.fn(),
+  });
   navigation.search = "query=%20%20%EA%B9%80%20%20%ED%95%99%EC%83%9D%20%20&statistics=excluded&cursor=opaque-cursor";
   client.api.get.mockResolvedValue(page([]));
   render(<TeacherStudentsPage />);
@@ -94,10 +98,11 @@ it("normalizes URL state, preserves valid filters and cursor, then clears cursor
     "/api/teacher/students?query=%EA%B9%80+%ED%95%99%EC%83%9D&statistics=excluded&cursor=opaque-cursor&page_size=50",
   );
   expect(screen.getByLabelText("학생 검색")).toHaveValue("김 학생");
-  expect(screen.getByLabelText("통계 상태")).toHaveValue("excluded");
+  expect(screen.getByLabelText("통계 상태")).toHaveTextContent("통계 제외");
 
   fireEvent.change(screen.getByLabelText("학생 검색"), { target: { value: "  이   학생  " } });
-  fireEvent.change(screen.getByLabelText("통계 상태"), { target: { value: "included" } });
+  fireEvent.click(screen.getByLabelText("통계 상태"));
+  fireEvent.click(await screen.findByRole("option", { name: "통계 포함" }));
   fireEvent.submit(screen.getByRole("form", { name: "학생 검색 및 필터" }));
   expect(navigation.push).toHaveBeenCalledWith(
     "/teacher/students?query=%EC%9D%B4+%ED%95%99%EC%83%9D&statistics=included",
@@ -230,6 +235,53 @@ it("prefills an editor, validates inline, and sends only a normalized complete P
   expect(screen.getByRole("status")).toHaveTextContent("학생 정보를 수정했습니다.");
 });
 
+it("opens a named modal Sheet and returns focus to the exact student edit opener on Escape", async () => {
+  client.api.get.mockResolvedValue(page());
+  render(<TeacherStudentsPage />);
+  await screen.findAllByText("김학생");
+  const opener = screen.getAllByRole("button", { name: "김학생 수정" })[0];
+  opener.focus();
+
+  fireEvent.click(opener);
+
+  const sheet = await screen.findByRole("dialog", { name: "김학생 학생 정보 수정" });
+  expect(sheet).toHaveAttribute("aria-modal", "true");
+  expect(within(sheet).getByLabelText("이름")).toHaveFocus();
+
+  fireEvent.keyDown(document, { key: "Escape" });
+  await vi.waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await vi.waitFor(() => expect(opener).toHaveFocus());
+});
+
+it("keeps both statistics choices at least 44px high", async () => {
+  client.api.get.mockResolvedValue(page());
+  render(<TeacherStudentsPage />);
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+
+  for (const name of ["통계 포함", "통계 제외"]) {
+    const option = screen.getByLabelText(name);
+    expect(option.closest("label")).toHaveClass("min-h-11");
+  }
+});
+
+it("associates each student field error with its uniquely identified input", async () => {
+  client.api.get.mockResolvedValue(page());
+  render(<TeacherStudentsPage />);
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+
+  const nameInput = screen.getByLabelText("이름");
+  fireEvent.change(nameInput, { target: { value: "   " } });
+  fireEvent.click(screen.getByRole("button", { name: "학생 정보 저장" }));
+
+  const error = await screen.findByText("이름을 입력해 주세요.");
+  expect(nameInput).toHaveAttribute("aria-describedby", error.id);
+  expect(error.id).not.toBe("");
+  const ids = [...document.querySelectorAll<HTMLElement>("[id]")].map((element) => element.id);
+  expect(new Set(ids).size).toBe(ids.length);
+});
+
 it("preserves editor and rows on failure and prevents duplicate saves or competing edits", async () => {
   let rejectSave: (error: Error) => void = () => undefined;
   client.api.get.mockResolvedValue(page([
@@ -245,8 +297,8 @@ it("preserves editor and rows on failure and prevents duplicate saves or competi
   fireEvent.click(saveButton);
   fireEvent.click(saveButton);
   expect(client.api.patch).toHaveBeenCalledTimes(1);
-  expect(screen.getAllByRole("button", { name: "이학생 수정" })[0]).toBeDisabled();
-  fireEvent.click(screen.getAllByRole("button", { name: "이학생 수정" })[0]);
+  expect(screen.getAllByRole("button", { name: "이학생 수정", hidden: true })[0]).toBeDisabled();
+  fireEvent.click(screen.getAllByRole("button", { name: "이학생 수정", hidden: true })[0]);
   expect(screen.getByLabelText("이름")).toHaveValue("실패 보존 이름");
 
   await act(async () => {

@@ -3,6 +3,21 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Pagination, PaginationContent, PaginationItem } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import StudentCards from "@/features/students/student-cards";
 import StudentEditor, { type StudentUpdateCommand } from "@/features/students/student-editor";
 import StudentTable, {
@@ -103,6 +118,7 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
   const authorizationGenerationRef = useRef(0);
   const listSequenceRef = useRef(0);
   const activeMutationRef = useRef(false);
+  const editorOpenerRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -203,11 +219,19 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
     router.push(`${pathname}?${urlParams({ ...urlState, cursor: response.next_cursor }).toString()}`);
   }
 
-  function chooseStudent(student: TeacherStudent) {
+  function chooseStudent(student: TeacherStudent, opener: HTMLButtonElement) {
     if (mutationPending || terminalAuthRef.current) return;
     setMutationError(undefined);
     setNotice(undefined);
+    editorOpenerRef.current = opener;
     setSelected(student);
+  }
+
+  function closeEditor() {
+    setSelected(undefined);
+    const opener = editorOpenerRef.current;
+    editorOpenerRef.current = null;
+    queueMicrotask(() => opener?.focus());
   }
 
   async function saveStudent(command: StudentUpdateCommand) {
@@ -226,7 +250,7 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
         || authorizationGeneration !== authorizationGenerationRef.current
         || !activeMutationRef.current
       ) return;
-      setSelected(undefined);
+      closeEditor();
       setNotice("학생 정보를 수정했습니다.");
       setAttempt((current) => current + 1);
     } catch (caught: unknown) {
@@ -257,15 +281,14 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
     <main className="teacher-students-shell">
       <header className="teacher-students-header">
         <div>
-          <p className="eyebrow">Teacher students</p>
           <h1>학생 관리</h1>
           <p>학생이 직접 가입한 계정의 연락처와 통계 포함 여부를 관리합니다.</p>
         </div>
-        <button type="button" className="secondary-button" disabled={mutationPending} onClick={refresh}>새로고침</button>
+        <Button type="button" variant="outline" disabled={mutationPending} onClick={refresh}>새로고침</Button>
       </header>
 
-      {notice ? <p className="notice" role="status">{notice}</p> : null}
-      {mutationError ? <p className="inline-alert" role="alert">{mutationError}</p> : null}
+      {notice ? <Alert role="status"><AlertDescription>{notice}</AlertDescription></Alert> : null}
+      {mutationError ? <Alert variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
 
       <form
         className="student-filter-card"
@@ -275,69 +298,86 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
           applyFilters();
         }}
       >
-        <label>
-          학생 검색
-          <input
-            value={activeDraft.query}
-            maxLength={80}
-            placeholder="이름, 이메일, 연락처"
-            onChange={(event) => setDraft({ ...activeDraft, query: event.target.value })}
-          />
-        </label>
-        <label>
-          통계 상태
-          <select
-            value={activeDraft.statistics}
-            onChange={(event) => setDraft({
-              ...activeDraft,
-              statistics: event.target.value as StatisticsFilter,
-            })}
-          >
-            <option value="all">전체</option>
-            <option value="included">통계 포함</option>
-            <option value="excluded">통계 제외</option>
-          </select>
-        </label>
-        <button type="submit" className="primary-button" disabled={mutationPending}>검색 적용</button>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="student-search">학생 검색</FieldLabel>
+            <Input
+              id="student-search"
+              value={activeDraft.query}
+              maxLength={80}
+              placeholder="이름, 이메일, 연락처"
+              onChange={(event) => setDraft({ ...activeDraft, query: event.target.value })}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="student-statistics-filter">통계 상태</FieldLabel>
+            <Select
+              value={activeDraft.statistics}
+              onValueChange={(statistics: StatisticsFilter) => setDraft({ ...activeDraft, statistics })}
+            >
+              <SelectTrigger id="student-statistics-filter" className="w-full" aria-label="통계 상태">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="included">통계 포함</SelectItem>
+                  <SelectItem value="excluded">통계 제외</SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Button type="submit" disabled={mutationPending}>검색 적용</Button>
+        </FieldGroup>
       </form>
 
-      <section className="student-list-card" aria-labelledby="student-list-title">
-        <div className="student-list-heading">
-          <div>
-            <p className="eyebrow">Self-registered students</p>
-            <h2 id="student-list-title">가입 학생</h2>
-          </div>
+      <Card className="student-list-card" aria-labelledby="student-list-title">
+        <CardHeader className="student-list-heading">
+          <CardTitle><h2 id="student-list-title">가입 학생</h2></CardTitle>
           <span>한 번에 최대 {PAGE_SIZE}명</span>
-        </div>
+        </CardHeader>
+        <CardContent className="student-list-content">
         {currentState.status === "loading" ? <p className="student-list-message" role="status">학생 목록을 불러오고 있습니다.</p> : null}
         {currentState.status === "error" ? (
-          <div className="student-list-message student-list-message--error" role="alert">
-            <p>{currentState.message}</p>
-            <button type="button" className="primary-button" onClick={refresh}>다시 시도</button>
-          </div>
+          <Alert className="student-list-message" variant="destructive">
+            <AlertDescription>{currentState.message}</AlertDescription>
+            <Button type="button" onClick={refresh}>다시 시도</Button>
+          </Alert>
         ) : null}
-        {response && response.items.length === 0 ? <p className="student-list-message">조건에 맞는 학생이 없습니다.</p> : null}
+        {response && response.items.length === 0 ? (
+          <Empty className="student-list-message">
+            <EmptyHeader><EmptyTitle>조건에 맞는 학생이 없습니다.</EmptyTitle></EmptyHeader>
+          </Empty>
+        ) : null}
         {response && response.items.length > 0 ? (
           <>
             <StudentTable students={response.items} disabled={mutationPending} onEdit={chooseStudent} />
             <StudentCards students={response.items} disabled={mutationPending} onEdit={chooseStudent} />
           </>
         ) : null}
+        </CardContent>
         {response?.next_cursor ? (
-          <nav className="student-pagination" aria-label="학생 목록 페이지">
-            <button type="button" className="secondary-button" disabled={mutationPending} onClick={nextPage}>다음 학생</button>
-          </nav>
+          <CardFooter>
+            <Pagination className="student-pagination" aria-label="학생 목록 페이지">
+              <PaginationContent>
+                <PaginationItem>
+                  <Button type="button" variant="outline" disabled={mutationPending} onClick={nextPage}>다음 학생</Button>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </CardFooter>
         ) : null}
-      </section>
+      </Card>
 
       {selected ? (
         <StudentEditor
           key={selected.user_id}
           student={selected}
           saving={mutationPending}
+          requestError={mutationError}
           onSave={(command) => void saveStudent(command)}
           onCancel={() => {
-            if (!mutationPending) setSelected(undefined);
+            if (!mutationPending) closeEditor();
           }}
         />
       ) : null}

@@ -1,3 +1,14 @@
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
 export type TeacherStudent = {
   user_id: string;
   email: string;
@@ -35,53 +46,54 @@ export function calculateInternationalAge(
 type StudentTableProps = {
   students: TeacherStudent[];
   disabled?: boolean;
-  onEdit: (student: TeacherStudent) => void;
+  onEdit: (student: TeacherStudent, opener: HTMLButtonElement) => void;
 };
 
 export default function StudentTable({ students, disabled = false, onEdit }: StudentTableProps) {
   return (
     <div className="student-desktop-only student-table-wrap">
-      <table className="student-table" aria-label="학생 목록">
-        <thead>
-          <tr>
-            <th scope="col">이름</th>
-            <th scope="col">나이</th>
-            <th scope="col">연락처</th>
-            <th scope="col">보호자 연락처</th>
-            <th scope="col">통계 상태</th>
-            <th scope="col"><span className="sr-only">관리</span></th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table className="student-table" aria-label="학생 목록">
+        <TableHeader>
+          <TableRow>
+            <TableHead scope="col">이름</TableHead>
+            <TableHead scope="col">나이</TableHead>
+            <TableHead scope="col">연락처</TableHead>
+            <TableHead scope="col">보호자 연락처</TableHead>
+            <TableHead scope="col">통계 상태</TableHead>
+            <TableHead scope="col"><span className="sr-only">관리</span></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {students.map((student) => (
-            <tr key={student.user_id}>
-              <td>
+            <TableRow key={student.user_id}>
+              <TableCell>
                 <strong>{student.name}</strong>
                 <span>{student.email}</span>
-              </td>
-              <td>만 {calculateInternationalAge(student.birth_date)}세</td>
-              <td>{student.phone}</td>
-              <td>{student.guardian_phone}</td>
-              <td>
-                <span className={student.include_in_statistics ? "student-statistics-badge" : "student-statistics-badge student-statistics-badge--excluded"}>
+              </TableCell>
+              <TableCell>만 {calculateInternationalAge(student.birth_date)}세</TableCell>
+              <TableCell>{student.phone}</TableCell>
+              <TableCell>{student.guardian_phone}</TableCell>
+              <TableCell>
+                <Badge variant={student.include_in_statistics ? "secondary" : "outline"}>
                   {student.include_in_statistics ? "통계 포함" : "통계 제외"}
-                </span>
-              </td>
-              <td>
-                <button
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Button
                   type="button"
-                  className="secondary-button"
+                  variant="outline"
+                  size="sm"
                   disabled={disabled}
                   aria-label={`${student.name} 수정`}
-                  onClick={() => onEdit(student)}
+                  onClick={(clickEvent) => onEdit(student, clickEvent.currentTarget)}
                 >
                   수정
-                </button>
-              </td>
-            </tr>
+                </Button>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

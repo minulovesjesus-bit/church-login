@@ -1,7 +1,27 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import type { TeacherStudent } from "./student-table";
 
 export type StudentUpdateCommand = {
@@ -82,18 +102,17 @@ function validate(values: EditorValues): { errors: EditorErrors; command?: Stude
   };
 }
 
-function errorMessage(message?: string) {
-  return message ? <span className="student-editor__error" role="alert">{message}</span> : null;
-}
-
 type StudentEditorProps = {
   student: TeacherStudent;
   saving?: boolean;
+  requestError?: string;
   onSave: (command: StudentUpdateCommand) => void;
   onCancel: () => void;
 };
 
-export default function StudentEditor({ student, saving = false, onSave, onCancel }: StudentEditorProps) {
+export default function StudentEditor({ student, saving = false, requestError, onSave, onCancel }: StudentEditorProps) {
+  const generatedId = useId().replace(/:/g, "");
+  const fieldId = (name: string) => `student-editor-${generatedId}-${name}`;
   const [values, setValues] = useState<EditorValues>({
     name: student.name,
     birthDate: student.birth_date,
@@ -111,93 +130,117 @@ export default function StudentEditor({ student, saving = false, onSave, onCance
     if (result.command) onSave(result.command);
   }
 
+  function describedBy(name: keyof EditorErrors): string | undefined {
+    return errors[name] ? fieldId(`${name}-error`) : undefined;
+  }
+
   return (
-    <aside className="student-editor" aria-labelledby="student-editor-title">
-      <div className="student-editor__header">
-        <div>
-          <p className="eyebrow">Student profile</p>
-          <h2 id="student-editor-title">학생 정보 수정</h2>
-        </div>
-        <button type="button" className="quiet-button" disabled={saving} onClick={onCancel}>닫기</button>
-      </div>
-      <form className="student-editor__form" onSubmit={submit}>
-        <div className="student-editor__readonly-field">
-          <label htmlFor="student-account-email">계정 이메일</label>
-          <input id="student-account-email" value={student.email} readOnly aria-readonly="true" />
-          <span>로그인 계정 이메일은 이 화면에서 변경할 수 없습니다.</span>
-        </div>
-        <div className="student-editor__field">
-          <label htmlFor="student-name">이름</label>
-          <input
-            id="student-name"
-            value={values.name}
-            aria-invalid={Boolean(errors.name)}
-            onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))}
-          />
-          {errorMessage(errors.name)}
-        </div>
-        <div className="student-editor__field">
-          <label htmlFor="student-birth-date">생년월일</label>
-          <input
-            id="student-birth-date"
-            type="date"
-            value={values.birthDate}
-            aria-invalid={Boolean(errors.birthDate)}
-            onChange={(event) => setValues((current) => ({ ...current, birthDate: event.target.value }))}
-          />
-          {errorMessage(errors.birthDate)}
-        </div>
-        <div className="student-editor__field">
-          <label htmlFor="student-phone">연락처</label>
-          <input
-            id="student-phone"
-            inputMode="numeric"
-            value={values.phone}
-            aria-invalid={Boolean(errors.phone)}
-            onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))}
-          />
-          {errorMessage(errors.phone)}
-        </div>
-        <div className="student-editor__field">
-          <label htmlFor="student-guardian-phone">보호자 연락처</label>
-          <input
-            id="student-guardian-phone"
-            inputMode="numeric"
-            value={values.guardianPhone}
-            aria-invalid={Boolean(errors.guardianPhone)}
-            onChange={(event) => setValues((current) => ({ ...current, guardianPhone: event.target.value }))}
-          />
-          {errorMessage(errors.guardianPhone)}
-        </div>
-        <fieldset>
-          <legend>통계 상태</legend>
-          <label className="student-editor__radio">
-            <input
-              type="radio"
-              name="include-in-statistics"
-              checked={values.includeInStatistics}
-              onChange={() => setValues((current) => ({ ...current, includeInStatistics: true }))}
-            />
-            통계 포함
-          </label>
-          <label className="student-editor__radio">
-            <input
-              type="radio"
-              name="include-in-statistics"
-              checked={!values.includeInStatistics}
-              onChange={() => setValues((current) => ({ ...current, includeInStatistics: false }))}
-            />
-            통계 제외
-          </label>
-          <p>통계 제외는 교사 전체 집계 통계에서만 제외합니다. 학생 로그인과 QR 출결은 계속 이용할 수 있습니다.</p>
-        </fieldset>
-        <div className="student-editor__actions">
-          <button type="button" className="secondary-button" disabled={saving} onClick={onCancel}>수정 취소</button>
-          <button type="submit" className="primary-button" disabled={saving}>
-            {saving ? "저장 중…" : "학생 정보 저장"}
-          </button>
-        </div>
-      </form>
-    </aside>
+    <Sheet open onOpenChange={(open) => {
+      if (!open && !saving) onCancel();
+    }}>
+      <SheetContent className="student-editor" showCloseButton={false} aria-modal="true">
+        <SheetHeader className="student-editor__header">
+          <div>
+            <SheetTitle>{student.name} 학생 정보 수정</SheetTitle>
+            <SheetDescription>학생이 직접 가입한 계정의 연락처와 통계 포함 여부를 수정합니다.</SheetDescription>
+          </div>
+          <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>닫기</Button>
+        </SheetHeader>
+        <form className="student-editor__form" onSubmit={submit} noValidate>
+          {requestError ? <Alert variant="destructive"><AlertDescription>{requestError}</AlertDescription></Alert> : null}
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor={fieldId("email")}>계정 이메일</FieldLabel>
+              <Input id={fieldId("email")} value={student.email} readOnly aria-readonly="true" />
+              <FieldDescription>로그인 계정 이메일은 이 화면에서 변경할 수 없습니다.</FieldDescription>
+            </Field>
+            <Field data-invalid={Boolean(errors.name)}>
+              <FieldLabel htmlFor={fieldId("name")}>이름</FieldLabel>
+              <Input
+                id={fieldId("name")}
+                autoFocus
+                value={values.name}
+                aria-invalid={Boolean(errors.name)}
+                aria-describedby={describedBy("name")}
+                onChange={(event) => setValues((current) => ({ ...current, name: event.target.value }))}
+              />
+              <FieldError id={fieldId("name-error")}>{errors.name}</FieldError>
+            </Field>
+            <Field data-invalid={Boolean(errors.birthDate)}>
+              <FieldLabel htmlFor={fieldId("birth-date")}>생년월일</FieldLabel>
+              <Input
+                id={fieldId("birth-date")}
+                type="date"
+                value={values.birthDate}
+                aria-invalid={Boolean(errors.birthDate)}
+                aria-describedby={describedBy("birthDate")}
+                onChange={(event) => setValues((current) => ({ ...current, birthDate: event.target.value }))}
+              />
+              <FieldError id={fieldId("birthDate-error")}>{errors.birthDate}</FieldError>
+            </Field>
+            <Field data-invalid={Boolean(errors.phone)}>
+              <FieldLabel htmlFor={fieldId("phone")}>연락처</FieldLabel>
+              <Input
+                id={fieldId("phone")}
+                inputMode="numeric"
+                value={values.phone}
+                aria-invalid={Boolean(errors.phone)}
+                aria-describedby={describedBy("phone")}
+                onChange={(event) => setValues((current) => ({ ...current, phone: event.target.value }))}
+              />
+              <FieldError id={fieldId("phone-error")}>{errors.phone}</FieldError>
+            </Field>
+            <Field data-invalid={Boolean(errors.guardianPhone)}>
+              <FieldLabel htmlFor={fieldId("guardian-phone")}>보호자 연락처</FieldLabel>
+              <Input
+                id={fieldId("guardian-phone")}
+                inputMode="numeric"
+                value={values.guardianPhone}
+                aria-invalid={Boolean(errors.guardianPhone)}
+                aria-describedby={describedBy("guardianPhone")}
+                onChange={(event) => setValues((current) => ({ ...current, guardianPhone: event.target.value }))}
+              />
+              <FieldError id={fieldId("guardianPhone-error")}>{errors.guardianPhone}</FieldError>
+            </Field>
+            <FieldSet>
+              <FieldLegend>통계 상태</FieldLegend>
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <FieldLabel className="student-editor__radio min-h-11" htmlFor={fieldId("statistics-included")}>
+                    <input
+                      id={fieldId("statistics-included")}
+                      type="radio"
+                      name={fieldId("include-in-statistics")}
+                      checked={values.includeInStatistics}
+                      onChange={() => setValues((current) => ({ ...current, includeInStatistics: true }))}
+                    />
+                    통계 포함
+                  </FieldLabel>
+                </Field>
+                <Field orientation="horizontal">
+                  <FieldLabel className="student-editor__radio min-h-11" htmlFor={fieldId("statistics-excluded")}>
+                    <input
+                      id={fieldId("statistics-excluded")}
+                      type="radio"
+                      name={fieldId("include-in-statistics")}
+                      checked={!values.includeInStatistics}
+                      onChange={() => setValues((current) => ({ ...current, includeInStatistics: false }))}
+                    />
+                    통계 제외
+                  </FieldLabel>
+                </Field>
+              </FieldGroup>
+              <FieldDescription>
+                통계 제외는 교사 전체 집계 통계에서만 제외합니다. 학생 로그인과 QR 출결은 계속 이용할 수 있습니다.
+              </FieldDescription>
+            </FieldSet>
+          </FieldGroup>
+          <SheetFooter className="student-editor__actions">
+            <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>수정 취소</Button>
+            <Button type="submit" disabled={saving}>{saving ? "저장 중…" : "학생 정보 저장"}</Button>
+          </SheetFooter>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }
