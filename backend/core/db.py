@@ -34,6 +34,7 @@ async def application_transaction(
     connection = await connect(
         resolved_database_url,
         connect_timeout=resolved_connect_timeout,
+        prepare_threshold=None,
     )
     try:
         await connection.execute("set local role app_backend")

@@ -134,9 +134,14 @@ def recording_connector(
     events: list[str],
 ) -> Any:
     async def connect(
-        database_url: str, *, connect_timeout: int
+        database_url: str,
+        *,
+        connect_timeout: int,
+        prepare_threshold: int | None = 5,
     ) -> RecordingConnection:
-        events.append(f"connect:{database_url}:timeout={connect_timeout}")
+        events.append(
+            f"connect:{database_url}:timeout={connect_timeout}:prepare={prepare_threshold}"
+        )
         return RecordingConnection(events)
 
     return connect
@@ -161,7 +166,7 @@ async def test_application_transaction_sets_backend_role_before_work_and_commits
     await use_transaction(events, fail=False)
 
     assert events == [
-        "connect:postgresql://database.test/app:timeout=3",
+        "connect:postgresql://database.test/app:timeout=3:prepare=None",
         "set local role app_backend",
         "select set_config('TimeZone', %s, true):Asia/Seoul",
         "select set_config('statement_timeout', %s, true):4000ms",
@@ -178,7 +183,7 @@ async def test_application_transaction_rolls_back_and_closes_after_failure() -> 
         await use_transaction(events, fail=True)
 
     assert events == [
-        "connect:postgresql://database.test/app:timeout=3",
+        "connect:postgresql://database.test/app:timeout=3:prepare=None",
         "set local role app_backend",
         "select set_config('TimeZone', %s, true):Asia/Seoul",
         "select set_config('statement_timeout', %s, true):4000ms",
