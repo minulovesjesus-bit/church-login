@@ -6,6 +6,7 @@ type ErrorEnvelope = {
 
 export type KioskSession = {
   session_id: string;
+  device_name: string;
   access_expires_at: string;
   refresh_expires_at: string;
 };
@@ -54,8 +55,11 @@ function jsonRequest<T>(path: `/api/kiosk/${string}`, body: unknown): Promise<T>
 }
 
 export const kioskApi = {
-  login: (password: string) =>
-    jsonRequest<KioskSession>("/api/kiosk/sessions", { password }),
+  login: (deviceName: string, password: string) =>
+    jsonRequest<KioskSession>("/api/kiosk/sessions", {
+      device_name: deviceName,
+      password,
+    }),
   refresh: () =>
     kioskFetch<KioskSession>("/api/kiosk/sessions/refresh", { method: "POST" }),
   getQr: () => kioskFetch<KioskQrChallenge>("/api/kiosk/qr"),

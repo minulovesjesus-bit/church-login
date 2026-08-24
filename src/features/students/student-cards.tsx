@@ -3,6 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   calculateInternationalAge,
+  staffRoleBadgeVariant,
+  staffRoleLabel,
   type TeacherStudent,
 } from "./student-table";
 
@@ -23,9 +25,14 @@ export default function StudentCards({ students, disabled = false, onEdit }: Stu
                 <CardTitle><h3>{student.name}</h3></CardTitle>
                 <p>{student.email}</p>
               </div>
-              <Badge variant={student.include_in_statistics ? "secondary" : "outline"}>
-                {student.include_in_statistics ? "통계 포함" : "통계 제외"}
-              </Badge>
+              <div className="flex flex-wrap justify-end gap-1">
+                <Badge variant={student.include_in_statistics ? "secondary" : "outline"}>
+                  {student.include_in_statistics ? "통계 포함" : "통계 제외"}
+                </Badge>
+                <Badge variant={staffRoleBadgeVariant(student.staff_role)}>
+                  {staffRoleLabel(student.staff_role)}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               <dl>

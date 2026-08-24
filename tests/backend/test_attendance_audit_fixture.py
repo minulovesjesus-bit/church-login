@@ -96,8 +96,8 @@ def test_audit_fixture_ignores_historic_rows_and_counts_only_exact_run_targets()
                 [
                     (teacher_id, "attendance.corrected", "attendance_scan", str(wrong_scan_id), Jsonb({"historic": True})),
                     (unrelated_actor_id, "attendance.corrected", "attendance_scan", str(correction_scan_id), Jsonb({"historic": True})),
-                    (admin_id, "kiosk.session_revoked", "kiosk_session", str(wrong_kiosk_id), Jsonb({"historic": True})),
-                    (unrelated_actor_id, "kiosk.session_revoked", "kiosk_session", str(kiosk_session_id), Jsonb({"historic": True})),
+                    (admin_id, "kiosk.session_deleted", "kiosk_session", str(wrong_kiosk_id), Jsonb({"historic": True})),
+                    (unrelated_actor_id, "kiosk.session_deleted", "kiosk_session", str(kiosk_session_id), Jsonb({"historic": True})),
                 ],
             )
 
@@ -107,7 +107,7 @@ def test_audit_fixture_ignores_historic_rows_and_counts_only_exact_run_targets()
             correction_scan_id=correction_scan_id,
             admin_id=admin_id,
             kiosk_session_id=kiosk_session_id,
-        ) == {"attendance.corrected": 0, "kiosk.session_revoked": 0}
+        ) == {"attendance.corrected": 0, "kiosk.session_deleted": 0}
 
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.executemany(
@@ -118,7 +118,7 @@ def test_audit_fixture_ignores_historic_rows_and_counts_only_exact_run_targets()
                 """,
                 [
                     (teacher_id, "attendance.corrected", "attendance_scan", str(correction_scan_id), Jsonb({"mode": "VOID"})),
-                    (admin_id, "kiosk.session_revoked", "kiosk_session", str(kiosk_session_id), Jsonb({"reason": "administrator_revocation"})),
+                    (admin_id, "kiosk.session_deleted", "kiosk_session", str(kiosk_session_id), Jsonb({"reason": "administrator_deletion"})),
                 ],
             )
 
@@ -128,7 +128,7 @@ def test_audit_fixture_ignores_historic_rows_and_counts_only_exact_run_targets()
             correction_scan_id=correction_scan_id,
             admin_id=admin_id,
             kiosk_session_id=kiosk_session_id,
-        ) == {"attendance.corrected": 1, "kiosk.session_revoked": 1}
+        ) == {"attendance.corrected": 1, "kiosk.session_deleted": 1}
     finally:
         with psycopg.connect(database_url) as connection, connection.cursor() as cursor:
             cursor.execute(

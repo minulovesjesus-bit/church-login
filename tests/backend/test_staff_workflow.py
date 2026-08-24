@@ -19,6 +19,7 @@ from backend.identity.repository import (
 from backend.identity.router import (
     get_staff_service,
     require_admin,
+    require_teacher,
 )
 from backend.identity.router import (
     router as identity_router,
@@ -226,6 +227,28 @@ async def test_password_identity_cannot_apply_even_when_body_cannot_spoof_provid
         )
 
     assert error.value.code == "GOOGLE_AUTH_REQUIRED"
+
+
+@pytest.mark.parametrize("provider", ["google", "password"])
+async def test_teacher_membership_authorizes_any_provider(
+    staff_repository: InMemoryStaffRepository,
+    provider: str,
+) -> None:
+    actor = AuthenticatedUser(
+        user_id=uuid4(),
+        email="teacher@example.com",
+        provider=provider,
+        email_verified=True,
+    )
+    staff_repository.staff[actor.user_id] = StaffMemberRecord(
+        user_id=actor.user_id,
+        email=actor.email,
+        name="김교사",
+        phone=None,
+        role=StaffRole.TEACHER,
+    )
+
+    assert await require_teacher(actor, staff_repository) == actor
 
 
 async def test_rejected_google_user_can_reapply(

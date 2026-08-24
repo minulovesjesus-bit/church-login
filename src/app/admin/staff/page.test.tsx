@@ -179,11 +179,11 @@ it("keeps the prior row after an ordinary failure, unlocks, and permits a later 
   expect(screen.queryByText("teacher@example.com")).not.toBeInTheDocument();
 });
 
-it("redirects forbidden staff lists", async () => {
+it("redirects forbidden staff lists to the student dashboard", async () => {
   mockApi.get.mockRejectedValue(new ApiClientError("FORBIDDEN", "권한 없음"));
   render(<StaffPage />);
 
-  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher"));
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/student"));
 });
 
 it("shows empty/error/retry states and redirects AUTH_REQUIRED", async () => {
@@ -197,5 +197,5 @@ it("shows empty/error/retry states and redirects AUTH_REQUIRED", async () => {
 
   mockApi.get.mockRejectedValue(new ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
   render(<StaffPage />);
-  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher/login"));
+  await waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/login"));
 });

@@ -133,7 +133,7 @@ test("kiosk scans alternate, appear in dashboards, preserve corrections, and sto
     });
     expect(actions).toEqual({
       "attendance.corrected": 1,
-      "kiosk.session_revoked": 1,
+      "kiosk.session_deleted": 1,
     });
   } finally {
     await Promise.all([

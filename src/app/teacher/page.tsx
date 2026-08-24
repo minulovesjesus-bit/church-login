@@ -17,12 +17,12 @@ export default function TeacherPage() {
     (signal: AbortSignal) => api.get<TeacherDashboard>("/api/teacher/dashboard", { signal }),
     [],
   );
-  const redirectToLogin = useCallback(() => router.replace("/teacher/login"), [router]);
-  const redirectToApply = useCallback(() => router.replace("/teacher/apply"), [router]);
+  const redirectToLogin = useCallback(() => router.replace("/login"), [router]);
+  const redirectToStudent = useCallback(() => router.replace("/student"), [router]);
   const { data, error, isLoading, isStale, retry } = useDashboardPolling({
     fetcher: fetchDashboard,
     onAuthRequired: redirectToLogin,
-    onForbidden: redirectToApply,
+    onForbidden: redirectToStudent,
   });
 
   if (isLoading && !data) {

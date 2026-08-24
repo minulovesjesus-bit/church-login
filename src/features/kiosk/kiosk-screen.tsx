@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { QrCard } from "./qr-card";
 
 export interface KioskClient {
-  login(password: string): Promise<KioskSession>;
+  login(deviceName: string, password: string): Promise<KioskSession>;
   refresh(): Promise<KioskSession>;
   getQr(): Promise<KioskQrChallenge>;
   logout(): Promise<void>;
@@ -36,6 +36,7 @@ export interface KioskClient {
 
 type KioskScreenProps = {
   client?: KioskClient;
+  onSessionInvalidated?: (destination: "/qr") => void;
 };
 
 type ConnectionState = "connecting" | "connected" | "retrying";
@@ -65,8 +66,17 @@ function isSessionError(error: unknown): boolean {
     && (error.code === "KIOSK_SESSION_REVOKED" || error.code === "AUTH_REQUIRED");
 }
 
-export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
+function replaceWithLockedQr(destination: "/qr") {
+  window.location.replace(destination);
+}
+
+export function KioskScreen({
+  client = kioskApi,
+  onSessionInvalidated = replaceWithLockedQr,
+}: KioskScreenProps) {
   const [unlocked, setUnlocked] = useState(false);
+  const [deviceName, setDeviceName] = useState("");
+  const [activeDeviceName, setActiveDeviceName] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -164,9 +174,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
           clearIssueTimer();
           clearCountdown();
           setChallenge(undefined);
-          setPassword("");
-          setLockedNotice("기기 세션이 종료되었습니다. 관리자 비밀번호를 다시 입력해 주세요.");
-          setUnlocked(false);
+          onSessionInvalidated("/qr");
           return;
         }
         retrying = true;
@@ -212,16 +220,19 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("online", handleOnline);
     };
-  }, [client, unlocked]);
+  }, [client, onSessionInvalidated, unlocked]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!password || submitting) return;
+    const normalizedDeviceName = deviceName.trim();
+    if (!normalizedDeviceName || !password || submitting) return;
     setSubmitting(true);
     setLoginError(undefined);
     setLockedNotice(undefined);
     try {
-      await client.login(password);
+      const session = await client.login(normalizedDeviceName, password);
+      setActiveDeviceName(session.device_name);
+      setDeviceName(normalizedDeviceName);
       setPassword("");
       setChallenge(undefined);
       setConnection("connecting");
@@ -268,13 +279,27 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
             <BrandLockup />
             <CardTitle><h1 id="kiosk-login-title">출결 QR 기기</h1></CardTitle>
             <CardDescription>
-              관리자 비밀번호를 입력하면 학생들이 스캔할 수 있는 출결 QR이 표시됩니다.
+              기기 이름과 관리자 비밀번호를 입력하면 학생들이 스캔할 수 있는 출결 QR이 표시됩니다.
             </CardDescription>
           </CardHeader>
           <CardContent>
             {lockedNotice ? <p role="status" className="notice">{lockedNotice}</p> : null}
             <form onSubmit={handleLogin} className="kiosk-login-form">
               <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="kiosk-device-name">기기 이름</FieldLabel>
+                  <Input
+                    id="kiosk-device-name"
+                    name="deviceName"
+                    type="text"
+                    autoComplete="off"
+                    maxLength={80}
+                    required
+                    value={deviceName}
+                    onChange={(event) => setDeviceName(event.target.value)}
+                    placeholder="예: 본당 입구 태블릿"
+                  />
+                </Field>
                 <Field data-invalid={Boolean(loginError)}>
                   <FieldLabel htmlFor="kiosk-password">관리자 비밀번호</FieldLabel>
                   <Input
@@ -309,6 +334,7 @@ export function KioskScreen({ client = kioskApi }: KioskScreenProps) {
       mode="unlocked"
       toolbar={(
         <>
+          <span className="kiosk-device-name">{activeDeviceName}</span>
           <span
             className={cn("connection-pill", `connection-pill--${connection}`)}
           >

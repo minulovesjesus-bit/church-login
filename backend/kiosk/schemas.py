@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 class KioskLoginInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    device_name: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=80),
+    ]
     password: str = Field(min_length=1, max_length=256)
 
 
@@ -19,6 +23,7 @@ class KioskTokens:
     access_expires_at: datetime
     refresh_token: str
     refresh_expires_at: datetime
+    device_name: str = "공용 키오스크"
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,7 @@ class IssuedQrChallenge:
 
 class KioskSessionView(BaseModel):
     session_id: UUID
+    device_name: str
     access_expires_at: datetime
     refresh_expires_at: datetime
 
@@ -44,6 +50,7 @@ class KioskSessionView(BaseModel):
     def from_tokens(cls, tokens: KioskTokens) -> "KioskSessionView":
         return cls(
             session_id=tokens.session_id,
+            device_name=tokens.device_name,
             access_expires_at=tokens.access_expires_at,
             refresh_expires_at=tokens.refresh_expires_at,
         )
@@ -53,6 +60,7 @@ class AdminKioskSessionView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     session_id: UUID
+    device_name: str
     created_at: datetime
     last_seen_at: datetime
     refresh_expires_at: datetime

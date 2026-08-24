@@ -100,6 +100,21 @@ class IdentityRepository:
             raise RuntimeError("Student profile upsert did not return a profile")
         return StudentProfileRecord(*row)
 
+    async def student_profile(self, user_id: UUID) -> StudentProfileRecord | None:
+        cursor = await self._connection.execute(
+            """
+            select profile.user_id, profile.email, profile.name,
+                   student.birth_date, profile.phone,
+                   student.guardian_phone, student.include_in_statistics
+            from app.user_profiles profile
+            join app.student_profiles student using (user_id)
+            where profile.user_id = %s
+            """,
+            (user_id,),
+        )
+        row = await cursor.fetchone()
+        return StudentProfileRecord(*row) if row is not None else None
+
     async def identity_state(self, user_id: UUID) -> IdentityState:
         cursor = await self._connection.execute(
             """

@@ -1,74 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
-import { mockApi } from "@/test/mock-api";
-
-vi.mock("@/lib/api/client", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/api/client")>()),
-  api: mockApi,
-}));
+const redirect = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ redirect }));
 
 import TeacherApplicationPage from "./page";
 
-it.each([
-  ["pending", "교사 가입 승인을 기다리고 있습니다."],
-  ["rejected", "신청이 거절되었습니다. 정보를 확인해 다시 신청할 수 있습니다."],
-] as const)("renders the %s application state", async (status, message) => {
-  mockApi.get.mockResolvedValue({ status, rejection_reason: status === "rejected" ? "확인 필요" : null });
+it("redirects the retired teacher application route to unified continuation", () => {
+  TeacherApplicationPage();
 
-  render(<TeacherApplicationPage />);
-
-  expect(await screen.findByText(message)).toBeInTheDocument();
-});
-
-it("renders the approved teacher destination", async () => {
-  mockApi.get.mockResolvedValue({ status: "approved", rejection_reason: null });
-
-  render(<TeacherApplicationPage />);
-
-  expect(await screen.findByRole("link", { name: "교사 대시보드로 이동" })).toHaveAttribute(
-    "href",
-    "/teacher",
-  );
-});
-
-it.each(["none", "rejected"] as const)(
-  "submits a teacher application from the %s state without trusted role fields",
-  async (status) => {
-    mockApi.get.mockResolvedValue({ status, rejection_reason: status === "rejected" ? "확인 필요" : null });
-    mockApi.post.mockResolvedValue({ status: "pending" });
-    render(<TeacherApplicationPage />);
-
-    fireEvent.change(await screen.findByLabelText("이름"), { target: { value: " 김교사 " } });
-    fireEvent.change(screen.getByLabelText("연락처"), { target: { value: "010-1111-2222" } });
-    fireEvent.click(screen.getByRole("button", { name: status === "rejected" ? "다시 신청" : "교사 가입 신청" }));
-
-    await vi.waitFor(() =>
-      expect(mockApi.post).toHaveBeenCalledWith("/api/teacher-applications", {
-        name: "김교사",
-        phone: "01011112222",
-      }),
-    );
-    expect(await screen.findByText("교사 가입 승인을 기다리고 있습니다.")).toBeInTheDocument();
-  },
-);
-
-it("locks a teacher application while submitting and exposes rejection as an alert", async () => {
-  let finish!: (value: { status: "pending" }) => void;
-  mockApi.get.mockResolvedValue({ status: "rejected", rejection_reason: "연락처 확인 필요" });
-  mockApi.post.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-  render(<TeacherApplicationPage />);
-
-  const rejection = await screen.findByRole("alert");
-  expect(rejection).toHaveTextContent("거절 사유: 연락처 확인 필요");
-  fireEvent.change(screen.getByLabelText("이름"), { target: { value: "김교사" } });
-  fireEvent.change(screen.getByLabelText("연락처"), { target: { value: "010-1111-2222" } });
-  fireEvent.click(screen.getByRole("button", { name: "다시 신청" }));
-  fireEvent.click(screen.getByRole("button", { name: "신청 중" }));
-
-  expect(mockApi.post).toHaveBeenCalledTimes(1);
-  expect(screen.getByRole("button", { name: "신청 중" })).toBeDisabled();
-
-  finish({ status: "pending" });
-  expect(await screen.findByText("교사 가입 승인을 기다리고 있습니다.")).toBeVisible();
+  expect(redirect).toHaveBeenCalledWith("/auth/continue");
 });

@@ -22,9 +22,14 @@ import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
 import type { StudentStatistics } from "@/features/attendance/types";
 import { EventOccurrences } from "@/features/events/event-card";
 import { currentSeoulMonday } from "@/features/events/week-navigation";
+import { StudentAccountCard } from "@/features/student-account/student-account-card";
 import { api, ApiClientError } from "@/lib/api/client";
 
-type Me = { onboarding_completed: boolean; capabilities: { student: boolean } };
+type Me = {
+  email: string;
+  onboarding_completed: boolean;
+  capabilities: { student: boolean; teacher: boolean; admin: boolean };
+};
 
 function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
@@ -36,12 +41,14 @@ function hasApiCode(error: unknown, code: string): boolean {
 
 export default function StudentPage() {
   const router = useRouter();
+  const [identity, setIdentity] = useState<Me>();
   const [statistics, setStatistics] = useState<StudentStatistics>();
   const [error, setError] = useState<string>();
   const [attempt, setAttempt] = useState(0);
 
   function retry() {
     setError(undefined);
+    setIdentity(undefined);
     setStatistics(undefined);
     setAttempt((value) => value + 1);
   }
@@ -60,7 +67,7 @@ export default function StudentPage() {
           .map((result) => result.reason as unknown);
         if (failures.some((failure) => hasApiCode(failure, "AUTH_REQUIRED"))) {
           active = false;
-          router.replace("/auth/login");
+          router.replace("/login");
           return;
         }
         if (
@@ -80,6 +87,7 @@ export default function StudentPage() {
             : "학생 정보를 불러오지 못했습니다.");
           return;
         }
+        if (meResult.status === "fulfilled") setIdentity(meResult.value);
         if (statisticsResult.status === "fulfilled") setStatistics(statisticsResult.value);
       });
     return () => {
@@ -100,7 +108,7 @@ export default function StudentPage() {
       </main>
     );
   }
-  if (!statistics) {
+  if (!identity || !statistics) {
     return (
       <main className="student-home-shell student-home-state" role="status">
         <span className="sr-only">학생 정보를 확인하고 있습니다.</span>
@@ -162,6 +170,7 @@ export default function StudentPage() {
         </div>
         <EventOccurrences week={currentSeoulMonday()} limit={2} />
       </section>
+      <StudentAccountCard email={identity.email} />
     </main>
   );
 }

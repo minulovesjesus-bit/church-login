@@ -78,7 +78,11 @@ class InMemoryKioskRepository:
         self.blocked.discard(key_hash)
 
     async def create_session(
-        self, refresh_token_hash: str, now: datetime, refresh_expires_at: datetime
+        self,
+        device_name: str,
+        refresh_token_hash: str,
+        now: datetime,
+        refresh_expires_at: datetime,
     ) -> KioskSessionRecord:
         record = KioskSessionRecord(
             id=uuid4(),
@@ -86,6 +90,7 @@ class InMemoryKioskRepository:
             last_seen_at=now,
             refresh_expires_at=refresh_expires_at,
             revoked_at=None,
+            device_name=device_name,
         )
         self.sessions[record.id] = record
         self.saved_refresh_hashes.append(refresh_token_hash)
@@ -111,6 +116,7 @@ class InMemoryKioskRepository:
             last_seen_at=now,
             refresh_expires_at=refresh_expires_at,
             revoked_at=None,
+            device_name=session.device_name,
         )
         self.sessions[session.id] = replacement
         return replacement
@@ -135,6 +141,7 @@ class InMemoryKioskRepository:
             last_seen_at=session.last_seen_at,
             refresh_expires_at=session.refresh_expires_at,
             revoked_at=now,
+            device_name=session.device_name,
         )
         return True
 

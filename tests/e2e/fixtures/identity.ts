@@ -96,8 +96,7 @@ export async function authenticateAs(
   await context.addCookies(
     sessionCookies(url, session).map((cookie) => ({
       ...cookie,
-      domain: "127.0.0.1",
-      path: "/",
+      url: "http://localhost:3216",
       httpOnly: false,
       secure: false,
       sameSite: "Lax" as const,

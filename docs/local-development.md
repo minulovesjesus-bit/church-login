@@ -41,9 +41,9 @@ Copy `.env.example` to the ignored `.env.local`. The example contains parse-safe
 
 Keep `SUPABASE_JWT_AUDIENCE=authenticated`. Set `SUPABASE_JWKS_URL` to `${API_URL}/auth/v1/.well-known/jwks.json`, `DATABASE_CONNECT_TIMEOUT_SECONDS=2`, `DATABASE_STATEMENT_TIMEOUT_MS=5000`, `FASTAPI_ORIGIN=http://127.0.0.1:8000`, `ALLOWED_FRONTEND_ORIGINS=http://127.0.0.1:3000,http://localhost:3000`, and `APP_TIMEZONE=Asia/Seoul`. The checked-in loopback URL and database defaults match the standard local ports, but the CLI output is authoritative if they differ.
 
-The Google, initial-admin, teacher-intent, and kiosk variables are commented examples rather than blank typed settings. Uncomment them only after supplying real local values. FastAPI can start without the optional kiosk values, but kiosk login/QR issuance remains unavailable until `KIOSK_PASSWORD_HASH`, `KIOSK_COOKIE_SECRET`, and `QR_SIGNING_SECRET` are configured. Teacher OAuth startup similarly requires `TEACHER_OAUTH_INTENT_SECRET`.
+The Google, initial-admin, and kiosk variables are commented examples rather than blank typed settings. Uncomment them only after supplying real local values. FastAPI can start without the optional kiosk values, but kiosk login/QR issuance remains unavailable until `KIOSK_PASSWORD_HASH`, `KIOSK_COOKIE_SECRET`, and `QR_SIGNING_SECRET` are configured.
 
-The Supabase publishable key is public browser configuration; it is expected in `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The database URL, Supabase service-role or secret keys, kiosk password hash, QR signing secret, kiosk cookie secret, and teacher OAuth intent secret are server-only. Never name any of those secrets with `NEXT_PUBLIC_*`, commit them, print them in logs, or expose them to browser code.
+The Supabase publishable key is public browser configuration; it is expected in `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. The database URL, Supabase service-role or secret keys, kiosk password hash, QR signing secret, and kiosk cookie secret are server-only. Never name any of those secrets with `NEXT_PUBLIC_*`, commit them, print them in logs, or expose them to browser code.
 
 ## Generate local secrets
 
@@ -53,7 +53,7 @@ Generate the Argon2 kiosk hash without putting the shared password on the comman
 uv run python -c 'from argon2 import PasswordHasher; print(PasswordHasher().hash(input("Kiosk password: ")))'
 ```
 
-Generate independent signing values. Run this command separately for `TEACHER_OAUTH_INTENT_SECRET`, `KIOSK_COOKIE_SECRET`, and `QR_SIGNING_SECRET`; do not reuse one output for another variable.
+Generate independent signing values. Run this command separately for `KIOSK_COOKIE_SECRET` and `QR_SIGNING_SECRET`; do not reuse one output for another variable.
 
 ```bash
 openssl rand -base64 48
@@ -73,7 +73,7 @@ npm run dev
 uv run uvicorn api.index:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:3000`. The root offers only student and teacher login. The shared kiosk remains at `http://127.0.0.1:3000/login`. FastAPI health is `http://127.0.0.1:8000/api/health`.
+Open `http://127.0.0.1:3000`. The root offers only student and teacher login. The shared kiosk is at `http://127.0.0.1:3000/qr`. FastAPI health is `http://127.0.0.1:8000/api/health`.
 
 ## Local authentication
 
@@ -106,11 +106,11 @@ Set `INITIAL_ADMIN_EMAIL` to the exact lower-case email of a verified Google use
 
 ## Kiosk and camera checks
 
-1. Open `/login`, enter the shared kiosk password, and confirm the QR rotates every 20 seconds.
+1. Open `/qr`, enter a device name and the shared kiosk password, and confirm the QR rotates every 20 seconds.
 2. On a separate authenticated student browser/device, open `/student/scan` and grant camera permission.
 3. Verify IN, the 10-second cooldown, then alternating OUT/IN/OUT scans.
 4. Leave the kiosk open through an access-token renewal and confirm QR generation continues.
-5. Revoke that exact session under the administrator kiosk page and confirm the kiosk returns to its password screen.
+5. Permanently delete that exact session under the administrator kiosk page and confirm the kiosk returns to the locked `/qr` screen while its attendance history remains.
 
 The automated E2E journey injects decoded QR text through a fail-closed loopback-only bridge. That verifies scanner integration, QR expiry, cooldown, attendance, and revocation, but it is not physical camera/webcam evidence. Physical camera proof requires accessible hardware and browser permission.
 

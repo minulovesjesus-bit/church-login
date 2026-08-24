@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, GraduationCap, UsersRound } from "lucide-react";
+import { ChevronRight, GraduationCap } from "lucide-react";
 
 import { AuthShell } from "@/components/layout/auth-shell";
 import { Button } from "@/components/ui/button";
@@ -13,23 +13,13 @@ export default function HomePage() {
     >
       <div className="flex flex-col gap-3">
         <Button asChild className="min-h-16 w-full justify-between px-5">
-          <Link href="/auth/login">
+          <Link href="/login">
             <GraduationCap data-icon="inline-start" />
-            학생으로 로그인
-            <ChevronRight data-icon="inline-end" />
-          </Link>
-        </Button>
-        <Button asChild variant="outline" className="min-h-16 w-full justify-between px-5">
-          <Link href="/teacher/login">
-            <UsersRound data-icon="inline-start" />
-            교사로 로그인
+            로그인하기
             <ChevronRight data-icon="inline-end" />
           </Link>
         </Button>
       </div>
-      <Button asChild variant="link" className="w-fit px-0">
-        <Link href="/auth/signup">학생 회원가입</Link>
-      </Button>
     </AuthShell>
   );
 }

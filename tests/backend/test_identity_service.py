@@ -1,7 +1,7 @@
 import os
 from datetime import date, datetime
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 import psycopg
@@ -17,6 +17,16 @@ from backend.identity.service import IdentityService
 class RecordingStudentRepository:
     def __init__(self) -> None:
         self.calls: list[tuple[AuthenticatedUser, object]] = []
+        self.profile_reads: list[UUID] = []
+        self.student_profile_value: StudentProfileRecord | None = StudentProfileRecord(
+            user_id=uuid4(),
+            email="student@example.com",
+            name="김민준",
+            birth_date=date(2012, 4, 3),
+            phone="01012345678",
+            guardian_phone="01098765432",
+            include_in_statistics=True,
+        )
 
     async def upsert_student_profile(
         self, user: AuthenticatedUser, **profile_input: object
@@ -32,6 +42,10 @@ class RecordingStudentRepository:
             include_in_statistics=True,
         )
 
+    async def student_profile(self, user_id: UUID) -> StudentProfileRecord | None:
+        self.profile_reads.append(user_id)
+        return self.student_profile_value
+
 
 @pytest.fixture
 def verified_student() -> AuthenticatedUser:
@@ -46,6 +60,40 @@ def verified_student() -> AuthenticatedUser:
 @pytest.fixture
 def identity_service() -> IdentityService:
     return IdentityService(RecordingStudentRepository())
+
+
+async def test_current_student_profile_maps_the_authenticated_students_record(
+    verified_student: AuthenticatedUser,
+) -> None:
+    repository = RecordingStudentRepository()
+    service = IdentityService(repository)
+
+    profile = await service.current_student_profile(verified_student)
+
+    assert repository.profile_reads == [verified_student.user_id]
+    assert profile.name == "김민준"
+    assert profile.birth_date == date(2012, 4, 3)
+    assert profile.phone == "01012345678"
+    assert profile.guardian_phone == "01098765432"
+    assert profile.include_in_statistics is True
+
+
+async def test_current_student_profile_requires_a_registered_profile(
+    verified_student: AuthenticatedUser,
+) -> None:
+    repository = RecordingStudentRepository()
+    repository.student_profile_value = None
+    service = IdentityService(repository)
+
+    with pytest.raises(ApiError) as error:
+        await service.current_student_profile(verified_student)
+
+    assert repository.profile_reads == [verified_student.user_id]
+    assert (error.value.code, error.value.message, error.value.status_code) == (
+        "PROFILE_REQUIRED",
+        "학생 정보를 먼저 등록해 주세요.",
+        403,
+    )
 
 
 async def test_student_onboarding_creates_normalized_profile(

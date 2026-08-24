@@ -1,67 +1,34 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  TEACHER_OAUTH_INTENT_COOKIE,
-  verifyTeacherOAuthIntent,
-} from "@/lib/auth/teacher-oauth-intent";
+import { externalRequestUrl } from "@/lib/http/external-request-url";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-
-const ALLOWED_NEXT_PATHS = new Set(["/onboarding", "/student"]);
-
-function allowedNextPath(value: string | null): string {
-  return value && ALLOWED_NEXT_PATHS.has(value) ? value : "/onboarding";
-}
-
-function consumeTeacherIntentCookie(
-  response: NextResponse,
-  request: NextRequest,
-): NextResponse {
-  response.cookies.set(TEACHER_OAUTH_INTENT_COOKIE, "", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: request.nextUrl.protocol === "https:",
-    path: "/auth",
-    maxAge: 0,
-  });
-  return response;
-}
-
-function teacherDestination(request: NextRequest): string | undefined {
-  const presentedIntent = request.nextUrl.searchParams.get("teacher_intent");
-  const cookieIntent = request.cookies.get(TEACHER_OAUTH_INTENT_COOKIE)?.value;
-  const secret = process.env.TEACHER_OAUTH_INTENT_SECRET;
-  if (!presentedIntent || !cookieIntent || presentedIntent !== cookieIntent || !secret) {
-    return undefined;
-  }
-  return verifyTeacherOAuthIntent(presentedIntent, secret);
-}
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
-  const teacherNext = teacherDestination(request);
-  const next = teacherNext ?? allowedNextPath(request.nextUrl.searchParams.get("next"));
   if (!code) {
-    if (teacherNext) {
-      return NextResponse.redirect(
-        new URL("/teacher/login?error=oauth_callback", request.url),
-      );
-    }
-    return consumeTeacherIntentCookie(
-      NextResponse.redirect(new URL("/auth/login", request.url)),
-      request,
+    return NextResponse.redirect(
+      externalRequestUrl(request, "/login?error=oauth_callback"),
     );
   }
 
-  const supabase = await createServerSupabaseClient();
+  const response = NextResponse.redirect(externalRequestUrl(request, "/auth/continue"));
+  const supabase = await createServerSupabaseClient({
+    getAll: () => request.cookies.getAll(),
+    setAll: (cookiesToSet, headers) => {
+      cookiesToSet.forEach(({ name, value, options }) =>
+        response.cookies.set(name, value, options),
+      );
+      Object.entries(headers).forEach(([name, value]) =>
+        response.headers.set(name, value),
+      );
+    },
+  });
   const { error } = await supabase.auth.exchangeCodeForSession(code);
-  if (error && teacherNext) {
-    return NextResponse.redirect(
-      new URL("/teacher/login?error=oauth_callback", request.url),
+  if (error) {
+    response.headers.set(
+      "location",
+      externalRequestUrl(request, "/login?error=oauth_callback").toString(),
     );
   }
-  const destination = error ? "/auth/login" : next;
-  return consumeTeacherIntentCookie(
-    NextResponse.redirect(new URL(destination, request.url)),
-    request,
-  );
+  return response;
 }

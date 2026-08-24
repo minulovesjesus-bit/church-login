@@ -154,7 +154,7 @@ it("redirects an expired student session without rendering attendance data", asy
 
   render(<StudentAttendancePage />);
 
-  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/auth/login"));
+  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/login"));
   expect(screen.queryByRole("heading", { name: "내 출결 기록" })).not.toBeInTheDocument();
 });
 

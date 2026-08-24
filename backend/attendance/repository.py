@@ -24,7 +24,7 @@ from backend.core.rate_limit import ATTENDANCE_SCAN_RATE_LIMIT
 
 SCAN_COLUMNS = """
 id, student_id, attendance_date, direction::text, scanned_at,
-kiosk_session_id, request_id, qr_issued_at, source::text, recorded_by,
+kiosk_session_id, kiosk_device_name, request_id, qr_issued_at, source::text, recorded_by,
 voided_at, voided_by, void_reason
 """
 TEACHER_ATTENDANCE_PROJECTION = f"""
@@ -467,6 +467,7 @@ class AttendanceRepository:
         direction: Direction,
         scanned_at: datetime,
         kiosk_session_id: UUID,
+        kiosk_device_name: str,
         request_id: UUID,
         qr_issued_at: datetime,
     ) -> AttendanceScan | None:
@@ -474,8 +475,8 @@ class AttendanceRepository:
             f"""
             insert into app.attendance_scans (
               student_id, attendance_date, direction, scanned_at,
-              kiosk_session_id, request_id, qr_issued_at, source
-            ) values (%s, %s, %s, %s, %s, %s, %s, 'QR')
+              kiosk_session_id, kiosk_device_name, request_id, qr_issued_at, source
+            ) values (%s, %s, %s, %s, %s, %s, %s, %s, 'QR')
             on conflict (student_id, request_id) do nothing
             returning {SCAN_COLUMNS}
             """,
@@ -485,6 +486,7 @@ class AttendanceRepository:
                 direction.value,
                 scanned_at,
                 kiosk_session_id,
+                kiosk_device_name,
                 request_id,
                 qr_issued_at,
             ),
@@ -557,10 +559,10 @@ class AttendanceRepository:
 
     async def lock_active_kiosk_session(
         self, kiosk_session_id: UUID, now: datetime
-    ) -> bool:
+    ) -> str | None:
         cursor = await self.connection.execute(
             """
-            select id
+            select device_name
             from app.kiosk_sessions
             where id = %s
               and revoked_at is null
@@ -569,7 +571,8 @@ class AttendanceRepository:
             """,
             (kiosk_session_id, now),
         )
-        return await cursor.fetchone() is not None
+        row = await cursor.fetchone()
+        return row[0] if row is not None else None
 
     async def staff_role(self, user_id: UUID) -> str | None:
         cursor = await self.connection.execute(
@@ -657,15 +660,15 @@ class AttendanceRepository:
     def _teacher_attendance_items(cls, rows: list[Any]) -> list[TeacherAttendanceItem]:
         items: list[TeacherAttendanceItem] = []
         for row in rows:
-            scan = cls._scan(row[:13])
+            scan = cls._scan(row[:14])
             if scan is None:
                 continue
             items.append(
                 TeacherAttendanceItem(
                     **AttendanceScanView.model_validate(scan).model_dump(),
-                    student_name=row[13],
-                    student_email=row[14],
-                    excluded_from_statistics=not bool(row[15]),
+                    student_name=row[14],
+                    student_email=row[15],
+                    excluded_from_statistics=not bool(row[16]),
                 )
             )
         return items
@@ -681,11 +684,12 @@ class AttendanceRepository:
             direction=Direction(row[3]),
             scanned_at=row[4],
             kiosk_session_id=row[5],
-            request_id=row[6],
-            qr_issued_at=row[7],
-            source=Source(row[8]),
-            recorded_by=row[9],
-            voided_at=row[10],
-            voided_by=row[11],
-            void_reason=row[12],
+            kiosk_device_name=row[6],
+            request_id=row[7],
+            qr_issued_at=row[8],
+            source=Source(row[9]),
+            recorded_by=row[10],
+            voided_at=row[11],
+            voided_by=row[12],
+            void_reason=row[13],
         )

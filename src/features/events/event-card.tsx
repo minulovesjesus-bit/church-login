@@ -119,7 +119,7 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
       .catch((caught: unknown) => {
         if (!active) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
-          router.replace("/auth/login");
+          router.replace("/login");
           setState({ week, status: "auth", events: [] });
           return;
         }

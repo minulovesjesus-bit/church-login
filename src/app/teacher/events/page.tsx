@@ -71,7 +71,7 @@ export function TeacherEventsManager({ initialPage = 1 }: { initialPage?: number
     mutationSequenceRef.current += 1;
     setMutationPending(false);
     setState({ key: "terminal-auth", status: "auth" });
-    router.replace(code === "AUTH_REQUIRED" ? "/teacher/login" : "/teacher/apply");
+    router.replace(code === "AUTH_REQUIRED" ? "/login" : "/student");
   }, [router]);
 
   const beginMutation = useCallback((): number | null => {

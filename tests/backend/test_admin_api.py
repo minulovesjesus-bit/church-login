@@ -187,8 +187,10 @@ class FakeKioskService:
             last_seen_at=now - timedelta(minutes=5),
             refresh_expires_at=now + timedelta(days=20),
             revoked_at=None,
+            device_name="본당 입구 태블릿",
         )
         self.revocations: list[tuple[UUID, UUID]] = []
+        self.deletions: list[tuple[UUID, UUID]] = []
 
     async def admin_sessions(self, filters: KioskSessionListFilters):
         return {
@@ -199,6 +201,9 @@ class FakeKioskService:
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         self.revocations.append((session_id, actor_id))
+
+    async def delete_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
+        self.deletions.append((session_id, actor_id))
 
 
 @pytest.fixture
@@ -226,12 +231,12 @@ async def test_anonymous_admin_requests_return_stable_auth_required(
 
 @pytest.mark.parametrize(
     ("provider", "role"),
-    [("password", StaffRole.ADMIN), ("google", StaffRole.TEACHER)],
+    [("password", None), ("google", StaffRole.TEACHER)],
 )
-async def test_non_google_and_non_admin_receive_stable_forbidden(
+async def test_non_admin_receives_stable_forbidden(
     client: httpx.AsyncClient,
     provider: str,
-    role: StaffRole,
+    role: StaffRole | None,
 ) -> None:
     user = AuthenticatedUser(
         user_id=uuid4(),
@@ -254,6 +259,34 @@ async def test_non_google_and_non_admin_receive_stable_forbidden(
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
+
+
+@pytest.mark.parametrize("provider", ["google", "password"])
+async def test_admin_membership_authorizes_any_provider(
+    client: httpx.AsyncClient,
+    provider: str,
+) -> None:
+    user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        provider=provider,
+        email_verified=True,
+    )
+
+    async def current_user() -> AuthenticatedUser:
+        return user
+
+    app.dependency_overrides[get_current_user] = current_user
+    app.dependency_overrides[get_identity_repository] = lambda: FakeIdentityRepository(
+        StaffRole.ADMIN
+    )
+    app.dependency_overrides[get_staff_service] = FakeStaffService
+    try:
+        response = await client.get("/api/admin/staff")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
 
 
 async def test_admin_routes_delegate_and_gets_are_no_store(
@@ -313,13 +346,15 @@ async def test_admin_routes_delegate_and_gets_are_no_store(
             "정보 확인 필요",
         ),
     ]
-    assert kiosk_service.revocations == [
+    assert kiosk_service.deletions == [
         (kiosk_service.session.session_id, admin_user.user_id)
     ]
+    assert kiosk_service.revocations == []
     assert kiosks.json()["next_cursor"] is None
     assert kiosks.json()["page_size"] == 50
     assert set(kiosks.json()["items"][0]) == {
         "session_id",
+        "device_name",
         "created_at",
         "last_seen_at",
         "refresh_expires_at",
@@ -499,7 +534,7 @@ def test_identity_and_kiosk_repositories_share_cached_database_dependency() -> N
     assert identity_marker.use_cache is kiosk_marker.use_cache is True
 
 
-async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_immediate() -> None:
+async def test_live_kiosk_admin_list_and_permanent_delete_are_redacted_and_immediate() -> None:
     database_url = os.environ.get("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL is required for kiosk administration integration")
@@ -520,7 +555,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
     qr_secret = "q" * 64
     refresh_token = "existing-refresh-token-before-admin-revoke"
 
-    with psycopg.connect(database_url) as owner:
+    with psycopg.connect(database_url, prepare_threshold=None) as owner:
         owner.execute("insert into auth.users (id) values (%s)", (actor_id,))
         owner.execute(
             """
@@ -534,8 +569,8 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 """
                 insert into app.kiosk_sessions (
                   id, refresh_token_hash, created_at, last_seen_at,
-                  refresh_expires_at, revoked_at
-                ) values (%s, %s, %s, %s, %s, %s)
+                  refresh_expires_at, revoked_at, device_name
+                ) values (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                 (
@@ -545,6 +580,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                     now - timedelta(minutes=1),
                     now + timedelta(days=1),
                     None,
+                    "본당 입구 태블릿",
                 ),
                 (
                     session_ids[1],
@@ -553,6 +589,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                     now - timedelta(minutes=2),
                     now - timedelta(seconds=1),
                     None,
+                    "교육관 태블릿",
                 ),
                 (
                     session_ids[2],
@@ -561,6 +598,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                     now - timedelta(minutes=3),
                     now + timedelta(days=2),
                     now - timedelta(minutes=2),
+                    "로비 태블릿",
                 ),
                 ],
             )
@@ -568,8 +606,8 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 """
                 insert into app.kiosk_sessions (
                   id, refresh_token_hash, created_at, last_seen_at,
-                  refresh_expires_at
-                ) values (%s, %s, %s, %s, %s)
+                  refresh_expires_at, device_name
+                ) values (%s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (
@@ -578,6 +616,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                         created_anchor - timedelta(days=10 + index),
                         now - timedelta(minutes=10 + index),
                         now + timedelta(days=1),
+                        f"기존 키오스크 {index + 1}",
                     )
                     for index, session_id in enumerate(older_session_ids)
                 ],
@@ -613,6 +652,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
             assert first_page.next_cursor is not None
             assert set(first_page.items[0].model_dump()) == {
                 "session_id",
+                "device_name",
                 "created_at",
                 "last_seen_at",
                 "refresh_expires_at",
@@ -654,36 +694,32 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 terminal_page = following_page
             assert terminal_page.next_cursor is None
 
-            await service.revoke_as_admin(oldest_session_id, actor_id)
-            await service.revoke_as_admin(oldest_session_id, actor_id)
+            await service.delete_as_admin(oldest_session_id, actor_id)
+            with pytest.raises(ApiError) as already_deleted:
+                await service.delete_as_admin(oldest_session_id, actor_id)
+            assert already_deleted.value.code == "KIOSK_SESSION_NOT_FOUND"
             oldest_state = await connection.execute(
-                "select revoked_at from app.kiosk_sessions where id = %s",
+                "select id from app.kiosk_sessions where id = %s",
                 (oldest_session_id,),
             )
-            assert (await oldest_state.fetchone())[0] is not None
+            assert await oldest_state.fetchone() is None
             oldest_audits = await connection.execute(
                 """
                 select details from app.audit_logs
-                where action = 'kiosk.session_revoked' and target_id = %s
+                where action = 'kiosk.session_deleted' and target_id = %s
                 """,
                 (str(oldest_session_id),),
             )
             assert await oldest_audits.fetchall() == [
-                ({"reason": "administrator_revocation"},)
+                ({"reason": "administrator_deletion"},)
             ]
 
-            await service.revoke_as_admin(session_ids[0], actor_id)
+            await service.delete_as_admin(session_ids[0], actor_id)
             first_state = await connection.execute(
-                "select revoked_at, last_seen_at from app.kiosk_sessions where id = %s",
+                "select id from app.kiosk_sessions where id = %s",
                 (session_ids[0],),
             )
-            first_timestamps = await first_state.fetchone()
-            await service.revoke_as_admin(session_ids[0], actor_id)
-            repeated_state = await connection.execute(
-                "select revoked_at, last_seen_at from app.kiosk_sessions where id = %s",
-                (session_ids[0],),
-            )
-            assert await repeated_state.fetchone() == first_timestamps
+            assert await first_state.fetchone() is None
 
             with pytest.raises(KioskSessionRevoked):
                 await service.require_access(access_token)
@@ -691,9 +727,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 """
                 select count(*),
                        max(refresh_token_hash) filter (where id = %s),
-                       count(*) filter (
-                         where id = %s and revoked_at is not null
-                       )
+                       count(*) filter (where id = %s)
                 from app.kiosk_sessions
                 """,
                 (session_ids[0], session_ids[0]),
@@ -706,9 +740,7 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 """
                 select count(*),
                        max(refresh_token_hash) filter (where id = %s),
-                       count(*) filter (
-                         where id = %s and revoked_at is not null
-                       )
+                       count(*) filter (where id = %s)
                 from app.kiosk_sessions
                 """,
                 (session_ids[0], session_ids[0]),
@@ -721,12 +753,12 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
                 """
                 select details
                 from app.audit_logs
-                where action = 'kiosk.session_revoked' and target_id = %s
+                where action = 'kiosk.session_deleted' and target_id = %s
                 """,
                 (str(session_ids[0]),),
             )
             audit_rows = await audits.fetchall()
-            assert audit_rows == [({"reason": "administrator_revocation"},)]
+            assert audit_rows == [({"reason": "administrator_deletion"},)]
             forbidden_keys = {
                 "name",
                 "email",
@@ -743,10 +775,10 @@ async def test_live_kiosk_admin_list_and_idempotent_revoke_are_redacted_and_imme
             assert forbidden_keys.isdisjoint(audit_rows[0][0])
 
             with pytest.raises(ApiError) as missing:
-                await service.revoke_as_admin(uuid4(), actor_id)
+                await service.delete_as_admin(uuid4(), actor_id)
             assert missing.value.code == "KIOSK_SESSION_NOT_FOUND"
     finally:
-        with psycopg.connect(database_url) as owner:
+        with psycopg.connect(database_url, prepare_threshold=None) as owner:
             owner.execute(
                 "delete from app.audit_logs where actor_id = %s", (actor_id,)
             )

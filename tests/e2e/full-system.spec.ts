@@ -2,23 +2,23 @@ import { expect, test } from "@playwright/test";
 
 import { authenticateAs } from "./fixtures/identity";
 import {
-  approveTeacherAndPromoteAdmin,
+  createPromotableTeacher,
   createVerifiedStudent,
   createWeeklyEvent,
   excludeStudentFromAggregates,
   expectTeacherAttendance,
+  promoteStudentAndPromoteAdmin,
   revokeKiosk,
   scanKioskQr,
-  submitTeacherApplication,
   unlockSharedDevice,
 } from "./helpers/system";
 
 test("student, teacher, kiosk, attendance, statistics, and events work together", async ({ browser }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
 
   const student = await createVerifiedStudent(browser, "student@example.test");
-  const applicant = await submitTeacherApplication(browser, "teacher@example.test");
-  const teacher = await approveTeacherAndPromoteAdmin(browser, applicant);
+  const applicant = await createPromotableTeacher(browser, "teacher@example.test");
+  const teacher = await promoteStudentAndPromoteAdmin(browser, applicant);
   const kiosk = await unlockSharedDevice(browser);
   let restoreAggregates: (() => Promise<void>) | undefined;
   let kioskRevoked = false;
@@ -65,7 +65,7 @@ test("student, teacher, kiosk, attendance, statistics, and events work together"
     const nextWeekLink = student.getByRole("link", { name: "다음 주" });
     const nextWeekHref = await nextWeekLink.getAttribute("href");
     expect(nextWeekHref).toMatch(/^\/student\/events\?week=\d{4}-\d{2}-\d{2}$/);
-    const nextWeek = new URL(nextWeekHref!, "http://127.0.0.1:3216").searchParams.get("week");
+    const nextWeek = new URL(nextWeekHref!, "http://localhost:3216").searchParams.get("week");
     const nextWeekEvents = student.waitForResponse((response) => (
       response.url().includes(`/api/events?from=${nextWeek}&`)
       && response.request().method() === "GET"

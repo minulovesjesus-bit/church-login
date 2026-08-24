@@ -45,7 +45,7 @@ function localSupabaseEnvironment(): Record<string, string> {
     KIOSK_COOKIE_SECRET: "attendance-e2e-cookie-secret-2026-only-local",
     QR_SIGNING_SECRET: "attendance-e2e-qr-signing-secret-2026-local",
     KIOSK_INSECURE_LOCAL_COOKIES: "true",
-    ALLOWED_FRONTEND_ORIGINS: "http://127.0.0.1:3216",
+    ALLOWED_FRONTEND_ORIGINS: "http://localhost:3216",
   };
 }
 
@@ -72,7 +72,7 @@ export default defineConfig({
   globalTeardown: "./tests/e2e/fixtures/global-teardown.ts",
   reporter: "line",
   use: {
-    baseURL: "http://127.0.0.1:3216",
+    baseURL: "http://localhost:3216",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -84,8 +84,8 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: "npm run dev -- --hostname 127.0.0.1 --port 3216",
-      url: "http://127.0.0.1:3216",
+      command: "npm run dev -- --hostname localhost --port 3216",
+      url: "http://localhost:3216",
       env: { ...serverEnvironment, FASTAPI_ORIGIN: "http://127.0.0.1:8216" },
       reuseExistingServer: false,
       timeout: 120_000,

@@ -329,7 +329,7 @@ export function QrScanner({
               </Button>
             ) : null}
             {state.code === "AUTH_REQUIRED" ? (
-              <Button asChild><Link href="/auth/login">학생 로그인</Link></Button>
+              <Button asChild><Link href="/login">학생 로그인</Link></Button>
             ) : (
               <Button type="button" variant="outline" onClick={startFreshScan}>
                 새 QR 스캔

@@ -102,9 +102,9 @@ async def list_kiosk_sessions(
     "/kiosk-sessions/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
-async def revoke_kiosk_session(
+async def delete_kiosk_session(
     session_id: UUID,
     admin: AdminUser,
     service: KioskServiceDependency,
 ) -> None:
-    await service.revoke_as_admin(session_id, admin.user_id)
+    await service.delete_as_admin(session_id, admin.user_id)

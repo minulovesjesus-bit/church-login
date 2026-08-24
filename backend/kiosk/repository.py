@@ -15,6 +15,7 @@ class KioskSessionRecord:
     last_seen_at: datetime
     refresh_expires_at: datetime
     revoked_at: datetime | None
+    device_name: str = "공용 키오스크"
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,7 @@ class ManagedKioskSessionRecord:
     last_seen_at: datetime
     refresh_expires_at: datetime
     revoked_at: datetime | None
+    device_name: str = "공용 키오스크"
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class KioskRepository:
 
     async def create_session(
         self,
+        device_name: str,
         refresh_token_hash: str,
         now: datetime,
         refresh_expires_at: datetime,
@@ -51,11 +54,13 @@ class KioskRepository:
         cursor = await self._connection.execute(
             """
             insert into app.kiosk_sessions (
-              refresh_token_hash, created_at, last_seen_at, refresh_expires_at
-            ) values (%s, %s, %s, %s)
-            returning id, created_at, last_seen_at, refresh_expires_at, revoked_at
+              device_name, refresh_token_hash, created_at,
+              last_seen_at, refresh_expires_at
+            ) values (%s, %s, %s, %s, %s)
+            returning id, created_at, last_seen_at, refresh_expires_at,
+                      revoked_at, device_name
             """,
-            (refresh_token_hash, now, now, refresh_expires_at),
+            (device_name, refresh_token_hash, now, now, refresh_expires_at),
         )
         row = await cursor.fetchone()
         if row is None:
@@ -78,7 +83,8 @@ class KioskRepository:
             where refresh_token_hash = %s
               and revoked_at is null
               and refresh_expires_at > %s
-            returning id, created_at, last_seen_at, refresh_expires_at, revoked_at
+            returning id, created_at, last_seen_at, refresh_expires_at,
+                      revoked_at, device_name
             """,
             (
                 new_refresh_token_hash,
@@ -96,7 +102,8 @@ class KioskRepository:
     ) -> KioskSessionRecord | None:
         cursor = await self._connection.execute(
             """
-            select id, created_at, last_seen_at, refresh_expires_at, revoked_at
+            select id, created_at, last_seen_at, refresh_expires_at,
+                   revoked_at, device_name
             from app.kiosk_sessions
             where id = %s
               and revoked_at is null
@@ -127,7 +134,8 @@ class KioskRepository:
     ) -> list[ManagedKioskSessionRecord]:
         cursor = await self._connection.execute(
             """
-            select id, created_at, last_seen_at, refresh_expires_at, revoked_at
+            select id, created_at, last_seen_at, refresh_expires_at,
+                   revoked_at, device_name
             from app.kiosk_sessions
             where (
               %(cursor_created_at)s::timestamptz is null
@@ -145,16 +153,15 @@ class KioskRepository:
         )
         return [ManagedKioskSessionRecord(*row) for row in await cursor.fetchall()]
 
-    async def revoke_session_as_admin(
+    async def delete_session_as_admin(
         self,
         session_id: UUID,
         *,
         actor_id: UUID,
-        now: datetime,
     ) -> bool:
         locked = await self._connection.execute(
             """
-            select revoked_at
+            select id
             from app.kiosk_sessions
             where id = %s
             for update
@@ -164,37 +171,33 @@ class KioskRepository:
         existing = await locked.fetchone()
         if existing is None:
             return False
-        if existing[0] is not None:
-            return True
-
-        cursor = await self._connection.execute(
+        deleted = await self._connection.execute(
             """
-            with revoked as (
-              update app.kiosk_sessions
-              set revoked_at = %(now)s,
-                  revoked_by = %(actor_id)s
-              where id = %(session_id)s and revoked_at is null
-              returning id
-            ), audit as (
-              insert into app.audit_logs (
-                actor_id, action, target_type, target_id, details
-              )
-              select %(actor_id)s, 'kiosk.session_revoked', 'kiosk_session',
-                     id::text, %(details)s
-              from revoked
-            )
-            select exists(select 1 from revoked)
+            delete from app.kiosk_sessions
+            where id = %(session_id)s
+            returning id
             """,
             {
                 "session_id": session_id,
-                "actor_id": actor_id,
-                "now": now,
-                "details": Jsonb({"reason": "administrator_revocation"}),
             },
         )
-        row = await cursor.fetchone()
-        if not row or not row[0]:
-            raise RuntimeError("Locked kiosk session was not revoked")
+        if await deleted.fetchone() is None:
+            raise RuntimeError("Locked kiosk session was not deleted")
+        await self._connection.execute(
+            """
+            insert into app.audit_logs (
+              actor_id, action, target_type, target_id, details
+            ) values (
+              %(actor_id)s, 'kiosk.session_deleted', 'kiosk_session',
+              %(target_id)s, %(details)s
+            )
+            """,
+            {
+                "actor_id": actor_id,
+                "target_id": str(session_id),
+                "details": Jsonb({"reason": "administrator_deletion"}),
+            },
+        )
         return True
 
     async def rate_limit_is_blocked(

@@ -45,7 +45,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it.each(["/teacher/login", "/teacher/apply"])("keeps public %s outside the protected shell", (pathname) => {
+it.each(["/teacher/login", "/teacher/apply"])("keeps compatibility route %s outside the protected shell", (pathname) => {
   navigation.pathname = pathname;
   render(<TeacherLayout><h1>공개 화면</h1></TeacherLayout>);
 
@@ -60,8 +60,11 @@ it("shows core links to teachers and never infers administrator authority", asyn
 
   const nav = await screen.findByRole("navigation", { name: "교사 메뉴" });
   expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
-    "/teacher", "/teacher/attendance", "/teacher/students", "/teacher/events",
+    "/teacher", "/teacher/attendance", "/teacher/students", "/teacher/events", "/student",
   ]);
+  const studentViewLink = within(nav).getByRole("link", { name: "학생 화면으로 보기" });
+  expect(studentViewLink).toHaveAttribute("href", "/student");
+  expect(studentViewLink).toHaveAttribute("data-slot", "sidebar-menu-button");
   expect(within(nav).queryByRole("link", { name: "교사 신청" })).not.toBeInTheDocument();
   expect(mockApi.get).toHaveBeenCalledTimes(1);
   expect(mockApi.get).toHaveBeenCalledWith("/api/me", expect.objectContaining({ signal: expect.any(AbortSignal) }));
@@ -76,9 +79,9 @@ it("keeps the pending access state while the identity request is unresolved", ()
 });
 
 it.each([
-  [new TestApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."), "/teacher/login"],
-  [new TestApiClientError("FORBIDDEN", "교사 권한이 필요합니다."), "/teacher/apply"],
-  [{ capabilities: { teacher: false, admin: false } }, "/teacher/apply"],
+  [new TestApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."), "/login"],
+  [new TestApiClientError("FORBIDDEN", "교사 권한이 필요합니다."), "/student"],
+  [{ capabilities: { teacher: false, admin: false } }, "/student"],
 ])("preserves the teacher access redirect for %#", async (result, destination) => {
   if (result instanceof Error) mockApi.get.mockRejectedValue(result);
   else mockApi.get.mockResolvedValue(result);
@@ -117,7 +120,7 @@ it("shows administrator links only when the API grants admin capability", async 
   render(<TeacherLayout><h1>관리자 화면</h1></TeacherLayout>);
 
   const nav = await screen.findByRole("navigation", { name: "교사 메뉴" });
-  expect(within(nav).getByRole("link", { name: "교사 신청" })).toHaveAttribute("href", "/teacher/applications");
+  expect(within(nav).queryByRole("link", { name: "교사 신청" })).not.toBeInTheDocument();
   expect(within(nav).getByRole("link", { name: "교사 권한" })).toHaveAttribute("href", "/admin/staff");
   expect(within(nav).getByRole("link", { name: "키오스크" })).toHaveAttribute("href", "/admin/kiosks");
 });

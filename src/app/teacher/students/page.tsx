@@ -37,6 +37,7 @@ type StudentPage = {
   items: TeacherStudent[];
   next_cursor: string | null;
   page_size: number;
+  can_promote: boolean;
 };
 
 type UrlState = {
@@ -111,6 +112,7 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
   const [state, setState] = useState<ListState>({ key: requestKey, status: "loading" });
   const [selected, setSelected] = useState<TeacherStudent>();
   const [mutationPending, setMutationPending] = useState(false);
+  const [promotionPending, setPromotionPending] = useState(false);
   const [mutationError, setMutationError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const mountedRef = useRef(true);
@@ -143,8 +145,9 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
     listSequenceRef.current += 1;
     activeMutationRef.current = false;
     setMutationPending(false);
+    setPromotionPending(false);
     setState({ key: "terminal-auth", status: "auth" });
-    router.replace(code === "AUTH_REQUIRED" ? "/teacher/login" : "/teacher/apply");
+    router.replace(code === "AUTH_REQUIRED" ? "/login" : "/student");
   }, [router]);
 
   useEffect(() => {
@@ -277,6 +280,73 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
     }
   }
 
+  async function promoteStudent(): Promise<boolean> {
+    if (
+      activeMutationRef.current
+      || terminalAuthRef.current
+      || !selected
+      || !response?.can_promote
+      || selected.staff_role !== null
+    ) return false;
+    activeMutationRef.current = true;
+    setMutationPending(true);
+    setPromotionPending(true);
+    setMutationError(undefined);
+    setNotice(undefined);
+    const authorizationGeneration = authorizationGenerationRef.current;
+    const studentId = selected.user_id;
+    try {
+      const promoted = await api.post<TeacherStudent>(
+        `/api/admin/students/${studentId}/promote-to-teacher`,
+        {},
+      );
+      if (
+        !mountedRef.current
+        || terminalAuthRef.current
+        || authorizationGeneration !== authorizationGenerationRef.current
+        || !activeMutationRef.current
+      ) return false;
+      setSelected(promoted);
+      setState((current) => {
+        if (current.status !== "ready") return current;
+        return {
+          ...current,
+          response: {
+            ...current.response,
+            items: current.response.items.map((student) => (
+              student.user_id === promoted.user_id ? promoted : student
+            )),
+          },
+        };
+      });
+      setNotice(`${promoted.name} 학생을 교사로 승격했습니다.`);
+      return true;
+    } catch (caught: unknown) {
+      if (
+        !mountedRef.current
+        || terminalAuthRef.current
+        || authorizationGeneration !== authorizationGenerationRef.current
+        || !activeMutationRef.current
+      ) return false;
+      if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
+        redirectAuthorization("AUTH_REQUIRED");
+        return false;
+      }
+      if (caught instanceof ApiClientError && caught.code === "FORBIDDEN") {
+        redirectAuthorization("FORBIDDEN");
+        return false;
+      }
+      setMutationError(caught instanceof ApiClientError ? caught.message : "학생을 교사로 승격하지 못했습니다.");
+      return false;
+    } finally {
+      if (mountedRef.current && !terminalAuthRef.current) {
+        activeMutationRef.current = false;
+        setMutationPending(false);
+        setPromotionPending(false);
+      }
+    }
+  }
+
   return (
     <main className="teacher-students-shell">
       <header className="teacher-students-header">
@@ -374,8 +444,11 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
           key={selected.user_id}
           student={selected}
           saving={mutationPending}
+          canPromote={response?.can_promote === true}
+          promoting={promotionPending}
           requestError={mutationError}
           onSave={(command) => void saveStudent(command)}
+          onPromote={promoteStudent}
           onCancel={() => {
             if (!mutationPending) closeEditor();
           }}

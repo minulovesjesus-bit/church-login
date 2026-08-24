@@ -126,7 +126,7 @@
 
 - `/`
 - `/teacher/login`
-- `/auth/login`
+- `/login`
 - `/auth/signup`
 - `/onboarding`
 - `/teacher/apply`

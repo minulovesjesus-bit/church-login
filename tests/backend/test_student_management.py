@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import os
@@ -17,11 +18,16 @@ from backend.attendance.service import AttendanceService
 from backend.core.auth import get_current_user
 from backend.core.clock import FrozenClock
 from backend.core.config import settings
-from backend.core.db import application_transaction
+from backend.core.db import application_transaction, get_database_connection
 from backend.core.errors import ApiError
 from backend.identity.models import AuthenticatedUser
 from backend.identity.repository import IdentityRepository
-from backend.identity.router import get_identity_repository, require_teacher
+from backend.identity.router import (
+    get_identity_repository,
+    require_admin,
+    require_teacher,
+)
+from backend.identity.schemas import StaffRole
 from backend.identity.service import IdentityService
 from backend.main import app
 from backend.students.repository import StudentRepository
@@ -49,7 +55,12 @@ def _user(*, provider: str = "google", email: str = "teacher@example.test") -> A
     )
 
 
-def _student(index: int, *, included: bool = True) -> TeacherStudentView:
+def _student(
+    index: int,
+    *,
+    included: bool = True,
+    staff_role: StaffRole | None = None,
+) -> TeacherStudentView:
     return TeacherStudentView(
         user_id=UUID(f"00000000-0000-4000-8000-{index:012d}"),
         email=f"student{index}@example.test",
@@ -58,6 +69,7 @@ def _student(index: int, *, included: bool = True) -> TeacherStudentView:
         phone="01012345678",
         guardian_phone="01098765432",
         include_in_statistics=included,
+        staff_role=staff_role,
     )
 
 
@@ -74,9 +86,13 @@ class FakeStudentRepository:
         self.role = role
         self.list_calls: list[tuple[StudentListFilters, object]] = []
         self.update_calls: list[tuple[UUID, TeacherStudentUpdate, UUID]] = []
+        self.promote_calls: list[tuple[UUID, UUID]] = []
 
     async def active_staff_role(self, _user_id: UUID) -> str | None:
         return self.role
+
+    async def serialize_staff_memberships(self) -> None:
+        return None
 
     async def list_students(self, filters: StudentListFilters, cursor_key: object):
         self.list_calls.append((filters, cursor_key))
@@ -103,8 +119,22 @@ class FakeStudentRepository:
         return TeacherStudentView(
             user_id=current.user_id,
             email=current.email,
+            staff_role=current.staff_role,
             **command.model_dump(),
         )
+
+    async def get_student(self, student_id: UUID) -> TeacherStudentView | None:
+        return next((item for item in self.students if item.user_id == student_id), None)
+
+    async def promote_student_to_teacher(self, student_id: UUID, actor_id: UUID) -> bool:
+        self.promote_calls.append((student_id, actor_id))
+        for index, student in enumerate(self.students):
+            if student.user_id == student_id and student.staff_role is None:
+                self.students[index] = student.model_copy(
+                    update={"staff_role": StaffRole.TEACHER}
+                )
+                return True
+        return False
 
 
 class FakeIdentityRepository:
@@ -123,6 +153,7 @@ class FakeStudentService:
         self.student = _student(1)
         self.list_calls: list[tuple[AuthenticatedUser, StudentListFilters]] = []
         self.update_calls: list[tuple[AuthenticatedUser, UUID, TeacherStudentUpdate]] = []
+        self.promote_calls: list[tuple[AuthenticatedUser, UUID]] = []
 
     async def list_students(self, actor: AuthenticatedUser, filters: StudentListFilters):
         self.list_calls.append((actor, filters))
@@ -130,6 +161,7 @@ class FakeStudentService:
             "items": [self.student],
             "next_cursor": "opaque-next",
             "page_size": filters.page_size,
+            "can_promote": False,
         }
 
     async def update_student(
@@ -142,8 +174,17 @@ class FakeStudentService:
         return TeacherStudentView(
             user_id=student_id,
             email=self.student.email,
+            staff_role=self.student.staff_role,
             **command.model_dump(),
         )
+
+    async def promote_student_to_teacher(
+        self,
+        actor: AuthenticatedUser,
+        student_id: UUID,
+    ) -> TeacherStudentView:
+        self.promote_calls.append((actor, student_id))
+        return self.student.model_copy(update={"staff_role": StaffRole.TEACHER})
 
 
 def test_filters_and_complete_update_payload_normalize_and_reject_unsafe_values() -> None:
@@ -357,7 +398,18 @@ async def test_service_rejects_invalid_complete_cursor_shape(payload: object) ->
 async def test_repository_parameterizes_escaped_search_keyset_and_page_size_plus_one() -> None:
     class Cursor:
         async def fetchall(self):
-            return []
+            return [
+                (
+                    _student(1).user_id,
+                    "student1@example.test",
+                    "학생 001",
+                    date(2012, 4, 3),
+                    "01012345678",
+                    "01098765432",
+                    True,
+                    "teacher",
+                )
+            ]
 
     class RecordingConnection:
         def __init__(self) -> None:
@@ -372,15 +424,65 @@ async def test_repository_parameterizes_escaped_search_keyset_and_page_size_plus
     connection = RecordingConnection()
     repository = StudentRepository(connection)
     filters = StudentListFilters(query=r"100%_참여\\반", statistics="excluded", page_size=100)
-    await repository.list_students(filters, None)
+    students = await repository.list_students(filters, None)
 
     assert "offset" not in connection.sql.lower()
     assert "order by lower(profile.name), profile.user_id" in connection.sql.lower()
     assert "> (lower(%(cursor_name)s), %(cursor_user_id)s::uuid)" in connection.sql.lower()
     assert "ilike" in connection.sql.lower()
+    assert "left join app.staff_memberships membership using (user_id)" in connection.sql.lower()
+    assert "membership.role::text" in connection.sql.lower()
     assert connection.parameters["search"] == r"%100\%\_참여\\\\반%"
     assert connection.parameters["limit"] == 101
     assert connection.parameters["statistics"] == "excluded"
+    assert students[0].staff_role is StaffRole.TEACHER
+
+
+@pytest.mark.parametrize(
+    ("role", "can_promote"),
+    [("teacher", False), ("admin", True)],
+)
+async def test_student_page_projects_admin_promotion_capability(
+    role: str,
+    can_promote: bool,
+) -> None:
+    actor = _user()
+    service = StudentService(FakeStudentRepository([_student(1)], role=role))  # type: ignore[arg-type]
+
+    page = await service.list_students(actor, StudentListFilters())
+
+    assert page.can_promote is can_promote
+
+
+async def test_repository_promotion_is_one_conflict_safe_audited_statement() -> None:
+    class Cursor:
+        async def fetchone(self):
+            return (True,)
+
+    class RecordingConnection:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, object]] = []
+
+        async def execute(self, sql: str, parameters: object):
+            self.calls.append((sql, parameters))
+            return Cursor()
+
+    connection = RecordingConnection()
+    repository = StudentRepository(connection)
+    actor_id = uuid4()
+    student_id = uuid4()
+
+    inserted = await repository.promote_student_to_teacher(student_id, actor_id)
+
+    assert inserted is True
+    assert len(connection.calls) == 1
+    sql, parameters = connection.calls[0]
+    assert "on conflict (user_id) do nothing" in sql.lower()
+    assert "'student.promoted_to_teacher'" in sql
+    assert "'student_profile'" in sql
+    assert "jsonb_build_object('role', 'teacher')" in sql
+    assert "from inserted" in sql.lower()
+    assert parameters == {"target": student_id, "actor": actor_id}
 
 
 async def test_teacher_and_admin_routes_are_bounded_and_have_no_create_endpoint(
@@ -410,9 +512,12 @@ async def test_teacher_and_admin_routes_are_bounded_and_have_no_create_endpoint(
 
 @pytest.mark.parametrize(
     ("provider", "role", "expected_code"),
-    [("password", "teacher", "GOOGLE_AUTH_REQUIRED"), ("google", None, "FORBIDDEN")],
+    [
+        ("password", None, "FORBIDDEN"),
+        ("google", None, "FORBIDDEN"),
+    ],
 )
-async def test_student_routes_reject_non_google_and_non_staff_identities(
+async def test_student_routes_reject_non_staff_identities(
     client: httpx.AsyncClient,
     provider: str,
     role: str | None,
@@ -429,6 +534,25 @@ async def test_student_routes_reject_non_google_and_non_staff_identities(
 
     assert response.status_code == 403
     assert response.json()["error"]["code"] == expected_code
+
+
+@pytest.mark.parametrize("provider", ["google", "password"])
+async def test_teacher_membership_authorizes_any_provider(
+    client: httpx.AsyncClient,
+    provider: str,
+) -> None:
+    actor = _user(provider=provider)
+    app.dependency_overrides[get_current_user] = lambda: actor
+    app.dependency_overrides[get_identity_repository] = lambda: FakeIdentityRepository(
+        "teacher"
+    )
+    app.dependency_overrides[get_student_service] = FakeStudentService
+    try:
+        response = await client.get("/api/teacher/students")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
 
 
 async def test_patch_normalizes_complete_metadata_only_payload_and_missing_is_404(
@@ -470,6 +594,77 @@ async def test_patch_normalizes_complete_metadata_only_payload_and_missing_is_40
             TeacherStudentUpdate(**payload),
         )
     assert (missing.value.code, missing.value.status_code) == ("STUDENT_NOT_FOUND", 404)
+
+
+async def test_admin_route_promotes_student_and_returns_refreshed_role(
+    client: httpx.AsyncClient,
+) -> None:
+    actor = _user(email="admin@example.test")
+    service = FakeStudentService()
+    student_id = service.student.user_id
+    admin_headers: dict[str, str] = {}
+    app.dependency_overrides[require_admin] = lambda: actor
+    app.dependency_overrides[get_student_service] = lambda: service
+    try:
+        response = await client.post(
+            f"/api/admin/students/{student_id}/promote-to-teacher",
+            headers=admin_headers,
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["staff_role"] == "teacher"
+    assert service.promote_calls == [(actor, student_id)]
+
+
+async def test_promotion_service_is_idempotent_and_conflict_safe() -> None:
+    actor = _user(email="admin@example.test")
+    ordinary = _student(1)
+    teacher = _student(2, staff_role=StaffRole.TEACHER)
+    admin = _student(3, staff_role=StaffRole.ADMIN)
+    repository = FakeStudentRepository(
+        [ordinary, teacher, admin],
+        role="admin",
+    )
+    service = StudentService(repository)  # type: ignore[arg-type]
+
+    promoted = await service.promote_student_to_teacher(actor, ordinary.user_id)
+    existing = await service.promote_student_to_teacher(actor, teacher.user_id)
+
+    assert promoted.staff_role is StaffRole.TEACHER
+    assert existing.staff_role is StaffRole.TEACHER
+    assert repository.promote_calls == [(ordinary.user_id, actor.user_id)]
+
+    with pytest.raises(ApiError) as conflict:
+        await service.promote_student_to_teacher(actor, admin.user_id)
+    assert conflict.value.status_code == 409
+
+    with pytest.raises(ApiError) as missing:
+        await service.promote_student_to_teacher(actor, uuid4())
+    assert (missing.value.code, missing.value.status_code) == ("STUDENT_NOT_FOUND", 404)
+
+
+async def test_non_admin_promotion_is_forbidden_before_target_lookup(
+    client: httpx.AsyncClient,
+) -> None:
+    actor = _user(email="teacher@example.test")
+    service = FakeStudentService()
+    app.dependency_overrides[get_current_user] = lambda: actor
+    app.dependency_overrides[get_identity_repository] = lambda: FakeIdentityRepository(
+        "teacher"
+    )
+    app.dependency_overrides[get_student_service] = lambda: service
+    try:
+        response = await client.post(
+            f"/api/admin/students/{uuid4()}/promote-to-teacher"
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "FORBIDDEN"
+    assert service.promote_calls == []
 
 
 def _loopback_database_url() -> str:
@@ -739,3 +934,147 @@ async def test_live_update_accepts_the_current_seoul_date_at_the_utc_date_bounda
         assert updated.birth_date == seoul_today
     finally:
         await _cleanup_live_students(database_url, teacher_id, student_ids)
+
+
+async def test_live_admin_promotion_is_preserving_idempotent_and_concurrency_safe(
+    client: httpx.AsyncClient,
+) -> None:
+    database_url = _loopback_database_url()
+    admin_id, student_ids = await _seed_live_students(database_url, count=3)
+    student_id = student_ids[1]
+    admin_target_id = student_ids[2]
+    admin = AuthenticatedUser(
+        user_id=admin_id,
+        email=f"teacher-{admin_id.hex}@example.test",
+        provider="password",
+        email_verified=True,
+    )
+    admin_headers: dict[str, str] = {}
+
+    async def database_connection_override():
+        async with application_transaction(database_url=database_url) as connection:
+            yield connection
+
+    async def membership_count(target_id: UUID) -> int:
+        connection = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            cursor = await connection.execute(
+                "select count(*) from app.staff_memberships where user_id = %s",
+                (target_id,),
+            )
+            row = await cursor.fetchone()
+            return int(row[0])
+        finally:
+            await connection.close()
+
+    async def audit_count(action: str, target_id: UUID) -> int:
+        connection = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            cursor = await connection.execute(
+                "select count(*) from app.audit_logs where action = %s and target_id = %s",
+                (action, str(target_id)),
+            )
+            row = await cursor.fetchone()
+            return int(row[0])
+        finally:
+            await connection.close()
+
+    try:
+        connection = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            await connection.execute(
+                "update app.staff_memberships set role = 'admin' where user_id = %s",
+                (admin_id,),
+            )
+            await connection.execute(
+                "insert into app.staff_memberships (user_id, role, approved_by) values (%s, 'admin', %s)",
+                (admin_target_id, admin_id),
+            )
+            await connection.execute(
+                """
+                insert into app.attendance_scans (
+                  student_id, attendance_date, direction, scanned_at,
+                  request_id, source, recorded_by
+                ) values (%s, '2026-08-21', 'IN', '2026-08-21T02:00:00Z', %s, 'MANUAL', %s)
+                """,
+                (student_id, uuid4(), admin_id),
+            )
+            snapshot_cursor = await connection.execute(
+                """
+                select profile.email, profile.name, profile.phone,
+                       student.birth_date, student.guardian_phone,
+                       student.include_in_statistics,
+                       (select count(*) from app.attendance_scans scan where scan.student_id = student.user_id)
+                from app.student_profiles student
+                join app.user_profiles profile using (user_id)
+                where student.user_id = %s
+                """,
+                (student_id,),
+            )
+            before = await snapshot_cursor.fetchone()
+            await connection.commit()
+        finally:
+            await connection.close()
+
+        app.dependency_overrides[require_admin] = lambda: admin
+        app.dependency_overrides[get_database_connection] = database_connection_override
+        responses = await asyncio.gather(
+            client.post(
+                f"/api/admin/students/{student_id}/promote-to-teacher",
+                headers=admin_headers,
+            ),
+            client.post(
+                f"/api/admin/students/{student_id}/promote-to-teacher",
+                headers=admin_headers,
+            ),
+        )
+        response = await client.post(
+            f"/api/admin/students/{student_id}/promote-to-teacher",
+            headers=admin_headers,
+        )
+        conflict = await client.post(
+            f"/api/admin/students/{admin_target_id}/promote-to-teacher",
+            headers=admin_headers,
+        )
+        missing = await client.post(
+            f"/api/admin/students/{uuid4()}/promote-to-teacher",
+            headers=admin_headers,
+        )
+        app.dependency_overrides.clear()
+
+        assert [item.status_code for item in responses] == [200, 200]
+        assert response.status_code == 200
+        assert response.json()["staff_role"] == "teacher"
+        assert await membership_count(student_id) == 1
+        assert await audit_count("student.promoted_to_teacher", student_id) == 1
+        assert conflict.status_code == 409
+        assert missing.status_code == 404
+
+        connection = await psycopg.AsyncConnection.connect(database_url)
+        try:
+            snapshot_cursor = await connection.execute(
+                """
+                select profile.email, profile.name, profile.phone,
+                       student.birth_date, student.guardian_phone,
+                       student.include_in_statistics,
+                       (select count(*) from app.attendance_scans scan where scan.student_id = student.user_id)
+                from app.student_profiles student
+                join app.user_profiles profile using (user_id)
+                where student.user_id = %s
+                """,
+                (student_id,),
+            )
+            after = await snapshot_cursor.fetchone()
+            role_cursor = await connection.execute(
+                "select role::text from app.staff_memberships where user_id = %s",
+                (admin_target_id,),
+            )
+            admin_target_role = await role_cursor.fetchone()
+        finally:
+            await connection.close()
+
+        assert after == before
+        assert admin_target_role == ("admin",)
+    finally:
+        app.dependency_overrides.clear()
+        await _cleanup_live_students(database_url, admin_id, student_ids)

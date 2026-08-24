@@ -178,11 +178,11 @@ function TeacherAttendanceContent() {
       .catch((caught: unknown) => {
         if (!active) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
-          router.replace("/teacher/login");
+          router.replace("/login");
           return;
         }
         if (caught instanceof ApiClientError && caught.code === "FORBIDDEN") {
-          router.replace("/teacher/apply");
+          router.replace("/student");
           return;
         }
         setError({

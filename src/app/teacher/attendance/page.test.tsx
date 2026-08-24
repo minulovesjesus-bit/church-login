@@ -401,6 +401,6 @@ it("redirects an expired teacher session without attendance content", async () =
   );
   render(<TeacherAttendancePage />);
 
-  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/teacher/login"));
+  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/login"));
   expect(screen.queryByRole("heading", { name: "전체 출결 관리" })).not.toBeInTheDocument();
 });

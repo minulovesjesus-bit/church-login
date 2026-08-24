@@ -32,14 +32,14 @@ it("preserves the signup payload, callback, and success status", async () => {
   await vi.waitFor(() => expect(signUp).toHaveBeenCalledWith({
     email: "student@example.com",
     password: "password123",
-    options: { emailRedirectTo: "http://localhost:3000/auth/callback?next=/student" },
+    options: { emailRedirectTo: "http://localhost:3000/auth/callback?next=/auth/continue" },
   }));
   expect(await screen.findByRole("status")).toHaveTextContent(
     "인증 이메일을 확인한 뒤 계속해 주세요.",
   );
   expect(screen.getByRole("link", { name: "로그인으로 돌아가기" })).toHaveAttribute(
     "href",
-    "/auth/login",
+    "/login",
   );
 });
 

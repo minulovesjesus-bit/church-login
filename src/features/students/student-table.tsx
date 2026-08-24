@@ -17,7 +17,20 @@ export type TeacherStudent = {
   phone: string;
   guardian_phone: string;
   include_in_statistics: boolean;
+  staff_role: "teacher" | "admin" | null;
 };
+
+export function staffRoleLabel(staffRole: TeacherStudent["staff_role"]): string {
+  if (staffRole === "admin") return "관리자";
+  if (staffRole === "teacher") return "교사";
+  return "학생";
+}
+
+export function staffRoleBadgeVariant(staffRole: TeacherStudent["staff_role"]): "default" | "secondary" | "outline" {
+  if (staffRole === "admin") return "default";
+  if (staffRole === "teacher") return "secondary";
+  return "outline";
+}
 
 function seoulCalendarDate(now = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -60,6 +73,7 @@ export default function StudentTable({ students, disabled = false, onEdit }: Stu
             <TableHead scope="col">연락처</TableHead>
             <TableHead scope="col">보호자 연락처</TableHead>
             <TableHead scope="col">통계 상태</TableHead>
+            <TableHead scope="col">권한</TableHead>
             <TableHead scope="col"><span className="sr-only">관리</span></TableHead>
           </TableRow>
         </TableHeader>
@@ -76,6 +90,11 @@ export default function StudentTable({ students, disabled = false, onEdit }: Stu
               <TableCell>
                 <Badge variant={student.include_in_statistics ? "secondary" : "outline"}>
                   {student.include_in_statistics ? "통계 포함" : "통계 제외"}
+                </Badge>
+              </TableCell>
+              <TableCell>
+                <Badge variant={staffRoleBadgeVariant(student.staff_role)}>
+                  {staffRoleLabel(student.staff_role)}
                 </Badge>
               </TableCell>
               <TableCell>

@@ -184,9 +184,8 @@ async function expectTrappedAndReturned(
 test("root and authentication surfaces match mobile and desktop baselines", async ({ page }) => {
   const routes = [
     { path: "/", heading: "함께하는 오늘, 안심되는 출결", slug: "root" },
-    { path: "/auth/login", heading: "학생 로그인", slug: "student-login" },
+    { path: "/login", heading: "로그인", slug: "student-login" },
     { path: "/auth/signup", heading: "학생 회원가입", slug: "student-signup" },
-    { path: "/teacher/login", heading: "교사 로그인", slug: "teacher-login" },
   ] as const;
   const sizes = [
     ["student", viewports.student],
@@ -205,6 +204,24 @@ test("root and authentication surfaces match mobile and desktop baselines", asyn
       await expectNoSeriousAxeViolations(page, route.path);
     }
   }
+});
+
+test("authentication tasks keep their primary action visible and aligned at layout cliffs", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/login");
+  const desktopHeading = await page.getByRole("heading", { name: "로그인" }).boundingBox();
+  expect(desktopHeading).not.toBeNull();
+  expect(desktopHeading!.x).toBeGreaterThanOrEqual(32);
+
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto("/login");
+  const mobileShell = page.locator("main.auth-shell:visible");
+  const image = await mobileShell.locator(".auth-shell-image").boundingBox();
+  const submit = await mobileShell.getByRole("button", { name: "로그인", exact: true }).boundingBox();
+  expect(image).not.toBeNull();
+  expect(submit).not.toBeNull();
+  expect(image!.height).toBeLessThanOrEqual(144);
+  expect(submit!.y + submit!.height).toBeLessThanOrEqual(568);
 });
 
 test("student routes match phone and tablet baselines", async ({ browser }) => {
@@ -239,6 +256,116 @@ test("student routes match phone and tablet baselines", async ({ browser }) => {
     await page.goto("/student");
     await expect(page.getByRole("heading", { name: "반가워요!" })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
+  } finally {
+    await context.close();
+  }
+});
+
+test("student shell stays a narrow bottom-navigation canvas at every breakpoint", async ({ browser }) => {
+  const identities = [
+    { fixture: "completeStudent", items: 4 },
+    { fixture: "approvedTeacher", items: 5 },
+  ] as const;
+  const sizes = [
+    viewports.student,
+    viewports.tabletPortrait,
+    viewports.desktop,
+  ] as const;
+
+  for (const { fixture, items } of identities) {
+    const context = await browser.newContext();
+    await authenticateAs(context, fixture);
+    const page = await context.newPage();
+
+    try {
+      for (const viewport of sizes) {
+        await page.setViewportSize(viewport);
+        await page.goto("/student");
+
+        const navigation = page.getByRole("navigation", { name: "학생 메뉴" });
+        await expect(navigation).toHaveAttribute("data-items", String(items));
+        const layout = await page.evaluate(() => {
+          const shell = document.querySelector<HTMLElement>(".student-shell");
+          const content = document.querySelector<HTMLElement>(".student-shell-content");
+          const navigation = document.querySelector<HTMLElement>(".student-navigation");
+          const list = navigation?.querySelector<HTMLElement>("ul");
+
+          if (!shell || !content || !navigation || !list) throw new Error("student shell is incomplete");
+
+          const shellBox = shell.getBoundingClientRect();
+          const navigationBox = navigation.getBoundingClientRect();
+          const navigationStyle = getComputedStyle(navigation);
+          const listStyle = getComputedStyle(list);
+
+          return {
+            documentWidth: document.documentElement.scrollWidth,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            shell: { left: shellBox.left, width: shellBox.width, height: shellBox.height },
+            navigation: {
+              bottom: navigationBox.bottom,
+              left: navigationBox.left,
+              position: navigationStyle.position,
+              width: navigationBox.width,
+              height: navigationBox.height,
+            },
+            contentPaddingBottom: Number.parseFloat(getComputedStyle(content).paddingBottom),
+            gridColumns: listStyle.gridTemplateColumns.split(" ").filter(Boolean).map(Number.parseFloat),
+            renderedItems: list.querySelectorAll(":scope > li").length,
+          };
+        });
+
+        expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
+        expect(layout.shell.width).toBeLessThanOrEqual(46 * 16);
+        expect(layout.shell.width).toBeCloseTo(Math.min(layout.viewportWidth, 46 * 16), 1);
+        expect(layout.shell.left).toBeCloseTo((layout.viewportWidth - layout.shell.width) / 2, 1);
+        expect(layout.shell.height).toBeGreaterThanOrEqual(layout.viewportHeight);
+
+        expect(layout.navigation.position).toBe("fixed");
+        expect(layout.navigation.width).toBeCloseTo(layout.shell.width, 1);
+        expect(layout.navigation.left).toBeCloseTo(layout.shell.left, 1);
+        expect(layout.navigation.bottom).toBeCloseTo(layout.viewportHeight, 1);
+        expect(layout.navigation.height).toBeGreaterThanOrEqual(4 * 16);
+        expect(layout.contentPaddingBottom).toBeGreaterThanOrEqual(layout.navigation.height - 1);
+
+        expect(layout.renderedItems).toBe(items);
+        expect(layout.gridColumns).toHaveLength(items);
+        for (const columnWidth of layout.gridColumns) {
+          expect(columnWidth).toBeCloseTo(layout.navigation.width / items, 1);
+        }
+      }
+    } finally {
+      await context.close();
+    }
+  }
+});
+
+test("student scanner reserves the fixed navigation area", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 667 } });
+  await authenticateAs(context, "completeStudent");
+  const page = await context.newPage();
+
+  try {
+    await page.goto("/student/scan");
+    await expect(page.getByRole("heading", { name: "QR로 출결하기" })).toBeVisible();
+    const layout = await page.evaluate(() => {
+      const content = document.querySelector<HTMLElement>(".student-shell-content");
+      const scanner = document.querySelector<HTMLElement>(".student-scan-shell");
+      const navigation = document.querySelector<HTMLElement>(".student-navigation");
+      if (!content || !scanner || !navigation) throw new Error("student scanner layout is incomplete");
+
+      return {
+        contentPaddingBottom: Number.parseFloat(getComputedStyle(content).paddingBottom),
+        navigationHeight: navigation.getBoundingClientRect().height,
+        scannerMinHeight: Number.parseFloat(getComputedStyle(scanner).minHeight),
+        viewportHeight: window.innerHeight,
+      };
+    });
+
+    expect(layout.contentPaddingBottom).toBeGreaterThanOrEqual(layout.navigationHeight - 1);
+    expect(layout.scannerMinHeight).toBeLessThanOrEqual(
+      layout.viewportHeight - layout.navigationHeight + 1,
+    );
   } finally {
     await context.close();
   }
@@ -297,13 +424,38 @@ test("teacher routes match tablet and desktop baselines", async ({ browser }) =>
   }
 });
 
+test("teacher page headings share one desktop content edge", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: viewports.desktop });
+  await authenticateAs(context, "approvedTeacher");
+  const page = await context.newPage();
+  const routes = [
+    { path: "/teacher", heading: "교사 대시보드" },
+    { path: "/teacher/attendance", heading: "전체 출결 관리" },
+    { path: "/teacher/students", heading: "학생 관리" },
+    { path: "/teacher/events", heading: "일정 관리" },
+  ] as const;
+
+  try {
+    const leftEdges: number[] = [];
+    for (const route of routes) {
+      await page.goto(route.path);
+      const box = await page.getByRole("heading", { name: route.heading }).boundingBox();
+      expect(box).not.toBeNull();
+      leftEdges.push(box!.x);
+    }
+    expect(Math.max(...leftEdges) - Math.min(...leftEdges)).toBeLessThanOrEqual(1);
+  } finally {
+    await context.close();
+  }
+});
+
 test("locked and unlocked kiosk match portrait and landscape baselines", async ({ page }) => {
   const sizes = [
     ["tablet-portrait", viewports.tabletPortrait],
     ["kiosk", viewports.kiosk],
   ] as const;
 
-  await page.goto("/login");
+  await page.goto("/qr");
   for (const [sizeName, viewport] of sizes) {
     await page.setViewportSize(viewport);
     await expectStableScreenshot(
@@ -319,6 +471,7 @@ test("locked and unlocked kiosk match portrait and landscape baselines", async (
     && response.request().method() === "GET"
     && response.ok()
   ));
+  await page.getByLabel("기기 이름").fill("본당 입구");
   await page.getByLabel("관리자 비밀번호").fill("Kiosk-e2e-2026!");
   await page.getByRole("button", { name: "QR 화면 열기" }).click();
   const challenge = await (await qrResponse).json() as { issued_at: string };
@@ -338,7 +491,7 @@ test("locked and unlocked kiosk match portrait and landscape baselines", async (
   await expectNoSeriousAxeViolations(page);
 });
 
-test("Sheet, Dialog, and AlertDialog trap focus, close with Escape, and restore their opener", async ({ browser }) => {
+test("current staff overlays trap focus, close with Escape, and restore their opener", async ({ browser }) => {
   const teacherContext = await browser.newContext({ viewport: viewports.tabletPortrait });
   const adminContext = await browser.newContext({ viewport: viewports.desktop });
   await authenticateAs(teacherContext, "approvedTeacher");
@@ -355,19 +508,13 @@ test("Sheet, Dialog, and AlertDialog trap focus, close with Escape, and restore 
       teacher.getByRole("dialog", { name: "교사 메뉴" }),
     );
 
-    await admin.goto("/teacher/applications");
-    const rejectOpener = admin.getByRole("button", { name: "승인 대기 교사 님 거절" });
-    await expectTrappedAndReturned(
-      admin,
-      rejectOpener,
-      admin.getByRole("dialog", { name: "승인 대기 교사 님 신청 거절" }),
-    );
-
-    const approveOpener = admin.getByRole("button", { name: "승인 대기 교사 님 승인" });
+    await admin.goto("/admin/staff");
+    const approveOpener = admin.getByRole("button", { name: "승인 교사 님 관리자로 승격" });
+    await expect(approveOpener).toBeVisible();
     await expectTrappedAndReturned(
       admin,
       approveOpener,
-      admin.getByRole("alertdialog", { name: "승인 대기 교사 님 교사 승인" }),
+      admin.getByRole("alertdialog", { name: "승인 교사 님 관리자 승격" }),
     );
   } finally {
     await Promise.all([teacherContext.close(), adminContext.close()]);

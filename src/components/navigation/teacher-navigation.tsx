@@ -10,7 +10,6 @@ import {
   MenuIcon,
   MonitorSmartphoneIcon,
   ShieldCheckIcon,
-  UserRoundPlusIcon,
   UsersRoundIcon,
   XIcon,
 } from "lucide-react";
@@ -55,9 +54,12 @@ const CORE_LINKS: NavigationLink[] = [
 ];
 
 const ADMIN_LINKS: NavigationLink[] = [
-  { href: "/teacher/applications", label: "교사 신청", icon: UserRoundPlusIcon },
   { href: "/admin/staff", label: "교사 권한", icon: ShieldCheckIcon },
   { href: "/admin/kiosks", label: "키오스크", icon: MonitorSmartphoneIcon },
+];
+
+const VIEW_SWITCH_LINKS: NavigationLink[] = [
+  { href: "/student", label: "학생 화면으로 보기", icon: UsersRoundIcon },
 ];
 
 function isCurrent(pathname: string, href: string): boolean {
@@ -102,8 +104,7 @@ function NavigationPanel({ admin, pathname, onNavigate, id }: {
     <>
       <SidebarHeader>
         <div className="staff-sidebar-brand">
-          <BrandMark className="size-10" />
-          <strong>교회 출결</strong>
+          <BrandMark tone="light" className="h-9 w-auto max-w-40" />
         </div>
       </SidebarHeader>
       <SidebarContent>
@@ -124,6 +125,16 @@ function NavigationPanel({ admin, pathname, onNavigate, id }: {
               </SidebarGroup>
             </>
           ) : null}
+          <SidebarSeparator />
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <NavigationItems
+                links={VIEW_SWITCH_LINKS}
+                pathname={pathname}
+                onNavigate={onNavigate}
+              />
+            </SidebarGroupContent>
+          </SidebarGroup>
         </nav>
       </SidebarContent>
     </>
@@ -165,8 +176,7 @@ export function TeacherNavigation({ admin }: { admin: boolean }) {
           aria-hidden={!isMobile || open || undefined}
         >
           <div className="staff-mobile-header__brand">
-            <BrandMark className="size-9" />
-            <strong>교회 출결</strong>
+            <BrandMark className="h-8 w-auto max-w-36" />
           </div>
           <SheetTrigger asChild>
             <Button

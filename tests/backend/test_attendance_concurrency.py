@@ -122,11 +122,13 @@ async def _seed_attendance_principals(
         await connection.execute(
             """
             insert into app.kiosk_sessions (
-              id, refresh_token_hash, created_at, last_seen_at, refresh_expires_at
-            ) values (%s, %s, %s, %s, %s)
+              id, device_name, refresh_token_hash, created_at,
+              last_seen_at, refresh_expires_at
+            ) values (%s, %s, %s, %s, %s, %s)
             """,
             (
                 kiosk_id,
+                "동시성 테스트 키오스크",
                 uuid4().hex,
                 clock.now(),
                 clock.now(),
@@ -813,8 +815,9 @@ async def test_live_unique_conflict_uses_on_conflict_fallback() -> None:
                     """
                     insert into app.attendance_scans (
                       student_id, attendance_date, direction, scanned_at,
-                      kiosk_session_id, request_id, qr_issued_at, source
-                    ) values (%s, %s, %s, %s, %s, %s, %s, 'QR')
+                      kiosk_session_id, kiosk_device_name, request_id,
+                      qr_issued_at, source
+                    ) values (%s, %s, %s, %s, %s, %s, %s, %s, 'QR')
                     """,
                     (
                         values["student_id"],
@@ -822,6 +825,7 @@ async def test_live_unique_conflict_uses_on_conflict_fallback() -> None:
                         values["direction"].value,
                         values["scanned_at"],
                         values["kiosk_session_id"],
+                        values["kiosk_device_name"],
                         values["request_id"],
                         values["qr_issued_at"],
                     ),

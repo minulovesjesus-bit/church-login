@@ -183,6 +183,15 @@ async def test_expired_jwt_returns_stable_error(
     assert response.json()["error"]["code"] == "AUTH_REQUIRED"
 
 
+async def test_student_profile_requires_authorization(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.get("/api/students/profile")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+
+
 @pytest.mark.parametrize(
     ("payload_overrides", "algorithm", "signing_key"),
     [

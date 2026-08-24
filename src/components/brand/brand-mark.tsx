@@ -1,43 +1,31 @@
-export function BrandMark({ className }: { className?: string }) {
+import Image from "next/image";
+
+import { cn } from "@/lib/utils";
+
+export type BrandTone = "dark" | "light";
+
+export function BrandMark({
+  className,
+  tone = "dark",
+}: {
+  className?: string;
+  tone?: BrandTone;
+}) {
   return (
-    <svg className={className} role="img" aria-label="교회 출결" viewBox="0 0 48 48">
-      <path
-        d="M11 7v34M5 16h12"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        strokeLinecap="round"
-      />
-      <path
-        d="M25 8 40 13v28l-15-5V8Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M25 8v28M32 24h.01"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-      <path
-        d="M25 36 40 41"
-        fill="none"
-        stroke="var(--brand-gold)"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
+    <Image
+      src="/images/calvary-church-logo.svg"
+      alt="갈보리교회"
+      width={709}
+      height={169}
+      className={cn(`brand-mark--${tone}`, className)}
+    />
   );
 }
 
-export function BrandLockup() {
+export function BrandLockup({ tone = "dark" }: { tone?: BrandTone }) {
   return (
-    <div className="flex items-center gap-3 text-primary">
-      <BrandMark className="size-10" />
-      <strong className="text-xl font-bold">교회 출결</strong>
+    <div className="flex items-center">
+      <BrandMark tone={tone} className="h-9 w-auto sm:h-10" />
     </div>
   );
 }

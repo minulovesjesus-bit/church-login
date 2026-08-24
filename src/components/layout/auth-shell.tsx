@@ -22,7 +22,10 @@ export function AuthShell({
   return (
     <main
       aria-labelledby={headingId}
-      className="grid min-h-dvh grid-rows-[auto_auto_1fr] overflow-hidden bg-background text-foreground lg:grid-cols-2 lg:grid-rows-[6rem_1fr]"
+      className={cn(
+        "auth-shell grid min-h-dvh grid-rows-[auto_auto_1fr] overflow-hidden bg-background text-foreground lg:grid-cols-2 lg:grid-rows-[6rem_1fr]",
+        imagePriority ? "auth-shell--hero" : "auth-shell--task",
+      )}
     >
       <header className="px-4 pt-5 sm:px-8 sm:pt-7 lg:col-span-2 lg:row-start-1 lg:flex lg:h-24 lg:items-center lg:border-b lg:border-border lg:bg-background lg:px-14 lg:py-0">
         <BrandLockup />
@@ -39,7 +42,7 @@ export function AuthShell({
         />
       </div>
 
-      <section className="auth-shell-content flex w-full max-w-lg flex-col justify-start justify-self-center px-4 py-8 sm:px-8 sm:py-10 lg:col-start-1 lg:row-start-2 lg:justify-center lg:px-0 lg:py-12">
+      <section className="auth-shell-content flex w-full max-w-lg flex-col justify-start justify-self-center px-4 py-8 sm:px-8 sm:py-10 lg:col-start-1 lg:row-start-2 lg:justify-center lg:px-8 lg:py-12 xl:px-0">
         <div className="flex flex-col gap-3">
           <h1
             id={headingId}

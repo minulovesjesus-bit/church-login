@@ -3,6 +3,12 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
+import {
+  birthDateValue,
+  SegmentedBirthDateInput,
+  SegmentedPhoneInput,
+  type BirthDateParts,
+} from "@/components/forms/segmented-inputs";
 import { AuthShell } from "@/components/layout/auth-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -37,9 +43,13 @@ export default function OnboardingPage() {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [completed, setCompleted] = useState(false);
-  const [birthDate, setBirthDate] = useState("");
+  const [birthDate, setBirthDate] = useState<BirthDateParts>({
+    year: "",
+    month: "",
+    day: "",
+  });
   const [submitting, setSubmitting] = useState(false);
-  const age = ageFromBirthDate(birthDate);
+  const age = ageFromBirthDate(birthDateValue(birthDate));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -86,45 +96,35 @@ export default function OnboardingPage() {
                 />
               </Field>
               <Field data-invalid={Boolean(error)} data-disabled={submitting}>
-                <FieldLabel htmlFor="onboarding-birth-date">생년월일</FieldLabel>
-                <Input
-                  id="onboarding-birth-date"
-                  name="birth_date"
-                  type="date"
+                <FieldLabel>생년월일</FieldLabel>
+                <SegmentedBirthDateInput
                   value={birthDate}
-                  onChange={(event) => setBirthDate(event.target.value)}
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={error ? "onboarding-error" : undefined}
+                  onChange={setBirthDate}
+                  invalid={Boolean(error)}
+                  describedBy={error ? "onboarding-error" : undefined}
                   disabled={submitting}
-                  required
                 />
                 {age !== undefined ? <FieldDescription>만 {age}세</FieldDescription> : null}
               </Field>
               <Field data-invalid={Boolean(error)} data-disabled={submitting}>
-                <FieldLabel htmlFor="onboarding-phone">학생 연락처</FieldLabel>
-                <Input
-                  id="onboarding-phone"
+                <FieldLabel>학생 연락처</FieldLabel>
+                <SegmentedPhoneInput
+                  label="학생 연락처"
                   name="phone"
-                  type="tel"
-                  inputMode="numeric"
                   autoComplete="tel"
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={error ? "onboarding-error" : undefined}
+                  invalid={Boolean(error)}
+                  describedBy={error ? "onboarding-error" : undefined}
                   disabled={submitting}
-                  required
                 />
               </Field>
               <Field data-invalid={Boolean(error)} data-disabled={submitting}>
-                <FieldLabel htmlFor="onboarding-guardian-phone">보호자 연락처</FieldLabel>
-                <Input
-                  id="onboarding-guardian-phone"
+                <FieldLabel>보호자 연락처</FieldLabel>
+                <SegmentedPhoneInput
+                  label="보호자 연락처"
                   name="guardian_phone"
-                  type="tel"
-                  inputMode="numeric"
-                  aria-invalid={Boolean(error)}
-                  aria-describedby={error ? "onboarding-error" : undefined}
+                  invalid={Boolean(error)}
+                  describedBy={error ? "onboarding-error" : undefined}
                   disabled={submitting}
-                  required
                 />
               </Field>
               {error ? (

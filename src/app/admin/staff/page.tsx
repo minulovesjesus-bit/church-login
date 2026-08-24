@@ -30,8 +30,8 @@ type ListState =
 
 function authorizationDestination(error: unknown): string | undefined {
   if (!(error instanceof ApiClientError)) return undefined;
-  if (error.code === "AUTH_REQUIRED") return "/teacher/login";
-  if (error.code === "FORBIDDEN") return "/teacher";
+  if (error.code === "AUTH_REQUIRED") return "/login";
+  if (error.code === "FORBIDDEN") return "/student";
   return undefined;
 }
 

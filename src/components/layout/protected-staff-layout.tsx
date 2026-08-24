@@ -31,7 +31,7 @@ export function ProtectedStaffLayout({ children, requireAdmin = false }: Protect
         if (!active) return;
         if (!me.capabilities.teacher) {
           active = false;
-          router.replace("/teacher/apply");
+          router.replace("/student");
           return;
         }
         if (requireAdmin && !me.capabilities.admin) {
@@ -45,12 +45,12 @@ export function ProtectedStaffLayout({ children, requireAdmin = false }: Protect
         if (!active || (caught instanceof DOMException && caught.name === "AbortError")) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
           active = false;
-          router.replace("/teacher/login");
+          router.replace("/login");
           return;
         }
         if (caught instanceof ApiClientError && caught.code === "FORBIDDEN") {
           active = false;
-          router.replace("/teacher/apply");
+          router.replace("/student");
           return;
         }
         setError(caught instanceof ApiClientError ? caught.message : "교사 메뉴를 불러오지 못했습니다.");

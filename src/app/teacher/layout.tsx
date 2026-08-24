@@ -5,8 +5,10 @@ import { usePathname } from "next/navigation";
 
 import { ProtectedStaffLayout } from "@/components/layout/protected-staff-layout";
 
+const COMPATIBILITY_PATHS = new Set(["/teacher/login", "/teacher/apply", "/teacher/applications"]);
+
 export default function TeacherLayout({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
-  if (pathname === "/teacher/login" || pathname === "/teacher/apply") return children;
+  if (COMPATIBILITY_PATHS.has(pathname)) return children;
   return <ProtectedStaffLayout>{children}</ProtectedStaffLayout>;
 }

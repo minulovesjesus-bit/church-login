@@ -53,9 +53,9 @@ it("redirects a non-admin teacher away from every admin route", async () => {
 });
 
 it.each([
-  [new TestApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."), "/teacher/login"],
-  [new TestApiClientError("FORBIDDEN", "교사 권한이 필요합니다."), "/teacher/apply"],
-  [{ capabilities: { teacher: false, admin: false } }, "/teacher/apply"],
+  [new TestApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."), "/login"],
+  [new TestApiClientError("FORBIDDEN", "교사 권한이 필요합니다."), "/student"],
+  [{ capabilities: { teacher: false, admin: false } }, "/student"],
 ])("preserves the staff identity redirect for admin route case %#", async (result, destination) => {
   if (result instanceof Error) mockApi.get.mockRejectedValue(result);
   else mockApi.get.mockResolvedValue(result);

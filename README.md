@@ -23,7 +23,7 @@ npm run dev
 uv run uvicorn api.index:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:3000`; the shared kiosk is at `/login`.
+Open `http://127.0.0.1:3000`; the shared kiosk is at `/qr`.
 
 The complete guide covers local Google OAuth, Inbucket confirmation, initial-admin bootstrap, secret generation, kiosk/camera checks, E2E fixture safety, database tooling, and unlinked `vercel dev`: [docs/local-development.md](docs/local-development.md).
 

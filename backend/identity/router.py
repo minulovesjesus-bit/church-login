@@ -61,13 +61,9 @@ StaffServiceDependency = Annotated[
 
 
 async def require_teacher(
-    user: GoogleUser,
+    user: CurrentUser,
     repository: IdentityRepositoryDependency,
 ) -> AuthenticatedUser:
-    staff_service = StaffService(
-        repository, initial_admin_email=settings.initial_admin_email
-    )
-    await staff_service.bootstrap_initial_admin(user)
     if await repository.staff_role(user.user_id) not in {
         StaffRole.TEACHER,
         StaffRole.ADMIN,
@@ -80,12 +76,6 @@ async def require_admin(
     user: CurrentUser,
     repository: IdentityRepositoryDependency,
 ) -> AuthenticatedUser:
-    if user.provider != "google":
-        raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
-    staff_service = StaffService(
-        repository, initial_admin_email=settings.initial_admin_email
-    )
-    await staff_service.bootstrap_initial_admin(user)
     if await repository.staff_role(user.user_id) != StaffRole.ADMIN:
         raise ApiError("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
     return user
@@ -110,6 +100,14 @@ async def create_student_profile(
     service: IdentityServiceDependency,
 ) -> StudentProfileView:
     return await service.upsert_student_profile(user, **profile_input.model_dump())
+
+
+@router.get("/students/profile", response_model=StudentProfileView)
+async def current_student_profile(
+    user: CurrentUser,
+    service: IdentityServiceDependency,
+) -> StudentProfileView:
+    return await service.current_student_profile(user)
 
 
 @router.patch("/students/profile", response_model=StudentProfileView)

@@ -13,12 +13,25 @@ from backend.kiosk.repository import KioskSessionRecord
 from backend.kiosk.router import get_kiosk_service
 from backend.kiosk.schemas import (
     IssuedQrChallenge,
+    KioskLoginInput,
     KioskSessionListFilters,
     KioskTokens,
     QrChallenge,
 )
 from backend.kiosk.service import KioskSessionRevoked
 from backend.main import app
+
+
+def test_kiosk_login_input_trims_and_requires_a_device_name() -> None:
+    parsed = KioskLoginInput(
+        device_name="  본당 입구 태블릿  ",
+        password="church-kiosk-secret",
+    )
+
+    assert parsed.device_name == "본당 입구 태블릿"
+
+    with pytest.raises(ValueError):
+        KioskLoginInput(device_name="   ", password="church-kiosk-secret")
 
 
 class FakeKioskService:
@@ -29,8 +42,10 @@ class FakeKioskService:
         self.require_access_calls: list[str] = []
         self.issue_qr_calls: list[UUID] = []
         self.admin_revoke_calls: list[tuple[UUID, UUID]] = []
+        self.admin_delete_calls: list[tuple[UUID, UUID]] = []
         self.now = datetime(2026, 8, 21, 1, tzinfo=UTC)
         self.session_id = uuid4()
+        self.device_name = "본당 입구 태블릿"
         self.reject_login = False
         self.reject_access = False
 
@@ -41,9 +56,17 @@ class FakeKioskService:
             access_expires_at=self.now + timedelta(minutes=15),
             refresh_token="opaque-refresh-token",
             refresh_expires_at=self.now + timedelta(days=30),
+            device_name=self.device_name,
         )
 
-    async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
+    async def login(
+        self,
+        password: str,
+        rate_limit_key_hash: str,
+        *,
+        device_name: str,
+    ) -> KioskTokens:
+        self.device_name = device_name
         self.login_calls.append((password, rate_limit_key_hash))
         if self.reject_login:
             from backend.kiosk.service import KioskLoginRejected
@@ -84,6 +107,7 @@ class FakeKioskService:
         return {
             "items": [{
                 "session_id": self.session_id,
+                "device_name": self.device_name,
                 "created_at": self.now,
                 "last_seen_at": self.now,
                 "refresh_expires_at": self.now + timedelta(days=30),
@@ -95,6 +119,9 @@ class FakeKioskService:
 
     async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
         self.admin_revoke_calls.append((session_id, actor_id))
+
+    async def delete_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
+        self.admin_delete_calls.append((session_id, actor_id))
 
 
 @pytest.fixture
@@ -113,7 +140,7 @@ async def test_login_sets_strict_httponly_cookies_without_exposing_tokens(
     origin = settings.allowed_frontend_origins[0]
     response = await client.post(
         "/api/kiosk/sessions",
-        json={"password": "church-kiosk-secret"},
+        json={"device_name": "본당 입구 태블릿", "password": "church-kiosk-secret"},
         headers={"Origin": origin, "User-Agent": "Church Tablet"},
     )
 
@@ -147,7 +174,7 @@ async def test_user_agent_rotation_cannot_change_the_rate_limit_bucket(
     for user_agent in ("rotating-agent/1", "rotating-agent/2"):
         response = await client.post(
             "/api/kiosk/sessions",
-            json={"password": "wrong"},
+            json={"device_name": "본당 입구 태블릿", "password": "wrong"},
             headers={"Origin": origin, "User-Agent": user_agent},
         )
         assert response.status_code == 201
@@ -166,15 +193,15 @@ async def test_forwarded_ip_is_trusted_only_inside_the_vercel_boundary(
         "x-vercel-forwarded-for": "203.0.113.10",
         "x-forwarded-for": "198.51.100.99",
     }
-    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    await client.post("/api/kiosk/sessions", json={"device_name": "본당 입구 태블릿", "password": "wrong"}, headers=headers)
     local_key = kiosk_api.login_calls[-1][1]
 
     monkeypatch.setattr(settings, "vercel", "1")
-    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    await client.post("/api/kiosk/sessions", json={"device_name": "본당 입구 태블릿", "password": "wrong"}, headers=headers)
     vercel_key = kiosk_api.login_calls[-1][1]
 
     headers["x-vercel-forwarded-for"] = "203.0.113.11"
-    await client.post("/api/kiosk/sessions", json={"password": "wrong"}, headers=headers)
+    await client.post("/api/kiosk/sessions", json={"device_name": "본당 입구 태블릿", "password": "wrong"}, headers=headers)
     second_vercel_key = kiosk_api.login_calls[-1][1]
 
     assert vercel_key != local_key
@@ -184,7 +211,7 @@ async def test_forwarded_ip_is_trusted_only_inside_the_vercel_boundary(
 @pytest.mark.parametrize(
     ("method", "path", "cookies", "json"),
     [
-        ("POST", "/api/kiosk/sessions", {}, {"password": "secret"}),
+        ("POST", "/api/kiosk/sessions", {}, {"device_name": "본당 입구 태블릿", "password": "secret"}),
         (
             "POST",
             "/api/kiosk/sessions/refresh",
@@ -274,7 +301,7 @@ async def test_login_failure_keeps_safe_message_and_allows_rate_limit_commit(
     try:
         response = await client.post(
             "/api/kiosk/sessions",
-            json={"password": "wrong"},
+            json={"device_name": "본당 입구 태블릿", "password": "wrong"},
             headers={"Origin": settings.allowed_frontend_origins[0]},
         )
     finally:
@@ -294,7 +321,7 @@ async def test_production_cookies_are_secure(
     monkeypatch.setattr(settings, "app_env", "production")
     response = await client.post(
         "/api/kiosk/sessions",
-        json={"password": "church-kiosk-secret"},
+        json={"device_name": "본당 입구 태블릿", "password": "church-kiosk-secret"},
         headers={"Origin": settings.allowed_frontend_origins[0]},
     )
 
@@ -318,7 +345,7 @@ async def test_vercel_markers_force_secure_response_cookies(
     monkeypatch.setattr(settings, marker, value)
     response = await client.post(
         "/api/kiosk/sessions",
-        json={"password": "church-kiosk-secret"},
+        json={"device_name": "본당 입구 태블릿", "password": "church-kiosk-secret"},
         headers={"Origin": settings.allowed_frontend_origins[0]},
     )
 
@@ -419,7 +446,7 @@ async def test_transaction_teardown_failure_replaces_success_response(
     try:
         response = await client.post(
             "/api/kiosk/sessions",
-            json={"password": "church-kiosk-secret"},
+            json={"device_name": "본당 입구 태블릿", "password": "church-kiosk-secret"},
             headers={"Origin": settings.allowed_frontend_origins[0]},
         )
     finally:
@@ -430,7 +457,7 @@ async def test_transaction_teardown_failure_replaces_success_response(
     assert response.headers.get_list("set-cookie") == []
 
 
-async def test_admin_can_list_and_revoke_kiosk_sessions(
+async def test_admin_can_list_and_permanently_delete_kiosk_sessions(
     client: httpx.AsyncClient,
     kiosk_api: FakeKioskService,
 ) -> None:
@@ -457,7 +484,8 @@ async def test_admin_can_list_and_revoke_kiosk_sessions(
     assert listed.json()["items"][0]["session_id"] == str(kiosk_api.session_id)
     assert "refresh_token" not in listed.text
     assert revoked.status_code == 204
-    assert kiosk_api.admin_revoke_calls == [(kiosk_api.session_id, admin.user_id)]
+    assert kiosk_api.admin_delete_calls == [(kiosk_api.session_id, admin.user_id)]
+    assert kiosk_api.admin_revoke_calls == []
 
 
 async def test_kiosk_management_requires_an_administrator(

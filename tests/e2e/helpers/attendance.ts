@@ -32,13 +32,14 @@ async function qrResponseToken(page: Page, previous?: string): Promise<string> {
 }
 
 export async function unlockKiosk(page: Page): Promise<{ token: string; sessionId: string }> {
-  await page.goto("/login");
+  await page.goto("/qr");
   const sessionResponse = page.waitForResponse((response) => (
     response.url().includes("/api/kiosk/sessions")
     && response.request().method() === "POST"
     && response.status() === 201
   ));
   const nextQr = qrResponseToken(page);
+  await page.getByLabel("기기 이름").fill("E2E 출결 키오스크");
   await page.getByLabel("관리자 비밀번호").fill("Kiosk-e2e-2026!");
   await page.getByRole("button", { name: "QR 화면 열기" }).click();
   const [session, token] = await Promise.all([sessionResponse, nextQr]);

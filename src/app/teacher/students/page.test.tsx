@@ -39,13 +39,19 @@ const student = (overrides: Record<string, unknown> = {}) => ({
   phone: "01012345678",
   guardian_phone: "01098765432",
   include_in_statistics: true,
+  staff_role: null,
   ...overrides,
 });
 
-const page = (items = [student()], next_cursor: string | null = null) => ({
+const page = (
+  items = [student()],
+  next_cursor: string | null = null,
+  can_promote = false,
+) => ({
   items,
   next_cursor,
   page_size: 50,
+  can_promote,
 });
 
 afterEach(() => {
@@ -76,6 +82,107 @@ it("renders equivalent semantic desktop rows and mobile cards without student nu
   expect(client.api.get).toHaveBeenCalledWith(
     "/api/teacher/students?statistics=all&page_size=50",
   );
+});
+
+it("shows read-only staff status badges in both desktop and mobile student lists", async () => {
+  client.api.get.mockResolvedValue(page([
+    student({ staff_role: "teacher" }),
+    student({
+      user_id: "00000000-0000-4000-8000-000000000402",
+      name: "관리자 학생",
+      staff_role: "admin",
+    }),
+  ]));
+  render(<TeacherStudentsPage />);
+
+  const table = await screen.findByRole("table", { name: "학생 목록" });
+  const cards = screen.getByRole("list", { name: "모바일 학생 목록" });
+  for (const region of [table, cards]) {
+    expect(within(region).getByText("교사")).toBeInTheDocument();
+    expect(within(region).getByText("관리자")).toBeInTheDocument();
+  }
+});
+
+it("keeps promotion hidden for an ordinary teacher", async () => {
+  client.api.get.mockResolvedValue(page());
+  render(<TeacherStudentsPage />);
+
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+
+  expect(screen.queryByRole("button", { name: "교사로 승격" })).not.toBeInTheDocument();
+});
+
+it("confirms an admin promotion, disables the pending action, and updates the editor and both lists in place", async () => {
+  let resolvePromotion: (value: ReturnType<typeof student>) => void = () => undefined;
+  client.api.get.mockResolvedValue(page([student()], null, true));
+  client.api.post.mockImplementation(() => new Promise((resolve) => { resolvePromotion = resolve; }));
+  render(<TeacherStudentsPage />);
+
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
+  expect(await screen.findByRole("alertdialog", { name: "교사로 승격" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "승격 확인" }));
+
+  await vi.waitFor(() => expect(client.api.post).toHaveBeenCalledWith(
+    "/api/admin/students/00000000-0000-4000-8000-000000000401/promote-to-teacher",
+    {},
+  ));
+  const pendingConfirmation = screen.getByRole("button", { name: "승격 확인 중…" });
+  expect(screen.getByRole("alertdialog", { name: "교사로 승격" })).toBeInTheDocument();
+  expect(pendingConfirmation).toBeDisabled();
+  expect(pendingConfirmation.querySelector('[data-slot="spinner"][data-icon="inline-start"]')).not.toBeNull();
+  expect(screen.getByRole("button", { name: "취소" })).toBeDisabled();
+
+  await act(async () => {
+    resolvePromotion(student({ staff_role: "teacher" }));
+    await Promise.resolve();
+  });
+
+  await vi.waitFor(() => expect(screen.queryByRole("button", { name: /교사로 승격|승격 중/ })).not.toBeInTheDocument());
+  expect(screen.getAllByText("교사")).toHaveLength(3);
+  const editor = screen.getByRole("dialog", { name: "김학생 학생 정보 수정" });
+  expect(editor).toBeInTheDocument();
+  const updatedStatus = within(editor).getByText("교사");
+  await vi.waitFor(() => expect(updatedStatus).toHaveFocus());
+});
+
+it("preserves unsaved edits and surfaces a promotion error in the open editor", async () => {
+  client.api.get.mockResolvedValue(page([student()], null, true));
+  client.api.post.mockRejectedValue(new client.ApiClientError("REQUEST_FAILED", "승격하지 못했습니다."));
+  render(<TeacherStudentsPage />);
+
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+  fireEvent.change(screen.getByLabelText("이름"), { target: { value: "수정 보존 이름" } });
+  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
+  fireEvent.click(await screen.findByRole("button", { name: "승격 확인" }));
+
+  const sheet = await screen.findByRole("dialog", { name: "김학생 학생 정보 수정" });
+  expect(await within(sheet).findByRole("alert")).toHaveTextContent("승격하지 못했습니다.");
+  expect(within(sheet).getByLabelText("이름")).toHaveValue("수정 보존 이름");
+});
+
+it("preserves unsaved edits when promotion reports a staff role conflict", async () => {
+  client.api.get.mockResolvedValue(page([student()], null, true));
+  client.api.post.mockRejectedValue(new client.ApiClientError(
+    "STUDENT_STAFF_ROLE_CONFLICT",
+    "관리자 계정은 교사로 승격할 수 없습니다.",
+  ));
+  render(<TeacherStudentsPage />);
+
+  await screen.findAllByText("김학생");
+  fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
+  fireEvent.change(screen.getByLabelText("이름"), { target: { value: "충돌 뒤에도 보존" } });
+  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
+  fireEvent.click(await screen.findByRole("button", { name: "승격 확인" }));
+
+  const sheet = await screen.findByRole("dialog", { name: "김학생 학생 정보 수정" });
+  expect(await within(sheet).findByRole("alert")).toHaveTextContent(
+    "관리자 계정은 교사로 승격할 수 없습니다.",
+  );
+  expect(within(sheet).getByLabelText("이름")).toHaveValue("충돌 뒤에도 보존");
 });
 
 it("calculates Seoul-date international age immediately before and on the birthday", () => {
@@ -134,8 +241,8 @@ it("renders retryable error and empty states", async () => {
 });
 
 it.each([
-  ["AUTH_REQUIRED", "/teacher/login"],
-  ["FORBIDDEN", "/teacher/apply"],
+  ["AUTH_REQUIRED", "/login"],
+  ["FORBIDDEN", "/student"],
 ])("redirects %s and keeps terminal auth ahead of old responses", async (code, destination) => {
   let resolveOld: (value: ReturnType<typeof page>) => void = () => undefined;
   client.api.get

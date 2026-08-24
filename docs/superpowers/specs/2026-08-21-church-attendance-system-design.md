@@ -330,7 +330,7 @@ The API expands weekly series into occurrence DTOs for the requested date range.
 ### Root and public routes
 
 - `/`: presents `교사로 로그인` and `학생으로 로그인` choices.
-- `/auth/login`: student Google and email/password login.
+- `/login`: student Google and email/password login.
 - `/auth/signup`: student email/password registration.
 - `/auth/callback`: Supabase Google OAuth code exchange.
 - `/onboarding`: student profile completion.

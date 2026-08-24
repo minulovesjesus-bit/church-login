@@ -114,8 +114,8 @@ it("retains the last successful dashboard and marks it stale after a refresh fai
 });
 
 it.each([
-  ["AUTH_REQUIRED", "/teacher/login"],
-  ["FORBIDDEN", "/teacher/apply"],
+  ["AUTH_REQUIRED", "/login"],
+  ["FORBIDDEN", "/student"],
 ])("treats %s as terminal and redirects once", async (code, destination) => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   mockApi.get.mockRejectedValue(new TestApiClientError(code, "권한 없음"));

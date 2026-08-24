@@ -17,6 +17,11 @@ from backend.students.schemas import (
 
 INVALID_CURSOR = ("INVALID_CURSOR", "페이지 위치를 확인해 주세요.", 422)
 STUDENT_NOT_FOUND = ("STUDENT_NOT_FOUND", "학생 정보를 찾을 수 없습니다.", 404)
+STUDENT_STAFF_ROLE_CONFLICT = (
+    "STUDENT_STAFF_ROLE_CONFLICT",
+    "관리자 권한이 있는 학생은 교사로 승격할 수 없습니다.",
+    409,
+)
 FORBIDDEN = ("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
 CURSOR_VERSION = 1
 CURSOR_FIELDS = {"v", "q", "s", "n", "i"}
@@ -35,7 +40,7 @@ class StudentService:
         actor: AuthenticatedUser,
         filters: StudentListFilters,
     ) -> TeacherStudentPage:
-        await self._require_active_staff(actor.user_id)
+        actor_role = await self._require_active_staff(actor.user_id)
         cursor_key = self._decode_cursor(filters)
         candidates = await self._repository.list_students(filters, cursor_key)
         items = candidates[: filters.page_size]
@@ -47,6 +52,7 @@ class StudentService:
             items=items,
             next_cursor=next_cursor,
             page_size=filters.page_size,
+            can_promote=actor_role == "admin",
         )
 
     async def update_student(
@@ -65,9 +71,38 @@ class StudentService:
             raise ApiError(*STUDENT_NOT_FOUND)
         return updated
 
-    async def _require_active_staff(self, user_id: UUID) -> None:
-        if await self._repository.active_staff_role(user_id) not in {"teacher", "admin"}:
+    async def promote_student_to_teacher(
+        self,
+        actor: AuthenticatedUser,
+        student_id: UUID,
+    ) -> TeacherStudentView:
+        await self._repository.serialize_staff_memberships()
+        if await self._repository.active_staff_role(actor.user_id) != "admin":
             raise ApiError(*FORBIDDEN)
+
+        current = await self._repository.get_student(student_id)
+        if current is None:
+            raise ApiError(*STUDENT_NOT_FOUND)
+        if current.staff_role == "admin":
+            raise ApiError(*STUDENT_STAFF_ROLE_CONFLICT)
+        if current.staff_role == "teacher":
+            return current
+
+        await self._repository.promote_student_to_teacher(student_id, actor.user_id)
+        refreshed = await self._repository.get_student(student_id)
+        if refreshed is None:
+            raise ApiError(*STUDENT_NOT_FOUND)
+        if refreshed.staff_role == "admin":
+            raise ApiError(*STUDENT_STAFF_ROLE_CONFLICT)
+        if refreshed.staff_role != "teacher":
+            raise RuntimeError("Student promotion returned without a staff membership")
+        return refreshed
+
+    async def _require_active_staff(self, user_id: UUID) -> str:
+        role = await self._repository.active_staff_role(user_id)
+        if role not in {"teacher", "admin"}:
+            raise ApiError(*FORBIDDEN)
+        return role
 
     @staticmethod
     def _filter_digest(query: str | None) -> str:

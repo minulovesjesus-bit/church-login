@@ -89,8 +89,8 @@ it("renders empty, retryable error, and retry states", async () => {
 });
 
 it.each([
-  ["AUTH_REQUIRED", "/teacher/login"],
-  ["FORBIDDEN", "/teacher/apply"],
+  ["AUTH_REQUIRED", "/login"],
+  ["FORBIDDEN", "/student"],
 ])("redirects %s list failures to the correct teacher route", async (code, destination) => {
   client.api.get.mockRejectedValue(new client.ApiClientError(code, "접근할 수 없습니다."));
 
@@ -350,7 +350,7 @@ it("keeps mutation authorization terminal when an older list succeeds later", as
     rejectCreate(new client.ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
     await Promise.resolve();
   });
-  expect(navigation.replace).toHaveBeenCalledWith("/teacher/login");
+  expect(navigation.replace).toHaveBeenCalledWith("/login");
 
   await act(async () => {
     resolveList(page([series({ title: "늦게 도착한 보호 데이터" })]));
@@ -378,7 +378,7 @@ it("ignores a late mutation success after list authorization becomes terminal", 
     rejectList(new client.ApiClientError("FORBIDDEN", "교사 권한이 필요합니다."));
     await Promise.resolve();
   });
-  expect(navigation.replace).toHaveBeenCalledWith("/teacher/apply");
+  expect(navigation.replace).toHaveBeenCalledWith("/student");
 
   await act(async () => {
     resolveCreate(series({ title: "늦은 성공 일정" }));

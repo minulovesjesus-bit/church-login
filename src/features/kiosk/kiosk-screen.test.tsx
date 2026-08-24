@@ -12,6 +12,7 @@ import { QrCard } from "./qr-card";
 const NOW = new Date("2026-08-21T01:00:00.000Z");
 const SESSION = {
   session_id: "4e06bff6-0e68-49ad-8840-0eb4d15d7f19",
+  device_name: "본당 입구 태블릿",
   access_expires_at: "2026-08-21T01:15:00.000Z",
   refresh_expires_at: "2026-09-20T01:00:00.000Z",
 };
@@ -111,6 +112,9 @@ function createClient(): KioskClient {
 
 async function unlock(client: KioskClient) {
   render(<KioskScreen client={client} />);
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "본당 입구 태블릿" },
+  });
   fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
     target: { value: "church-secret" },
   });
@@ -129,6 +133,9 @@ async function flushAsyncWork() {
 
 async function submitPassword(client: KioskClient) {
   render(<KioskScreen client={client} />);
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "본당 입구 태블릿" },
+  });
   fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
     target: { value: "church-secret" },
   });
@@ -188,6 +195,9 @@ it("starts with an accessible shared-password form and uses a generic rejection 
   );
   render(<KioskScreen client={client} />);
 
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "본당 입구 태블릿" },
+  });
   expect(screen.getByRole("heading", { name: "출결 QR 기기" })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
     target: { value: "wrong" },
@@ -199,6 +209,23 @@ it("starts with an accessible shared-password form and uses a generic rejection 
     "관리자 비밀번호를 확인해 주세요.",
   );
   expect(screen.queryByText("server detail must not be echoed")).not.toBeInTheDocument();
+});
+
+it("requires a device name and submits it with the shared password", async () => {
+  const client = createClient();
+  render(<KioskScreen client={client} />);
+
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "  본당 입구 태블릿  " },
+  });
+  fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
+    target: { value: "church-secret" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
+
+  await flushAsyncWork();
+  expect(client.login).toHaveBeenCalledWith("본당 입구 태블릿", "church-secret");
+  expect(screen.getByText("본당 입구 태블릿")).toBeVisible();
 });
 
 it("keeps one QR for the full server lifetime and schedules the next request at expiry", async () => {
@@ -397,28 +424,34 @@ it("rotates HttpOnly cookies on an unauthorized QR response and retries once", a
   expect(screen.getByText("QR 연결됨")).toBeInTheDocument();
 });
 
-it("returns to the password form when automatic cookie refresh cannot recover", async () => {
+it("forces a full return to /qr when automatic cookie refresh cannot recover", async () => {
   const client = createClient();
+  const returnToQr = vi.fn();
   vi.mocked(client.getQr).mockRejectedValue(
     new ApiClientError("KIOSK_SESSION_REVOKED", "expired"),
   );
   vi.mocked(client.refresh).mockRejectedValue(
     new ApiClientError("KIOSK_SESSION_REVOKED", "revoked"),
   );
-  render(<KioskScreen client={client} />);
+  render(<KioskScreen client={client} onSessionInvalidated={returnToQr} />);
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "본당 입구 태블릿" },
+  });
   fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
     target: { value: "church-secret" },
   });
   fireEvent.click(screen.getByRole("button", { name: "QR 화면 열기" }));
 
   await flushAsyncWork();
-  expect(screen.getByRole("button", { name: "QR 화면 열기" })).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("기기 세션이 종료되었습니다.");
+  expect(returnToQr).toHaveBeenCalledWith("/qr");
 });
 
 it("resets the device session and clears all scheduled work on unmount", async () => {
   const client = createClient();
   const view = render(<KioskScreen client={client} />);
+  fireEvent.change(screen.getByLabelText("기기 이름"), {
+    target: { value: "본당 입구 태블릿" },
+  });
   fireEvent.change(screen.getByLabelText("관리자 비밀번호"), {
     target: { value: "church-secret" },
   });

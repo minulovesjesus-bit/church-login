@@ -166,6 +166,16 @@ def seed_identity_rows(database_url: str) -> None:
         )
         cursor.execute(
             """
+            insert into app.student_profiles (
+              user_id, birth_date, guardian_phone, include_in_statistics
+            ) values
+              (%s, '1990-01-02', '01099992002', false),
+              (%s, '1985-03-04', '01099993001', false)
+            """,
+            (FIXTURES[4][0], FIXTURES[6][0]),
+        )
+        cursor.execute(
+            """
             insert into app.teacher_applications (id, user_id, status)
             values ('00000000-0000-4000-8000-000000000401', %s, 'pending')
             """,

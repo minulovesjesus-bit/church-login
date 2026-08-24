@@ -15,6 +15,14 @@ from backend.main import app
 class FakeIdentityService:
     def __init__(self) -> None:
         self.saved: list[tuple[AuthenticatedUser, dict[str, object]]] = []
+        self.profile_reads: list[AuthenticatedUser] = []
+        self.profile = StudentProfileView(
+            name="김민준",
+            birth_date=date(2012, 4, 3),
+            phone="01012345678",
+            guardian_phone="01098765432",
+            include_in_statistics=True,
+        )
 
     async def upsert_student_profile(
         self, user: AuthenticatedUser, **profile: object
@@ -37,6 +45,12 @@ class FakeIdentityService:
             "onboarding_completed": False,
             "capabilities": {"student": False, "teacher": False, "admin": False},
         }
+
+    async def current_student_profile(
+        self, user: AuthenticatedUser
+    ) -> StudentProfileView:
+        self.profile_reads.append(user)
+        return self.profile
 
 
 class FakeStaffService:
@@ -68,6 +82,24 @@ def identity_api(api_user: AuthenticatedUser):
         yield service
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_profile_get_uses_the_authenticated_user(
+    client: httpx.AsyncClient,
+    identity_api: FakeIdentityService,
+    api_user: AuthenticatedUser,
+) -> None:
+    response = await client.get("/api/students/profile")
+
+    assert response.status_code == 200
+    assert identity_api.profile_reads == [api_user]
+    assert response.json() == {
+        "name": "김민준",
+        "birth_date": "2012-04-03",
+        "phone": "01012345678",
+        "guardian_phone": "01098765432",
+        "include_in_statistics": True,
+    }
 
 
 async def test_profile_endpoint_creates_only_authenticated_users_profile(

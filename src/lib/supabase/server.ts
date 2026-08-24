@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieMethodsServer } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 function publicSupabaseConfig(): { url: string; publishableKey: string } {
@@ -10,11 +10,13 @@ function publicSupabaseConfig(): { url: string; publishableKey: string } {
   return { url, publishableKey };
 }
 
-export async function createServerSupabaseClient() {
-  const cookieStore = await cookies();
-  const { url, publishableKey } = publicSupabaseConfig();
-  return createServerClient(url, publishableKey, {
-    cookies: {
+export async function createServerSupabaseClient(
+  cookieMethods?: CookieMethodsServer,
+) {
+  let resolvedCookieMethods = cookieMethods;
+  if (!resolvedCookieMethods) {
+    const cookieStore = await cookies();
+    resolvedCookieMethods = {
       getAll: () => cookieStore.getAll(),
       setAll: (cookiesToSet) => {
         try {
@@ -25,6 +27,11 @@ export async function createServerSupabaseClient() {
           // Server Components cannot mutate cookies; proxy refreshes them instead.
         }
       },
-    },
+    };
+  }
+
+  const { url, publishableKey } = publicSupabaseConfig();
+  return createServerClient(url, publishableKey, {
+    cookies: resolvedCookieMethods,
   });
 }

@@ -48,7 +48,7 @@ def test_attendance_constraints(
     )
     assert constraints_by_name["attendance_scans_source_fields_consistent"] == (
         "CHECK ((((source <> 'QR'::app.attendance_source) OR "
-        "((kiosk_session_id IS NOT NULL) AND (qr_issued_at IS NOT NULL))) AND "
+        "((qr_issued_at IS NOT NULL) AND (kiosk_device_name IS NOT NULL))) AND "
         "((source <> 'MANUAL'::app.attendance_source) OR "
         "(recorded_by IS NOT NULL))))"
     )
@@ -106,8 +106,12 @@ def _insert_kiosk_session(
 ) -> UUID:
     return connection.execute(
         """
-        insert into app.kiosk_sessions (refresh_token_hash, refresh_expires_at)
-        values ('keyed-refresh-token-hash', now() + interval '30 days')
+        insert into app.kiosk_sessions (
+          refresh_token_hash, refresh_expires_at, device_name
+        ) values (
+          'keyed-refresh-token-hash', now() + interval '30 days',
+          '본당 입구 태블릿'
+        )
         returning id
         """
     ).fetchone()[0]
@@ -124,8 +128,11 @@ def _insert_qr_scan(
         """
         insert into app.attendance_scans (
           student_id, attendance_date, direction, scanned_at,
-          kiosk_session_id, request_id, qr_issued_at
-        ) values (%s, date '2026-08-21', 'IN', %s, %s, %s, %s)
+          kiosk_session_id, kiosk_device_name, request_id, qr_issued_at
+        ) values (
+          %s, date '2026-08-21', 'IN', %s, %s,
+          '본당 입구 태블릿', %s, %s
+        )
         returning id
         """,
         (
@@ -175,6 +182,7 @@ def test_attendance_columns_have_exact_shapes(
         ("attendance_scans", "voided_at", "pg_catalog", "timestamptz", "YES", None),
         ("attendance_scans", "voided_by", "pg_catalog", "uuid", "YES", None),
         ("attendance_scans", "void_reason", "pg_catalog", "text", "YES", None),
+        ("attendance_scans", "kiosk_device_name", "pg_catalog", "text", "YES", None),
         ("kiosk_sessions", "id", "pg_catalog", "uuid", "NO", "gen_random_uuid()"),
         ("kiosk_sessions", "refresh_token_hash", "pg_catalog", "text", "NO", None),
         ("kiosk_sessions", "created_at", "pg_catalog", "timestamptz", "NO", "now()"),
@@ -182,6 +190,7 @@ def test_attendance_columns_have_exact_shapes(
         ("kiosk_sessions", "refresh_expires_at", "pg_catalog", "timestamptz", "NO", None),
         ("kiosk_sessions", "revoked_at", "pg_catalog", "timestamptz", "YES", None),
         ("kiosk_sessions", "revoked_by", "pg_catalog", "uuid", "YES", None),
+        ("kiosk_sessions", "device_name", "pg_catalog", "text", "NO", None),
         ("rate_limit_buckets", "bucket_key_hash", "pg_catalog", "text", "NO", None),
         ("rate_limit_buckets", "action", "pg_catalog", "text", "NO", None),
         (
@@ -423,7 +432,7 @@ def test_browser_roles_cannot_read_private_attendance_tables(
 
 
 @pytest.mark.parametrize(
-    ("source", "include_kiosk", "include_qr_time", "include_recorder"),
+    ("source", "include_device_name", "include_qr_time", "include_recorder"),
     [
         ("QR", False, True, False),
         ("QR", True, False, False),
@@ -433,7 +442,7 @@ def test_browser_roles_cannot_read_private_attendance_tables(
 def test_source_specific_required_fields_are_enforced(
     attendance_connection: psycopg.Connection[tuple[Any, ...]],
     source: str,
-    include_kiosk: bool,
+    include_device_name: bool,
     include_qr_time: bool,
     include_recorder: bool,
 ) -> None:
@@ -448,13 +457,17 @@ def test_source_specific_required_fields_are_enforced(
             """
             insert into app.attendance_scans (
               student_id, attendance_date, direction, scanned_at,
-              kiosk_session_id, request_id, qr_issued_at, source, recorded_by
-            ) values (%s, date '2026-08-21', 'IN', %s, %s, %s, %s, %s, %s)
+              kiosk_session_id, kiosk_device_name, request_id,
+              qr_issued_at, source, recorded_by
+            ) values (
+              %s, date '2026-08-21', 'IN', %s, %s, %s, %s, %s, %s, %s
+            )
             """,
             (
                 student_id,
                 datetime(2026, 8, 21, 1, tzinfo=UTC),
-                kiosk_session_id if include_kiosk else None,
+                kiosk_session_id if source == "QR" else None,
+                "본당 입구 태블릿" if include_device_name else None,
                 uuid4(),
                 datetime(2026, 8, 21, 0, 59, 50, tzinfo=UTC)
                 if include_qr_time
@@ -517,8 +530,11 @@ def test_student_request_id_is_unique(
     _seed_student(attendance_connection, student_id)
     attendance_connection.execute(
         """
-        insert into app.kiosk_sessions (id, refresh_token_hash, refresh_expires_at)
-        values (%s, 'refresh-hash', now() + interval '30 days')
+        insert into app.kiosk_sessions (
+          id, refresh_token_hash, refresh_expires_at, device_name
+        ) values (
+          %s, 'refresh-hash', now() + interval '30 days', '본당 입구 태블릿'
+        )
         """,
         (kiosk_session_id,),
     )
@@ -685,3 +701,60 @@ def test_rate_limit_primary_key_and_private_key_shape(
 
     assert primary_key == ("PRIMARY KEY (bucket_key_hash, action)",)
     assert identifying_columns == set()
+
+
+def test_named_kiosk_session_can_be_deleted_without_deleting_attendance(
+    attendance_connection: psycopg.Connection[tuple[Any, ...]],
+) -> None:
+    columns = set(
+        attendance_connection.execute(
+            """
+            select table_name, column_name, is_nullable
+            from information_schema.columns
+            where table_schema = 'app'
+              and (
+                (table_name = 'kiosk_sessions' and column_name = 'device_name')
+                or (table_name = 'attendance_scans' and column_name = 'kiosk_device_name')
+              )
+            """
+        ).fetchall()
+    )
+    assert columns == {
+        ("kiosk_sessions", "device_name", "NO"),
+        ("attendance_scans", "kiosk_device_name", "YES"),
+    }
+
+    student_id = uuid4()
+    _seed_student(attendance_connection, student_id)
+    kiosk_session_id = attendance_connection.execute(
+        """
+        insert into app.kiosk_sessions (
+          refresh_token_hash, refresh_expires_at, device_name
+        ) values ('named-session-refresh', now() + interval '30 days', '본당 입구 태블릿')
+        returning id
+        """
+    ).fetchone()[0]
+    scan_id = attendance_connection.execute(
+        """
+        insert into app.attendance_scans (
+          student_id, attendance_date, direction, scanned_at,
+          kiosk_session_id, kiosk_device_name, request_id, qr_issued_at
+        ) values (
+          %s, date '2026-08-24', 'IN', now(), %s, '본당 입구 태블릿', %s, now()
+        ) returning id
+        """,
+        (student_id, kiosk_session_id, uuid4()),
+    ).fetchone()[0]
+
+    attendance_connection.execute(
+        "delete from app.kiosk_sessions where id = %s",
+        (kiosk_session_id,),
+    )
+
+    assert attendance_connection.execute(
+        """
+        select kiosk_session_id, kiosk_device_name
+        from app.attendance_scans where id = %s
+        """,
+        (scan_id,),
+    ).fetchone() == (None, "본당 입구 태블릿")

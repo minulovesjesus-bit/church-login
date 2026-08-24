@@ -63,7 +63,7 @@ export default function StudentAttendancePage() {
       .catch((caught: unknown) => {
         if (!active) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
-          router.replace("/auth/login");
+          router.replace("/login");
           return;
         }
         if (caught instanceof ApiClientError && caught.code === "PROFILE_REQUIRED") {

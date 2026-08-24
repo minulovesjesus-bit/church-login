@@ -1,9 +1,21 @@
 "use client";
 
-import { useId, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import {
   Field,
   FieldDescription,
@@ -22,7 +34,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { TeacherStudent } from "./student-table";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  staffRoleBadgeVariant,
+  staffRoleLabel,
+  type TeacherStudent,
+} from "./student-table";
 
 export type StudentUpdateCommand = {
   name: string;
@@ -105,12 +122,24 @@ function validate(values: EditorValues): { errors: EditorErrors; command?: Stude
 type StudentEditorProps = {
   student: TeacherStudent;
   saving?: boolean;
+  canPromote: boolean;
+  promoting: boolean;
   requestError?: string;
   onSave: (command: StudentUpdateCommand) => void;
+  onPromote: () => Promise<boolean>;
   onCancel: () => void;
 };
 
-export default function StudentEditor({ student, saving = false, requestError, onSave, onCancel }: StudentEditorProps) {
+export default function StudentEditor({
+  student,
+  saving = false,
+  canPromote,
+  promoting,
+  requestError,
+  onSave,
+  onPromote,
+  onCancel,
+}: StudentEditorProps) {
   const generatedId = useId().replace(/:/g, "");
   const fieldId = (name: string) => `student-editor-${generatedId}-${name}`;
   const [values, setValues] = useState<EditorValues>({
@@ -121,6 +150,8 @@ export default function StudentEditor({ student, saving = false, requestError, o
     includeInStatistics: student.include_in_statistics,
   });
   const [errors, setErrors] = useState<EditorErrors>({});
+  const [promotionDialogOpen, setPromotionDialogOpen] = useState(false);
+  const staffStatusRef = useRef<HTMLSpanElement>(null);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -134,14 +165,32 @@ export default function StudentEditor({ student, saving = false, requestError, o
     return errors[name] ? fieldId(`${name}-error`) : undefined;
   }
 
+  async function confirmPromotion(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    const promoted = await onPromote();
+    setPromotionDialogOpen(false);
+    if (promoted) {
+      queueMicrotask(() => staffStatusRef.current?.focus());
+    }
+  }
+
   return (
     <Sheet open onOpenChange={(open) => {
       if (!open && !saving) onCancel();
     }}>
       <SheetContent className="student-editor" showCloseButton={false} aria-modal="true">
         <SheetHeader className="student-editor__header">
-          <div>
-            <SheetTitle>{student.name} 학생 정보 수정</SheetTitle>
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <SheetTitle>{student.name} 학생 정보 수정</SheetTitle>
+              <Badge
+                ref={staffStatusRef}
+                tabIndex={-1}
+                variant={staffRoleBadgeVariant(student.staff_role)}
+              >
+                {staffRoleLabel(student.staff_role)}
+              </Badge>
+            </div>
             <SheetDescription>학생이 직접 가입한 계정의 연락처와 통계 포함 여부를 수정합니다.</SheetDescription>
           </div>
           <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>닫기</Button>
@@ -234,6 +283,43 @@ export default function StudentEditor({ student, saving = false, requestError, o
                 통계 제외는 교사 전체 집계 통계에서만 제외합니다. 학생 로그인과 QR 출결은 계속 이용할 수 있습니다.
               </FieldDescription>
             </FieldSet>
+            {canPromote && student.staff_role === null ? (
+              <FieldSet>
+                <FieldLegend>교사 권한</FieldLegend>
+                <FieldDescription>교사로 승격하면 출결과 학생 관리 기능을 사용할 수 있습니다.</FieldDescription>
+                <AlertDialog
+                  open={promotionDialogOpen}
+                  onOpenChange={(open) => {
+                    if (!promoting) setPromotionDialogOpen(open);
+                  }}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button type="button" variant="outline" disabled={saving || promoting}>
+                      교사로 승격
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>교사로 승격</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {student.name} 학생에게 교사 권한을 부여할까요? 이 작업은 관리자만 수행할 수 있습니다.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={saving || promoting}>취소</AlertDialogCancel>
+                      <AlertDialogAction
+                        type="button"
+                        disabled={saving || promoting}
+                        onClick={confirmPromotion}
+                      >
+                        {promoting ? <Spinner aria-hidden="true" data-icon="inline-start" /> : null}
+                        {promoting ? "승격 확인 중…" : "승격 확인"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </FieldSet>
+            ) : null}
           </FieldGroup>
           <SheetFooter className="student-editor__actions">
             <Button type="button" variant="outline" disabled={saving} onClick={onCancel}>수정 취소</Button>

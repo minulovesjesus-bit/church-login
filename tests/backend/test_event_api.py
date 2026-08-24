@@ -374,7 +374,7 @@ async def test_event_response_waits_for_function_scoped_transaction(
     assert response.json()["error"]["code"] == "DATABASE_UNAVAILABLE"
 
 
-async def test_initial_admin_first_event_request_bootstraps_and_commits_atomically(
+async def test_initial_admin_me_bootstraps_and_commits_before_first_event_request(
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -405,17 +405,29 @@ async def test_initial_admin_first_event_request_bootstraps_and_commits_atomical
         provider="google",
         email_verified=True,
     )
+    monkeypatch.setattr(settings, "database_url", database_url)
     monkeypatch.setattr(settings, "initial_admin_email", admin_email)
     app.dependency_overrides[get_current_user] = lambda: initial_admin
     try:
+        event_payload = {
+            "title": "첫 관리자 행사",
+            "starts_at": "2026-08-23T11:00:00+09:00",
+            "ends_at": "2026-08-23T12:00:00+09:00",
+            "repeat_weekly": False,
+        }
+        before_bootstrap = await client.post(
+            "/api/teacher/events",
+            json=event_payload,
+        )
+        me_response = await client.get("/api/me")
+        with psycopg.connect(database_url) as connection:
+            membership_after_me = connection.execute(
+                "select role::text from app.staff_memberships where user_id = %s",
+                (admin_id,),
+            ).fetchone()
         response = await client.post(
             "/api/teacher/events",
-            json={
-                "title": "첫 관리자 행사",
-                "starts_at": "2026-08-23T11:00:00+09:00",
-                "ends_at": "2026-08-23T12:00:00+09:00",
-                "repeat_weekly": False,
-            },
+            json=event_payload,
         )
         with psycopg.connect(database_url) as connection:
             membership = connection.execute(
@@ -463,6 +475,14 @@ async def test_initial_admin_first_event_request_bootstraps_and_commits_atomical
                     (*marker[:5], Jsonb(marker[5]), marker[6]),
                 )
 
+    assert before_bootstrap.status_code == 403
+    assert me_response.status_code == 200
+    assert me_response.json()["capabilities"] == {
+        "student": False,
+        "teacher": True,
+        "admin": True,
+    }
+    assert membership_after_me == ("admin",)
     assert response.status_code == 201
     assert membership == ("admin",)
     assert event_row is not None

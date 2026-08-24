@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { api, ApiClientError } from "@/lib/api/client";
 
-type KioskSession = { session_id: string; created_at: string; last_seen_at: string; refresh_expires_at: string; revoked_at: string | null };
+type KioskSession = { session_id: string; device_name: string; created_at: string; last_seen_at: string; refresh_expires_at: string; revoked_at: string | null };
 type KioskSessionPage = { items: KioskSession[]; next_cursor: string | null; page_size: number };
 type ReadyState = { status: "ready"; sessions: KioskSession[]; nextCursor: string | null; pageCount: number };
 type ListState =
@@ -46,8 +46,8 @@ function sessionState(session: KioskSession, now: number): SessionState {
 
 function authorizationDestination(error: unknown): string | undefined {
   if (!(error instanceof ApiClientError)) return undefined;
-  if (error.code === "AUTH_REQUIRED") return "/teacher/login";
-  if (error.code === "FORBIDDEN") return "/teacher";
+  if (error.code === "AUTH_REQUIRED") return "/login";
+  if (error.code === "FORBIDDEN") return "/student";
   return undefined;
 }
 
@@ -68,16 +68,16 @@ function appendUnique(existing: KioskSession[], incoming: KioskSession[]): Kiosk
   return unique;
 }
 
-type RevokeDialogProps = {
+type DeleteDialogProps = {
   session: KioskSession;
   ready: ReadyState;
   disabled: boolean;
   pending: boolean;
   focusFallbackRef: RefObject<HTMLHeadingElement | null>;
-  onRevoke: (session: KioskSession, ready: ReadyState) => void;
+  onDelete: (session: KioskSession, ready: ReadyState) => void;
 };
 
-function RevokeDialog({ session, ready, disabled, pending, focusFallbackRef, onRevoke }: RevokeDialogProps) {
+function DeleteDialog({ session, ready, disabled, pending, focusFallbackRef, onDelete }: DeleteDialogProps) {
   const confirmedRef = useRef(false);
 
   return (
@@ -87,9 +87,9 @@ function RevokeDialog({ session, ready, disabled, pending, focusFallbackRef, onR
           variant="destructive"
           type="button"
           disabled={disabled}
-          aria-label={pending ? `${session.session_id} 세션 해지 중…` : `${session.session_id} 세션 해지`}
+          aria-label={pending ? `${session.device_name} 세션 삭제 중…` : `${session.device_name} 세션 영구 삭제`}
         >
-          {pending ? "해지 중…" : "세션 해지"}
+          {pending ? "삭제 중…" : "세션 영구 삭제"}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent
@@ -101,22 +101,21 @@ function RevokeDialog({ session, ready, disabled, pending, focusFallbackRef, onR
         }}
       >
         <AlertDialogHeader>
-          <AlertDialogTitle>{session.session_id} 기기 세션 해지</AlertDialogTitle>
+          <AlertDialogTitle>{session.device_name} 기기 세션 영구 삭제</AlertDialogTitle>
           <AlertDialogDescription>
-            {session.session_id} 기기 세션을 해지하시겠습니까? 즉시 QR 발급과 갱신이 중단됩니다.
+            삭제하면 이 기기는 즉시 비밀번호 입력 화면으로 돌아갑니다. 학생 출결 기록은 유지됩니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
           <AlertDialogAction
             variant="destructive"
-            aria-label={`${session.session_id} 세션 해지 확인`}
             onClick={() => {
               confirmedRef.current = true;
-              onRevoke(session, ready);
+              onDelete(session, ready);
             }}
           >
-            세션 해지
+            세션 영구 삭제
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -224,7 +223,7 @@ export default function KioskSessionsPage() {
     return { status: "ready", sessions, nextCursor: page.next_cursor, pageCount: loadedPages };
   }
 
-  async function revoke(session: KioskSession, ready: ReadyState) {
+  async function deleteSession(session: KioskSession, ready: ReadyState) {
     if (operationRef.current || terminalAuthRef.current) return;
     operationRef.current = true;
     setPendingId(session.session_id);
@@ -235,13 +234,12 @@ export default function KioskSessionsPage() {
     try {
       await api.delete(`/api/admin/kiosk-sessions/${session.session_id}`);
       if (!mountedRef.current || terminalAuthRef.current || sequence !== sequenceRef.current) return;
-      const revokedAt = new Date().toISOString();
       setState((current) => current.status === "ready" ? {
         ...current,
-        sessions: current.sessions.map((item) => item.session_id === session.session_id ? { ...item, revoked_at: revokedAt } : item),
+        sessions: current.sessions.filter((item) => item.session_id !== session.session_id),
       } : current);
-      setNow(Date.parse(revokedAt));
-      setNotice(`${session.session_id} 기기 세션을 해지했습니다.`);
+      setNow(Date.now());
+      setNotice(`${session.device_name} 기기 세션을 영구 삭제했습니다.`);
       try {
         const refreshed = await reloadLoadedPages(ready.pageCount);
         if (mountedRef.current && !terminalAuthRef.current && sequence === sequenceRef.current) {
@@ -250,12 +248,12 @@ export default function KioskSessionsPage() {
       } catch (error) {
         if (!mountedRef.current || sequence !== sequenceRef.current) return;
         if (terminalAuthorization(error)) return;
-        setMutationError("세션은 해지했지만 목록을 새로고침하지 못했습니다. 다시 접속하면 최신 상태를 확인할 수 있습니다.");
+        setMutationError("세션은 삭제했지만 목록을 새로고침하지 못했습니다. 다시 접속하면 최신 상태를 확인할 수 있습니다.");
       }
     } catch (error) {
       if (!mountedRef.current || terminalAuthRef.current) return;
       if (terminalAuthorization(error)) return;
-      setMutationError(error instanceof ApiClientError ? error.message : "기기 세션을 해지하지 못했습니다.");
+      setMutationError(error instanceof ApiClientError ? error.message : "기기 세션을 삭제하지 못했습니다.");
     } finally {
       if (mountedRef.current && !terminalAuthRef.current && sequence === sequenceRef.current) {
         operationRef.current = false;
@@ -270,7 +268,7 @@ export default function KioskSessionsPage() {
     <main className="admin-page">
       <header className="admin-page__header">
         <p className="eyebrow">Administrator</p><h1 ref={pageHeadingRef} tabIndex={-1}>기기 세션 관리</h1>
-        <p className="supporting-copy">교회 공용 기기의 식별자와 최근 사용 상태를 확인하고 즉시 해지할 수 있습니다.</p>
+        <p className="supporting-copy">교회 공용 기기의 이름과 최근 사용 상태를 확인하고 세션을 영구 삭제할 수 있습니다.</p>
       </header>
       {mutationError ? <Alert variant="destructive"><AlertDescription>{mutationError}</AlertDescription></Alert> : null}
       {notice ? <Alert role="presentation"><AlertDescription role="status">{notice}</AlertDescription></Alert> : null}
@@ -291,7 +289,10 @@ export default function KioskSessionsPage() {
               const currentState = sessionState(session, now);
               const label = currentState === "active" ? "활성" : currentState === "expired" ? "만료" : "해지됨";
               return <li key={session.session_id} className="admin-card admin-card--kiosk">
-                <div className="admin-session-id"><span>기기 세션</span><strong>{session.session_id}</strong></div>
+                <div className="admin-session-id">
+                  <h2>{session.device_name}</h2>
+                  <span>세션 ID</span><strong>{session.session_id}</strong>
+                </div>
                 <Badge
                   variant={currentState === "active" ? "default" : currentState === "revoked" ? "destructive" : "secondary"}
                   className={`admin-status admin-status--${currentState}`}
@@ -304,18 +305,14 @@ export default function KioskSessionsPage() {
                   <div><dt>만료</dt><dd><time dateTime={session.refresh_expires_at}>{formatSeoulTimestamp(session.refresh_expires_at)}</time></dd></div>
                   <div><dt>해지</dt><dd>{session.revoked_at ? <time dateTime={session.revoked_at}>{formatSeoulTimestamp(session.revoked_at)}</time> : "-"}</dd></div>
                 </dl>
-                {currentState === "revoked" ? (
-                  <Button variant="destructive" type="button" aria-label={`${session.session_id} 해지 완료`} disabled>해지 완료</Button>
-                ) : (
-                  <RevokeDialog
-                    session={session}
-                    ready={state}
-                    disabled={competingAction}
-                    pending={pendingId === session.session_id}
-                    focusFallbackRef={pageHeadingRef}
-                    onRevoke={(target, ready) => { void revoke(target, ready); }}
-                  />
-                )}
+                <DeleteDialog
+                  session={session}
+                  ready={state}
+                  disabled={competingAction}
+                  pending={pendingId === session.session_id}
+                  focusFallbackRef={pageHeadingRef}
+                  onDelete={(target, ready) => { void deleteSession(target, ready); }}
+                />
               </li>;
             })}
           </ul>

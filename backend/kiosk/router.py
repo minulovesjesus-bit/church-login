@@ -166,7 +166,11 @@ async def create_kiosk_session(
         cookie_secret,
     )
     try:
-        tokens = await service.login(login_input.password, rate_limit_key_hash)
+        tokens = await service.login(
+            login_input.password,
+            rate_limit_key_hash,
+            device_name=login_input.device_name,
+        )
     except KioskLoginRejected as error:
         return safe_error_response(
             request,

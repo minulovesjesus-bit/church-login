@@ -115,15 +115,25 @@ async function submitRejectedDecodedQr(
 }
 
 export async function createVerifiedStudent(browser: Browser, email: string): Promise<Page> {
+  return createOnboardedAccount(browser, email, STUDENT_NAME);
+}
+
+async function createOnboardedAccount(browser: Browser, email: string, name: string): Promise<Page> {
   const context = await browser.newContext();
   await authenticateAs(context, requireFixtureEmail(email));
   const page = await context.newPage();
   await page.goto("/student");
   await expect(page).toHaveURL(/\/onboarding$/);
-  await page.getByLabel("이름").fill(STUDENT_NAME);
-  await page.getByLabel("생년월일").fill("2012-04-05");
-  await page.getByLabel("학생 연락처").fill("01011111003");
-  await page.getByLabel("보호자 연락처").fill("01099990003");
+  await page.getByLabel("이름").fill(name);
+  await page.getByLabel("생년").fill("2012");
+  await page.getByLabel("월").fill("04");
+  await page.getByLabel("일").fill("05");
+  await page.getByLabel("학생 연락처 앞자리").fill("010");
+  await page.getByLabel("학생 연락처 중간자리").fill("1111");
+  await page.getByLabel("학생 연락처 끝자리").fill("1003");
+  await page.getByLabel("보호자 연락처 앞자리").fill("010");
+  await page.getByLabel("보호자 연락처 중간자리").fill("9999");
+  await page.getByLabel("보호자 연락처 끝자리").fill("0003");
   const profileResponse = page.waitForResponse((response) => (
     response.url().includes("/api/students/profile")
     && response.request().method() === "POST"
@@ -135,51 +145,36 @@ export async function createVerifiedStudent(browser: Browser, email: string): Pr
   return page;
 }
 
-export async function submitTeacherApplication(
+export async function createPromotableTeacher(
   browser: Browser,
   email: string,
 ): Promise<TeacherApplicant> {
-  const context = await browser.newContext();
-  await authenticateAs(context, requireFixtureEmail(email));
-  const page = await context.newPage();
-  await page.goto("/teacher/apply");
-  await expect(page.getByRole("heading", { name: "교사 가입 신청" })).toBeVisible();
-  await page.getByLabel("이름").fill(TEACHER_NAME);
-  await page.getByLabel("연락처").fill("01011112003");
-  const applicationResponse = page.waitForResponse((response) => (
-    response.url().includes("/api/teacher-applications")
-    && response.request().method() === "POST"
-  ));
-  await page.getByRole("button", { name: "교사 가입 신청" }).click();
-  expect((await applicationResponse).status()).toBe(201);
-  await expect(page.getByText("교사 가입 승인을 기다리고 있습니다.")).toBeVisible();
+  const page = await createOnboardedAccount(browser, email, TEACHER_NAME);
   return { email, name: TEACHER_NAME, page };
 }
 
-export async function approveTeacherAndPromoteAdmin(
+export async function promoteStudentAndPromoteAdmin(
   browser: Browser,
   applicant: TeacherApplicant,
 ): Promise<Page> {
   const adminContext = await browser.newContext();
   await authenticateAs(adminContext, "admin");
   const adminPage = await adminContext.newPage();
-  await adminPage.goto("/teacher/applications");
-  const application = adminPage.getByRole("listitem").filter({
+  await adminPage.goto(`/teacher/students?query=${encodeURIComponent(applicant.email)}&statistics=all`);
+  const student = adminPage.getByRole("table", { name: "학생 목록" }).locator("tr").filter({
     has: adminPage.getByText(applicant.email, { exact: true }),
   });
-  await expect(application).toBeVisible();
+  await expect(student).toBeVisible();
+  await student.getByRole("button", { name: `${applicant.name} 수정` }).click();
   const approvalResponse = adminPage.waitForResponse((response) => (
-    response.url().includes("/api/admin/teacher-applications/")
-    && response.url().endsWith("/approve")
+    response.url().includes(`/api/admin/students/${identityFixtures.fullSystemTeacher.id}/promote-to-teacher`)
     && response.request().method() === "POST"
   ));
-  await application.getByRole("button", { name: `${applicant.name} 님 승인` }).click();
-  const approvalDialog = adminPage.getByRole("alertdialog", {
-    name: `${applicant.name} 님 교사 승인`,
-  });
-  await approvalDialog.getByRole("button", { name: `${applicant.name} 님 승인 확인` }).click();
+  await adminPage.getByRole("button", { name: "교사로 승격" }).click();
+  const approvalDialog = adminPage.getByRole("alertdialog", { name: "교사로 승격" });
+  await approvalDialog.getByRole("button", { name: "승격 확인" }).click();
   expect((await approvalResponse).ok()).toBe(true);
-  await expect(adminPage.getByRole("status").filter({ hasText: "신청을 승인했습니다." })).toBeVisible();
+  await expect(adminPage.getByRole("dialog").getByText("교사", { exact: true })).toBeVisible();
 
   await adminPage.goto("/admin/staff");
   const staff = adminPage.getByRole("listitem").filter({
@@ -386,13 +381,13 @@ export async function revokeKiosk(browser: Browser, kioskPage: Page): Promise<vo
       response.url().endsWith(`/api/admin/kiosk-sessions/${state.sessionId}`)
       && response.request().method() === "DELETE"
     ));
-    await session.getByRole("button", { name: `${state.sessionId} 세션 해지` }).click();
+    await session.getByRole("button", { name: /세션 영구 삭제$/ }).click();
     const revokeDialog = page.getByRole("alertdialog", {
-      name: `${state.sessionId} 기기 세션 해지`,
+      name: /기기 세션 영구 삭제$/,
     });
-    await revokeDialog.getByRole("button", { name: `${state.sessionId} 세션 해지 확인` }).click();
+    await revokeDialog.getByRole("button", { name: "세션 영구 삭제", exact: true }).click();
     expect((await revokeResponse).status()).toBe(204);
-    await expect(page.getByRole("status").filter({ hasText: "기기 세션을 해지했습니다." })).toBeVisible();
+    await expect(page.getByRole("status").filter({ hasText: "기기 세션을 영구 삭제했습니다." })).toBeVisible();
   } finally {
     await context.close();
   }

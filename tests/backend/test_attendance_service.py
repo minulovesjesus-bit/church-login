@@ -98,6 +98,7 @@ class InMemoryAttendanceRepository:
         direction: Direction,
         scanned_at: datetime,
         kiosk_session_id: UUID,
+        kiosk_device_name: str,
         request_id: UUID,
         qr_issued_at: datetime,
     ) -> AttendanceScan | None:
@@ -111,6 +112,7 @@ class InMemoryAttendanceRepository:
             direction=direction,
             scanned_at=scanned_at,
             kiosk_session_id=kiosk_session_id,
+            kiosk_device_name=kiosk_device_name,
             request_id=request_id,
             qr_issued_at=qr_issued_at,
             source=Source.QR,
@@ -124,9 +126,9 @@ class InMemoryAttendanceRepository:
 
     async def lock_active_kiosk_session(
         self, kiosk_session_id: UUID, now: datetime
-    ) -> bool:
+    ) -> str | None:
         self.locked_kiosk_sessions.append(kiosk_session_id)
-        return self.kiosk_session_active
+        return "본당 입구 태블릿" if self.kiosk_session_active else None
 
     async def consume_scan_rate_limit(
         self, key_hash: str, now: datetime

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from psycopg.types.json import Jsonb
 
+from backend.identity.schemas import StaffRole
 from backend.students.schemas import (
     StudentListFilters,
     TeacherStudentUpdate,
@@ -41,6 +42,11 @@ class StudentRepository:
         row = await cursor.fetchone()
         return str(row[0]) if row is not None else None
 
+    async def serialize_staff_memberships(self) -> None:
+        await self.connection.execute(
+            "select pg_advisory_xact_lock(%s)", (1_256_784_321,)
+        )
+
     async def count_statistics_target_students(self) -> int:
         cursor = await self.connection.execute(
             """
@@ -61,9 +67,10 @@ class StudentRepository:
             """
             select profile.user_id, profile.email, profile.name,
                    student.birth_date, profile.phone, student.guardian_phone,
-                   student.include_in_statistics
+                   student.include_in_statistics, membership.role::text
             from app.student_profiles student
             join app.user_profiles profile using (user_id)
+            left join app.staff_memberships membership using (user_id)
             where (
                 %(statistics)s = 'all'
                 or (%(statistics)s = 'included' and student.include_in_statistics)
@@ -107,9 +114,10 @@ class StudentRepository:
             """
             select profile.user_id, profile.email, profile.name,
                    student.birth_date, profile.phone, student.guardian_phone,
-                   student.include_in_statistics
+                   student.include_in_statistics, membership.role::text
             from app.user_profiles profile
             join app.student_profiles student using (user_id)
+            left join app.staff_memberships membership using (user_id)
             where profile.user_id = %s
             for update of profile, student
             """,
@@ -170,8 +178,53 @@ class StudentRepository:
         return TeacherStudentView(
             user_id=current.user_id,
             email=current.email,
+            staff_role=current.staff_role,
             **command.model_dump(),
         )
+
+    async def get_student(self, student_id: UUID) -> TeacherStudentView | None:
+        cursor = await self.connection.execute(
+            """
+            select profile.user_id, profile.email, profile.name,
+                   student.birth_date, profile.phone, student.guardian_phone,
+                   student.include_in_statistics, membership.role::text
+            from app.student_profiles student
+            join app.user_profiles profile using (user_id)
+            left join app.staff_memberships membership using (user_id)
+            where student.user_id = %s
+            for key share of student
+            """,
+            (student_id,),
+        )
+        row = await cursor.fetchone()
+        return self._student(row) if row is not None else None
+
+    async def promote_student_to_teacher(
+        self,
+        student_id: UUID,
+        actor_id: UUID,
+    ) -> bool:
+        cursor = await self.connection.execute(
+            """
+            with inserted as (
+              insert into app.staff_memberships (user_id, role, approved_by)
+              values (%(target)s, 'teacher', %(actor)s)
+              on conflict (user_id) do nothing
+              returning user_id
+            ), audited as (
+              insert into app.audit_logs (
+                actor_id, action, target_type, target_id, details
+              )
+              select %(actor)s, 'student.promoted_to_teacher', 'student_profile',
+                     %(target)s::text, jsonb_build_object('role', 'teacher')
+              from inserted
+            )
+            select exists(select 1 from inserted)
+            """,
+            {"target": student_id, "actor": actor_id},
+        )
+        row = await cursor.fetchone()
+        return bool(row and row[0])
 
     @staticmethod
     def _like_pattern(query: str | None) -> str | None:
@@ -190,4 +243,5 @@ class StudentRepository:
             phone=row[4],
             guardian_phone=row[5],
             include_in_statistics=bool(row[6]),
+            staff_role=StaffRole(row[7]) if row[7] is not None else None,
         )

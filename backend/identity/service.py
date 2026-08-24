@@ -27,6 +27,7 @@ GOOGLE_AUTH_REQUIRED = (
     403,
 )
 FORBIDDEN = ("FORBIDDEN", "이 작업을 수행할 권한이 없습니다.", 403)
+PROFILE_REQUIRED = ("PROFILE_REQUIRED", "학생 정보를 먼저 등록해 주세요.", 403)
 
 
 class LastAdminProtected(ApiError):
@@ -64,6 +65,20 @@ class IdentityService:
             user,
             **profile_input.model_dump(),
         )
+        return StudentProfileView(
+            name=profile.name,
+            birth_date=profile.birth_date,
+            phone=profile.phone,
+            guardian_phone=profile.guardian_phone,
+            include_in_statistics=profile.include_in_statistics,
+        )
+
+    async def current_student_profile(
+        self, user: AuthenticatedUser
+    ) -> StudentProfileView:
+        profile = await self._repository.student_profile(user.user_id)
+        if profile is None:
+            raise ApiError(*PROFILE_REQUIRED)
         return StudentProfileView(
             name=profile.name,
             birth_date=profile.birth_date,

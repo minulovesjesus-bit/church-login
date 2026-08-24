@@ -98,7 +98,13 @@ class KioskSessionService:
             clock=self.clock,
         )
 
-    async def login(self, password: str, rate_limit_key_hash: str) -> KioskTokens:
+    async def login(
+        self,
+        password: str,
+        rate_limit_key_hash: str,
+        *,
+        device_name: str = "공용 키오스크",
+    ) -> KioskTokens:
         policy = KIOSK_LOGIN_RATE_LIMIT
         now = self.clock.now()
         allowed = await self.repository.reserve_rate_limit_attempt(
@@ -126,6 +132,7 @@ class KioskSessionService:
         refresh_token = generate_opaque_refresh_token()
         refresh_expires_at = now + REFRESH_TOKEN_LIFETIME
         session = await self.repository.create_session(
+            device_name,
             hash_opaque_token(refresh_token, self._cookie_secret),
             now,
             refresh_expires_at,
@@ -252,11 +259,10 @@ class KioskSessionService:
         ):
             raise ApiError(*INVALID_CURSOR) from None
 
-    async def revoke_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
-        if not await self.repository.revoke_session_as_admin(
+    async def delete_as_admin(self, session_id: UUID, actor_id: UUID) -> None:
+        if not await self.repository.delete_session_as_admin(
             session_id,
             actor_id=actor_id,
-            now=self.clock.now(),
         ):
             raise ApiError(
                 "KIOSK_SESSION_NOT_FOUND",
@@ -292,6 +298,7 @@ class KioskSessionService:
         access_token, access_expires_at = self._access_tokens.issue(session.id)
         return KioskTokens(
             session_id=session.id,
+            device_name=session.device_name,
             access_token=access_token,
             access_expires_at=access_expires_at,
             refresh_token=refresh_token,

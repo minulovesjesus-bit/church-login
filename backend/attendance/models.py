@@ -29,3 +29,4 @@ class AttendanceScan:
     voided_at: datetime | None
     voided_by: UUID | None
     void_reason: str | None
+    kiosk_device_name: str | None = None

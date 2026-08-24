@@ -34,7 +34,7 @@ def main() -> None:
             with expected(action, actor_id, target_type, target_id) as (
               values
                 ('attendance.corrected', %s::uuid, 'attendance_scan', %s::text),
-                ('kiosk.session_revoked', %s::uuid, 'kiosk_session', %s::text)
+                ('kiosk.session_deleted', %s::uuid, 'kiosk_session', %s::text)
             )
             select expected.action, count(audit.id)::integer
             from expected

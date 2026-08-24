@@ -20,7 +20,7 @@
   --muted-foreground: #667169;
   --accent: #e9f0ea;
   --accent-foreground: #173d2b;
-  --destructive: #b24a4a;
+  --destructive: #ae4646;
   --border: #d8e1da;
   --input: #d8e1da;
   --ring: #245c41;
@@ -31,6 +31,16 @@
   --radius: 0.75rem;
   --motion-fast: 140ms;
   --motion-normal: 200ms;
+  --content-max-student: 46rem;
+  --content-max-staff: 74rem;
+  --content-max-admin: 70rem;
+  --content-max-kiosk: 76rem;
+  --page-gutter-student: clamp(1rem, 4vw, 2rem);
+  --page-gutter-staff: clamp(1rem, 3vw, 2.5rem);
+  --copy-gap: 0.35rem;
+  --section-gap: clamp(1.5rem, 3vw, 2rem);
+  --student-nav-block-size: calc(4rem + env(safe-area-inset-bottom));
+  --staff-mobile-header-size: 4rem;
   --sidebar: #173d2b;
   --sidebar-foreground: #ffffff;
   --sidebar-primary: #ffffff;
@@ -101,6 +111,14 @@ textarea {
   font: inherit;
 }
 
+.brand-mark--dark {
+  filter: none;
+}
+
+.brand-mark--light {
+  filter: brightness(0) invert(1);
+}
+
 button,
 a {
   -webkit-tap-highlight-color: transparent;
@@ -108,6 +126,26 @@ a {
 
 .auth-shell-image {
   isolation: isolate;
+}
+
+@media (max-width: 40rem) and (max-height: 45rem) {
+  .auth-shell--task > header {
+    padding-top: 1rem;
+  }
+
+  .auth-shell--task .auth-shell-image {
+    height: 6rem;
+    margin-top: 0.75rem;
+  }
+
+  .auth-shell--task .auth-shell-content {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .auth-shell--task [data-slot="auth-shell-actions"] {
+    margin-top: 1rem;
+  }
 }
 
 @media (min-width: 64rem) {
@@ -255,7 +293,7 @@ a {
 
 .qr-card {
   --card-spacing: clamp(1rem, 2.5vw, 2rem);
-  width: min(100%, 76rem);
+  width: min(100%, var(--content-max-kiosk));
   border-radius: var(--radius-2xl);
   box-shadow: 0 1.5rem 5rem color-mix(in srgb, var(--primary) 8%, transparent);
 }
@@ -363,6 +401,7 @@ a {
 .student-scan-shell {
   display: grid;
   place-items: center;
+  min-height: calc(100dvh - var(--student-nav-block-size));
   padding: clamp(0.75rem, 3vw, 2rem);
 }
 
@@ -517,7 +556,7 @@ a {
 }
 
 .attendance-shell > * {
-  width: min(100%, 74rem);
+  width: min(100%, var(--content-max-staff));
   margin-inline: auto;
 }
 
@@ -527,6 +566,22 @@ a {
   flex-direction: column;
   gap: 1rem;
   padding-block: 0.5rem 0.75rem;
+}
+
+.attendance-page-header > div,
+.events-page-header > div,
+.teacher-events-header > div,
+.teacher-students-header > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--copy-gap);
+}
+
+.attendance-page-header > div > *,
+.events-page-header > div > *,
+.teacher-events-header > div > *,
+.teacher-students-header > div > * {
+  margin-block: 0;
 }
 
 .attendance-page-header h1,
@@ -552,8 +607,9 @@ a {
 
 .attendance-summary-rail {
   margin-block: 1rem;
-  border-bottom: 3px solid var(--brand-gold);
   border-radius: var(--radius-2xl);
+  padding-bottom: 3px;
+  box-shadow: inset 0 -3px 0 var(--brand-gold);
 }
 
 .attendance-summary-grid {
@@ -900,7 +956,7 @@ a {
   width: 100%;
   min-width: 0;
   min-height: 100%;
-  padding: clamp(1rem, 3vw, 2.5rem);
+  padding: var(--page-gutter-staff);
   background: var(--background);
 }
 
@@ -908,12 +964,12 @@ a {
   width: 100%;
   min-width: 0;
   min-height: 100%;
-  padding: clamp(1rem, 3vw, 2.5rem);
+  padding: var(--page-gutter-staff);
   background: var(--background);
 }
 
 .teacher-students-shell > * {
-  width: min(100%, 74rem);
+  width: min(100%, var(--content-max-staff));
   margin-inline: auto;
 }
 
@@ -1104,7 +1160,7 @@ a {
 }
 
 .teacher-events-shell > * {
-  width: min(100%, 74rem);
+  width: min(100%, var(--content-max-staff));
   margin-inline: auto;
 }
 
@@ -1311,7 +1367,7 @@ a {
 }
 
 .events-shell > * {
-  width: min(100%, 46rem);
+  width: min(100%, var(--content-max-student));
   margin-inline: auto;
 }
 
@@ -1452,11 +1508,11 @@ a {
   .student-scan-shell,
   .events-shell,
   .teacher-events-shell {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .teacher-students-shell {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .teacher-students-header {
@@ -1564,7 +1620,7 @@ a {
   }
 
   .attendance-shell {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .attendance-page-header {
@@ -1644,16 +1700,15 @@ a {
 
 /* Responsive student and staff dashboard shells */
 .student-shell {
+  width: min(100%, var(--content-max-student));
   min-width: 0;
+  min-height: 100dvh;
+  margin-inline: auto;
 }
 
 .student-shell-content {
   min-width: 0;
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom));
-}
-
-.student-shell-content:has(> .student-scan-shell) {
-  padding-bottom: 0;
+  padding-bottom: var(--student-nav-block-size);
 }
 
 .student-navigation {
@@ -1662,7 +1717,9 @@ a {
   right: 0;
   bottom: 0;
   left: 0;
-  min-height: calc(4rem + env(safe-area-inset-bottom));
+  width: min(100%, var(--content-max-student));
+  margin-inline: auto;
+  min-height: var(--student-nav-block-size);
   border-top: 1px solid var(--border);
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--background) 96%, transparent);
@@ -1679,6 +1736,14 @@ a {
 .student-navigation ul {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.student-navigation[data-items="4"] ul {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.student-navigation[data-items="5"] ul {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .student-navigation a {
@@ -1716,7 +1781,7 @@ a {
 }
 
 .student-home-shell {
-  width: min(100%, 46rem);
+  width: min(100%, var(--content-max-student));
   min-height: 100%;
   margin-inline: auto;
   padding: 1.25rem 1rem 2rem;
@@ -1734,7 +1799,7 @@ a {
 .student-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 1.75rem;
 }
 
 .student-dashboard > * {
@@ -1775,7 +1840,7 @@ a {
 .student-home-events {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .student-today h2,
@@ -1933,13 +1998,16 @@ a {
 }
 
 .staff-shell {
+  display: grid;
   width: 100%;
   min-height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
   background: color-mix(in srgb, var(--secondary) 45%, var(--background));
 }
 
 .staff-shell__content {
   min-width: 0;
+  min-height: 0;
 }
 
 .staff-navigation-desktop {
@@ -1951,7 +2019,7 @@ a {
   z-index: 10;
   top: 0;
   display: flex;
-  min-height: 4rem;
+  min-height: var(--staff-mobile-header-size);
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
@@ -2023,13 +2091,13 @@ a {
 
 .staff-access-state,
 .teacher-dashboard-shell {
-  min-height: 100dvh;
-  padding: clamp(1rem, 3vw, 2.5rem);
+  padding: var(--page-gutter-staff);
   background: color-mix(in srgb, var(--secondary) 45%, var(--background));
 }
 
 .staff-access-state {
   display: grid;
+  min-height: 100dvh;
   place-content: center;
   gap: 1rem;
 }
@@ -2051,13 +2119,27 @@ a {
   color: var(--muted-foreground);
 }
 
+.teacher-dashboard-shell {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  gap: var(--section-gap);
+}
+
+.staff-shell__content .attendance-shell,
+.staff-shell__content .events-shell,
+.staff-shell__content .teacher-events-shell,
+.staff-shell__content .teacher-students-shell {
+  min-height: 100%;
+}
+
 .teacher-dashboard-shell > * {
-  width: min(100%, 74rem);
+  width: min(100%, var(--content-max-staff));
   margin-inline: auto;
 }
 
 .teacher-dashboard-shell .attendance-page-header {
-  padding-block: 0 1.5rem;
+  padding-block: 0;
 }
 
 .teacher-metric-rail {
@@ -2112,11 +2194,11 @@ a {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
-  padding-block: 1rem;
+  padding-block: 0;
 }
 
 .teacher-recent-card {
-  margin-top: 0.25rem;
+  margin-top: 0;
 }
 
 .teacher-recent-card [data-slot="card-header"] {
@@ -2158,7 +2240,7 @@ a {
 
 .admin-page {
   display: flex;
-  width: min(100% - 2rem, 70rem);
+  width: min(100% - 2rem, var(--content-max-admin));
   margin-inline: auto;
   padding-block: clamp(1.25rem, 4vw, 3rem);
   flex-direction: column;
@@ -2347,7 +2429,7 @@ a {
 
 @media (max-width: 40rem) {
   .teacher-dashboard-shell {
-    padding: 0.75rem;
+    padding: 1rem;
   }
 
   .dashboard-stale-notice {
@@ -2357,48 +2439,13 @@ a {
 }
 
 @media (min-width: 64rem) {
-  .student-shell-content {
-    padding-top: 4rem;
-    padding-bottom: 0;
-  }
-
-  .student-shell-content:has(> .student-scan-shell) {
-    padding-top: 0;
-  }
-
-  .student-navigation {
-    top: 0;
-    bottom: auto;
-    min-height: 4rem;
-    border-top: 0;
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 0;
-    box-shadow: 0 0.8rem 2rem color-mix(in srgb, var(--primary) 6%, transparent);
-  }
-
-  .student-navigation ul {
-    width: min(100% - 3rem, 58rem);
-    margin-inline: auto;
-  }
-
-  .student-navigation a {
-    min-height: 4rem;
-    flex-direction: row;
-    gap: 0.5rem;
-    font-size: 0.92rem;
-  }
-
-  .student-navigation a[aria-current="page"] {
-    box-shadow: inset 0 -3px var(--primary);
-  }
-
   .student-home-shell {
-    padding-inline: 2rem;
+    padding-inline: var(--page-gutter-student);
   }
 
   .attendance-shell,
   .events-shell {
-    padding: 2rem;
+    padding: var(--page-gutter-staff);
   }
 
   .attendance-page-header,
@@ -2456,6 +2503,7 @@ a {
   .staff-shell {
     display: grid;
     grid-template-columns: 16rem minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
 
   .staff-navigation-desktop {

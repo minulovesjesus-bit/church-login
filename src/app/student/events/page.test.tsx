@@ -173,7 +173,7 @@ it("shows distinct loading, retryable error, retry, and auth redirect states", a
 
   client.api.get.mockRejectedValueOnce(new client.ApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
   renderPage("2026-08-24");
-  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/auth/login"));
+  await vi.waitFor(() => expect(navigation.replace).toHaveBeenCalledWith("/login"));
 });
 
 it("ignores a stale response after week navigation and after unmount", async () => {

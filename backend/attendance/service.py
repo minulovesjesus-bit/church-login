@@ -89,9 +89,10 @@ class AttendanceService:
         if duplicate is not None:
             return ScanResult.accepted(duplicate, duplicate=True)
 
-        if not await self._repository.lock_active_kiosk_session(
+        kiosk_device_name = await self._repository.lock_active_kiosk_session(
             challenge.kiosk_session_id, now
-        ):
+        )
+        if kiosk_device_name is None:
             raise KioskSessionRevoked
 
         latest = await self._repository.latest_non_voided_scan(
@@ -114,6 +115,7 @@ class AttendanceService:
             direction=direction,
             scanned_at=now,
             kiosk_session_id=challenge.kiosk_session_id,
+            kiosk_device_name=kiosk_device_name,
             request_id=request_id,
             qr_issued_at=challenge.issued_at,
         )

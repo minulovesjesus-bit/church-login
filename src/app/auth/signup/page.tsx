@@ -27,7 +27,7 @@ export default function StudentSignupPage() {
       const { error } = await createBrowserSupabaseClient().auth.signUp({
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/student` },
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/auth/continue` },
       });
       setHasError(Boolean(error));
       setMessage(error?.message ?? "인증 이메일을 확인한 뒤 계속해 주세요.");
@@ -90,7 +90,7 @@ export default function StudentSignupPage() {
           </FieldGroup>
         </form>
         <Button asChild variant="link" className="w-fit px-0">
-          <Link href="/auth/login">로그인으로 돌아가기</Link>
+          <Link href="/login">로그인으로 돌아가기</Link>
         </Button>
       </FieldGroup>
     </AuthShell>

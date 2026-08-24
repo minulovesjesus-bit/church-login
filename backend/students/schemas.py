@@ -7,6 +7,8 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
+from backend.identity.schemas import StaffRole
+
 SEOUL = ZoneInfo("Asia/Seoul")
 
 
@@ -77,9 +79,11 @@ class TeacherStudentView(BaseModel):
     phone: str
     guardian_phone: str
     include_in_statistics: bool
+    staff_role: StaffRole | None = None
 
 
 class TeacherStudentPage(BaseModel):
     items: list[TeacherStudentView]
     next_cursor: str | None
     page_size: int = Field(ge=1, le=100)
+    can_promote: bool
