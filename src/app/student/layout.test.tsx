@@ -53,6 +53,9 @@ it("uses one semantic responsive navigation path with only implemented destinati
   expect(nav.closest(".student-shell")?.querySelector(".student-shell-content")).toContainElement(
     screen.getByText("학생 내용"),
   );
+  const logo = screen.getByRole("img", { name: "갈보리교회" });
+  expect(screen.getAllByRole("img", { name: "갈보리교회" })).toHaveLength(1);
+  expect(logo.closest(".student-brand-header")).not.toBeNull();
   expect(screen.getByTestId("student-session-guard")).toContainElement(nav);
 });
 

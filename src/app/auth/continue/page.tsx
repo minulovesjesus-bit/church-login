@@ -21,8 +21,17 @@ type CurrentIdentity = {
 
 function destination(identity: CurrentIdentity): string {
   if (!identity.onboarding_completed) return "/onboarding";
-  if (identity.capabilities.teacher || identity.capabilities.admin) return "/teacher";
   return "/student";
+}
+
+function waitForRetry(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(resolve, 1_000);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException("Authentication continuation was aborted.", "AbortError"));
+    }, { once: true });
+  });
 }
 
 export default function AuthContinuePage() {
@@ -36,8 +45,9 @@ export default function AuthContinuePage() {
 
     async function continueAuthentication() {
       setError(undefined);
+      const supabase = createBrowserSupabaseClient();
       try {
-        const { data, error: sessionError } = await createBrowserSupabaseClient().auth.getSession();
+        const { data, error: sessionError } = await supabase.auth.getSession();
         if (!active) return;
         if (sessionError || !data.session) {
           router.replace("/login");
@@ -49,6 +59,24 @@ export default function AuthContinuePage() {
       } catch (caught: unknown) {
         if (!active || (caught instanceof DOMException && caught.name === "AbortError")) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
+          const { data, error: refreshError } = await supabase.auth.refreshSession();
+          if (!active) return;
+          if (!refreshError && data.session) {
+            for (let attempt = 0; attempt < 5; attempt += 1) {
+              try {
+                await waitForRetry(controller.signal);
+                const identity = await api.get<CurrentIdentity>("/api/me", { signal: controller.signal });
+                if (active) router.replace(destination(identity));
+                return;
+              } catch (retryError: unknown) {
+                if (!active || (retryError instanceof DOMException && retryError.name === "AbortError")) return;
+                if (!(retryError instanceof ApiClientError) || retryError.code !== "AUTH_REQUIRED") {
+                  setError(retryError instanceof ApiClientError ? retryError.message : "로그인 정보를 확인하지 못했습니다.");
+                  return;
+                }
+              }
+            }
+          }
           router.replace("/login");
           return;
         }

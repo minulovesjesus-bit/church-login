@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -236,9 +235,7 @@ export function QrScanner({
   return (
     <Card className="scanner-card" aria-labelledby="scanner-title">
       <CardHeader className="scanner-card__intro">
-        <CardDescription>학생 출결</CardDescription>
         <CardTitle><h1 id="scanner-title">QR로 출결하기</h1></CardTitle>
-        <CardDescription>비치된 기기의 QR 코드를 카메라 화면 안에 맞춰 주세요.</CardDescription>
       </CardHeader>
 
       <CardContent className="scanner-card__camera">

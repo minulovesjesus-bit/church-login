@@ -38,7 +38,7 @@ export function TeacherSummary({ dashboard }: { dashboard: TeacherDashboard }) {
 
       <nav className="dashboard-shortcuts" aria-label="출결 바로가기">
         <Button variant="outline" asChild><Link href="/teacher/attendance">전체 출결 보기</Link></Button>
-        <Button variant="outline" asChild><Link href="/teacher/attendance?status=IN">현재 상태 확인</Link></Button>
+        <Button variant="outline" asChild><Link href="/teacher/attendance/current">현재 입실 상태</Link></Button>
         <Button variant="outline" asChild><Link href="/teacher/attendance?status=VOIDED">취소 기록 확인</Link></Button>
       </nav>
 

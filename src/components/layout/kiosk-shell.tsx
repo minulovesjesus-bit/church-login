@@ -12,13 +12,13 @@ type KioskShellProps = {
 export function KioskShell({ children, mode, toolbar }: KioskShellProps) {
   return (
     <main className={cn("kiosk-shell", mode === "unlocked" && "kiosk-shell--unlocked")}>
-      {mode === "unlocked" ? (
-        <header className="kiosk-header">
-          <BrandLockup />
-          <div className="kiosk-toolbar">{toolbar}</div>
-        </header>
-      ) : null}
       <div className="kiosk-shell__content">{children}</div>
+      {mode === "unlocked" ? (
+        <footer className="kiosk-footer">
+          <div className="kiosk-toolbar">{toolbar}</div>
+          <BrandLockup />
+        </footer>
+      ) : null}
     </main>
   );
 }

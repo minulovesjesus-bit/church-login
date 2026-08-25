@@ -4,21 +4,19 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  CalendarCheck2,
   ChevronRight,
   CircleAlert,
   Clock3,
-  LogIn,
   QrCode,
   UserRoundCheck,
 } from "lucide-react";
 
-import { BrandLockup } from "@/components/brand/brand-mark";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
+import { formatSeoulTime } from "@/features/attendance/format";
+import { StudentMonthSummary } from "@/features/attendance/student-month-summary";
 import type { StudentStatistics } from "@/features/attendance/types";
 import { EventOccurrences } from "@/features/events/event-card";
 import { currentSeoulMonday } from "@/features/events/week-navigation";
@@ -125,12 +123,6 @@ export default function StudentPage() {
 
   return (
     <main className="student-home-shell student-dashboard">
-      <header className="student-dashboard__header">
-        <BrandLockup />
-        <h1>반가워요!</h1>
-        <p>오늘도 편안한 하루 보내세요.</p>
-      </header>
-
       <section className="student-today" aria-labelledby="student-today-heading">
         <h2 id="student-today-heading">오늘 출결 상태</h2>
         <Card className="student-today-card">
@@ -152,14 +144,7 @@ export default function StudentPage() {
         <Link href="/student/scan"><QrCode data-icon="inline-start" />QR로 출결하기</Link>
       </Button>
 
-      <section className="student-month" aria-labelledby="student-month-heading">
-        <h2 id="student-month-heading">나의 이번 달</h2>
-        <dl className="student-month-rail">
-          <div><CalendarCheck2 aria-hidden="true" /><dt>출석일</dt><dd>이번 달 {statistics.attendance_days_this_month}일</dd></div>
-          <div><LogIn aria-hidden="true" /><dt>누적 입실</dt><dd>총 입실 {statistics.total_entries}회</dd></div>
-          <div><Clock3 aria-hidden="true" /><dt>평균 체류</dt><dd>평균 체류 {formatDuration(statistics.average_stay_seconds)}</dd></div>
-        </dl>
-      </section>
+      <StudentMonthSummary statistics={statistics} />
 
       <section className="student-home-events" aria-labelledby="student-home-events-heading">
         <div className="student-home-events__heading">

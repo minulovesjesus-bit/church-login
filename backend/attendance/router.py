@@ -8,6 +8,8 @@ from backend.attendance.schemas import (
     AttendanceCorrectionInput,
     AttendanceHistoryPage,
     AttendanceScanView,
+    CurrentPresenceFilters,
+    CurrentPresencePage,
     PaginationFilters,
     ScanInput,
     ScanResult,
@@ -123,6 +125,18 @@ async def teacher_attendance_statistics(
     filters: Annotated[TeacherStatisticsFilters, Query()],
 ) -> TeacherStatisticsView:
     return await service.teacher_summary(teacher, filters)
+
+
+@router.get(
+    "/teacher/attendance/current",
+    response_model=CurrentPresencePage,
+)
+async def teacher_current_presence(
+    teacher: TeacherUser,
+    service: AttendanceServiceDependency,
+    filters: Annotated[CurrentPresenceFilters, Query()],
+) -> CurrentPresencePage:
+    return await service.current_presence(teacher, filters)
 
 
 @router.post(

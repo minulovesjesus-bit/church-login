@@ -8,6 +8,7 @@ it("uses the official Calvary Church logo as the canonical site brand", () => {
     "src",
     "/images/calvary-church-logo.svg",
   );
+  expect(screen.getByRole("img", { name: "갈보리교회" })).toHaveAttribute("loading", "eager");
 
   rerender(<BrandLockup />);
   expect(screen.getByRole("img", { name: "갈보리교회" })).toBeVisible();

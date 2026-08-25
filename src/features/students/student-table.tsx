@@ -8,6 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { calculateInternationalAge } from "@/features/students/age";
+
+export { calculateInternationalAge } from "@/features/students/age";
 
 export type TeacherStudent = {
   user_id: string;
@@ -30,30 +33,6 @@ export function staffRoleBadgeVariant(staffRole: TeacherStudent["staff_role"]): 
   if (staffRole === "admin") return "default";
   if (staffRole === "teacher") return "secondary";
   return "outline";
-}
-
-function seoulCalendarDate(now = new Date()): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(now);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
-}
-
-export function calculateInternationalAge(
-  birthDate: string,
-  today = seoulCalendarDate(),
-): number {
-  const [birthYear, birthMonth, birthDay] = birthDate.split("-").map(Number);
-  const [todayYear, todayMonth, todayDay] = today.split("-").map(Number);
-  let age = todayYear - birthYear;
-  if (todayMonth < birthMonth || (todayMonth === birthMonth && todayDay < birthDay)) {
-    age -= 1;
-  }
-  return age;
 }
 
 type StudentTableProps = {

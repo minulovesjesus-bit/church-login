@@ -229,10 +229,10 @@ test("student routes match phone and tablet baselines", async ({ browser }) => {
   await authenticateAs(context, "completeStudent");
   const page = await context.newPage();
   const routes = [
-    { path: "/student", heading: "반가워요!", slug: "student-home" },
+    { path: "/student", heading: "오늘 출결 상태", slug: "student-home" },
     { path: "/student/scan", heading: "QR로 출결하기", slug: "student-scan" },
     { path: "/student/attendance", heading: "내 출결 기록", slug: "student-attendance" },
-    { path: "/student/events", heading: "주간 일정", slug: "student-events" },
+    { path: "/student/events", heading: "일정", slug: "student-events" },
   ] as const;
   const sizes = [
     ["student", viewports.student],
@@ -244,6 +244,14 @@ test("student routes match phone and tablet baselines", async ({ browser }) => {
       await page.setViewportSize(viewport);
       for (const route of routes) {
         await page.goto(route.path);
+        const sharedBrand = page.locator(".student-brand-header");
+        const sharedBrandImage = sharedBrand.getByRole("img", { name: "갈보리교회" });
+        await expect(sharedBrandImage).toBeVisible();
+        await expect.poll(() => sharedBrandImage.evaluate((image) => {
+          const element = image as HTMLImageElement;
+          return element.complete && element.naturalWidth > 0;
+        })).toBe(true);
+        await expect(page.getByRole("img", { name: "갈보리교회" })).toHaveCount(1);
         await expectStableScreenshot(
           page,
           `${route.slug}-${sizeName}.png`,
@@ -254,8 +262,57 @@ test("student routes match phone and tablet baselines", async ({ browser }) => {
 
     await page.setViewportSize(viewports.student);
     await page.goto("/student");
-    await expect(page.getByRole("heading", { name: "반가워요!" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "오늘 출결 상태" })).toBeVisible();
     await expectNoSeriousAxeViolations(page);
+  } finally {
+    await context.close();
+  }
+});
+
+test("student home and attendance group summary content into bordered cards", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: viewports.student });
+  await authenticateAs(context, "completeStudent");
+  const page = await context.newPage();
+  await page.clock.setFixedTime(FIXED_TIME);
+  await page.route("**/api/events?*", async (route) => {
+    await route.fulfill({
+      json: [{
+        occurrence_id: "event-card:2026-08-23",
+        event_id: "00000000-0000-4000-8000-000000000901",
+        title: "주일예배",
+        description: "함께 예배드려요",
+        local_start: "2026-08-23T02:00:00+09:00",
+        local_end: "2026-08-23T03:00:00+09:00",
+        location: "본당",
+      }],
+    });
+  });
+
+  try {
+    await page.goto("/student");
+    await expect(page.getByRole("heading", { name: "나의 이번 달" })).toBeVisible();
+    await expect(page.getByText("주일예배")).toBeVisible();
+    const homeCards = await page.evaluate(() => {
+      const month = document.querySelector<HTMLElement>(".student-month");
+      const events = document.querySelector<HTMLElement>(".student-home-events");
+      const event = document.querySelector<HTMLElement>(".student-home-events .event-card");
+      if (!month || !events || !event) throw new Error("student home card grouping is incomplete");
+      return {
+        monthBorder: getComputedStyle(month).borderTopWidth,
+        eventsBorder: getComputedStyle(events).borderTopWidth,
+        nestedEventBorder: getComputedStyle(event).borderTopWidth,
+      };
+    });
+    expect(homeCards.monthBorder).toBe("1px");
+    expect(homeCards.eventsBorder).toBe("1px");
+    expect(homeCards.nestedEventBorder).toBe("0px");
+
+    await page.goto("/student/attendance");
+    await expect(page.getByRole("heading", { name: "내 출결 기록" })).toBeVisible();
+    const attendanceBorder = await page.locator(".student-month").evaluate((element) => (
+      getComputedStyle(element).borderTopWidth
+    ));
+    expect(attendanceBorder).toBe("1px");
   } finally {
     await context.close();
   }
@@ -340,7 +397,7 @@ test("student shell stays a narrow bottom-navigation canvas at every breakpoint"
   }
 });
 
-test("student scanner reserves the fixed navigation area", async ({ browser }) => {
+test("student scanner and attendance summary keep their approved spacing", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 667 } });
   await authenticateAs(context, "completeStudent");
   const page = await context.newPage();
@@ -352,20 +409,44 @@ test("student scanner reserves the fixed navigation area", async ({ browser }) =
       const content = document.querySelector<HTMLElement>(".student-shell-content");
       const scanner = document.querySelector<HTMLElement>(".student-scan-shell");
       const navigation = document.querySelector<HTMLElement>(".student-navigation");
-      if (!content || !scanner || !navigation) throw new Error("student scanner layout is incomplete");
+      const brandHeader = document.querySelector<HTMLElement>(".student-brand-header");
+      const cameraFrame = document.querySelector<HTMLElement>(".camera-frame");
+      const cameraGuide = document.querySelector<HTMLElement>(".camera-frame__guide");
+      const cameraCaption = document.querySelector<HTMLElement>(".camera-caption");
+      if (!content || !scanner || !navigation || !brandHeader || !cameraFrame || !cameraGuide || !cameraCaption) {
+        throw new Error("student scanner layout is incomplete");
+      }
+
+      const frameBounds = cameraFrame.getBoundingClientRect();
+      const guideBounds = cameraGuide.getBoundingClientRect();
+      const captionBounds = cameraCaption.getBoundingClientRect();
 
       return {
         contentPaddingBottom: Number.parseFloat(getComputedStyle(content).paddingBottom),
+        brandHeaderHeight: brandHeader.getBoundingClientRect().height,
         navigationHeight: navigation.getBoundingClientRect().height,
         scannerMinHeight: Number.parseFloat(getComputedStyle(scanner).minHeight),
         viewportHeight: window.innerHeight,
+        captionTop: captionBounds.top - frameBounds.top,
+        guideTop: guideBounds.top - frameBounds.top,
       };
     });
 
     expect(layout.contentPaddingBottom).toBeGreaterThanOrEqual(layout.navigationHeight - 1);
     expect(layout.scannerMinHeight).toBeLessThanOrEqual(
-      layout.viewportHeight - layout.navigationHeight + 1,
+      layout.viewportHeight - layout.navigationHeight - layout.brandHeaderHeight + 1,
     );
+    expect(layout.captionTop).toBeLessThan(layout.guideTop);
+
+    await page.goto("/student/attendance");
+    await expect(page.getByRole("heading", { name: "내 출결 기록" })).toBeVisible();
+    const summarySpacing = await page.evaluate(() => {
+      const summaryRail = document.querySelector<HTMLElement>(".student-month-rail");
+      const recentRecords = document.querySelector<HTMLElement>(".attendance-records-card");
+      if (!summaryRail || !recentRecords) throw new Error("student attendance layout is incomplete");
+      return recentRecords.getBoundingClientRect().top - summaryRail.getBoundingClientRect().bottom;
+    });
+    expect(summarySpacing).toBeGreaterThanOrEqual(27);
   } finally {
     await context.close();
   }
@@ -489,6 +570,89 @@ test("locked and unlocked kiosk match portrait and landscape baselines", async (
     );
   }
   await expectNoSeriousAxeViolations(page);
+});
+
+test("unlocked kiosk uses an edge-to-edge QR surface and primary device badge on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 510, height: 632 });
+  await page.goto("/qr");
+
+  const qrResponse = page.waitForResponse((response) => (
+    response.url().includes("/api/kiosk/qr")
+    && response.request().method() === "GET"
+    && response.ok()
+  ));
+  await page.getByLabel("기기 이름").fill("본당 입구");
+  await page.getByLabel("관리자 비밀번호").fill("Kiosk-e2e-2026!");
+  await page.getByRole("button", { name: "QR 화면 열기" }).click();
+  await qrResponse;
+  await expect(page.getByRole("img", { name: "학생 출결용 QR 코드" })).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>(".kiosk-shell--unlocked .kiosk-shell__content");
+    const card = document.querySelector<HTMLElement>(".kiosk-shell--unlocked .qr-card");
+    const deviceName = document.querySelector<HTMLElement>(".kiosk-device-name");
+    const progress = document.querySelector<HTMLElement>('.qr-card__timer [role="progressbar"]');
+    const qr = document.querySelector<HTMLElement>(".qr-card__canvas");
+    if (!content || !card || !deviceName || !progress || !qr) {
+      throw new Error("Unlocked kiosk layout is incomplete.");
+    }
+
+    const primaryProbe = document.createElement("span");
+    primaryProbe.style.backgroundColor = "var(--primary)";
+    document.body.append(primaryProbe);
+    const primary = getComputedStyle(primaryProbe).backgroundColor;
+    primaryProbe.remove();
+
+    const contentBox = content.getBoundingClientRect();
+    const cardBox = card.getBoundingClientRect();
+    const contentStyle = getComputedStyle(content);
+    const cardStyle = getComputedStyle(card);
+    const deviceStyle = getComputedStyle(deviceName);
+
+    return {
+      contentLeft: contentBox.left,
+      contentRight: window.innerWidth - contentBox.right,
+      contentPaddingLeft: Number.parseFloat(contentStyle.paddingLeft),
+      contentPaddingRight: Number.parseFloat(contentStyle.paddingRight),
+      cardLeft: cardBox.left,
+      cardRight: window.innerWidth - cardBox.right,
+      cardRadius: Number.parseFloat(cardStyle.borderTopLeftRadius),
+      deviceBackground: deviceStyle.backgroundColor,
+      progressWidth: progress.getBoundingClientRect().width,
+      primary,
+      qrWidth: qr.getBoundingClientRect().width,
+    };
+  });
+
+  expect(layout).toMatchObject({
+    contentLeft: 0,
+    contentRight: 0,
+    contentPaddingLeft: 0,
+    contentPaddingRight: 0,
+    cardLeft: 0,
+    cardRight: 0,
+    cardRadius: 0,
+  });
+  expect(layout.deviceBackground).toBe(layout.primary);
+  expect(layout.progressWidth).toBeCloseTo(layout.qrWidth, 1);
+
+  await page.setViewportSize({ width: 1055, height: 789 });
+  const desktopLayout = await page.evaluate(() => {
+    const footer = document.querySelector<HTMLElement>(".kiosk-footer");
+    const qr = document.querySelector<HTMLElement>(".qr-card__canvas");
+    if (!footer || !qr) throw new Error("Desktop kiosk layout is incomplete.");
+    const footerBox = footer.getBoundingClientRect();
+    return {
+      documentHeight: document.documentElement.scrollHeight,
+      footerBottom: footerBox.bottom,
+      qrBottom: qr.getBoundingClientRect().bottom,
+      viewportHeight: window.innerHeight,
+    };
+  });
+
+  expect(desktopLayout.documentHeight).toBeLessThanOrEqual(desktopLayout.viewportHeight);
+  expect(desktopLayout.qrBottom).toBeLessThan(desktopLayout.footerBottom);
+  expect(desktopLayout.footerBottom).toBeCloseTo(desktopLayout.viewportHeight, 1);
 });
 
 test("current staff overlays trap focus, close with Escape, and restore their opener", async ({ browser }) => {

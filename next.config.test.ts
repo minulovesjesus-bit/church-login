@@ -24,3 +24,7 @@ it("leaves production API routing available to Vercel", async () => {
 
   await expect(nextConfig.rewrites?.()).resolves.toEqual([]);
 });
+
+it("allows the current LAN hostname to load development assets", () => {
+  expect(nextConfig.allowedDevOrigins).toContain("192.168.0.153");
+});

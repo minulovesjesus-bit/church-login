@@ -8,6 +8,9 @@ from backend.attendance.router import get_attendance_service, router
 from backend.attendance.schemas import (
     AttendanceHistoryPage,
     AttendanceScanView,
+    CurrentPresenceFilters,
+    CurrentPresenceItem,
+    CurrentPresencePage,
     PaginationFilters,
     StudentStatisticsView,
     TeacherAttendanceFilters,
@@ -33,6 +36,9 @@ class FakeHistoryService:
         ] = []
         self.teacher_summary_calls: list[
             tuple[AuthenticatedUser, TeacherStatisticsFilters]
+        ] = []
+        self.current_presence_calls: list[
+            tuple[AuthenticatedUser, CurrentPresenceFilters]
         ] = []
         self.now = datetime(2026, 8, 21, 3, tzinfo=UTC)
 
@@ -102,6 +108,30 @@ class FakeHistoryService:
             as_of_date=date(2026, 8, 21),
         )
 
+    async def current_presence(
+        self, user: AuthenticatedUser, filters: CurrentPresenceFilters
+    ) -> CurrentPresencePage:
+        self.current_presence_calls.append((user, filters))
+        return CurrentPresencePage(
+            items=[
+                CurrentPresenceItem(
+                    student_id=uuid4(),
+                    student_name="통계 제외 입실 학생",
+                    student_email="inside@example.test",
+                    student_phone="01012345678",
+                    guardian_phone="01098765432",
+                    birth_date=date(2012, 4, 3),
+                    checked_in_at=self.now,
+                    source=Source.QR,
+                    excluded_from_statistics=True,
+                )
+            ],
+            total=1,
+            page=filters.page,
+            page_size=filters.page_size,
+            as_of_date=date(2026, 8, 21),
+        )
+
 
 def test_attendance_history_and_statistics_routes_are_registered() -> None:
     paths = {route.path for route in router.routes}
@@ -109,6 +139,7 @@ def test_attendance_history_and_statistics_routes_are_registered() -> None:
     assert "/api/attendance/me" in paths
     assert "/api/statistics/me" in paths
     assert "/api/teacher/attendance" in paths
+    assert "/api/teacher/attendance/current" in paths
     assert "/api/teacher/statistics" in paths
 
 
@@ -189,6 +220,10 @@ async def test_teacher_endpoints_require_teacher_and_validate_filters(
             "/api/teacher/statistics"
             "?date_from=2025-01-01&date_to=2026-08-21"
         )
+        current = await client.get(
+            "/api/teacher/attendance/current"
+            "?query=%20%20%EA%B9%80%20%20%ED%95%99%EC%83%9D%20%20&page=2&page_size=5"
+        )
     finally:
         app.dependency_overrides.clear()
 
@@ -205,6 +240,21 @@ async def test_teacher_endpoints_require_teacher_and_validate_filters(
     assert statistics.json()["student_attendance_days"] == []
     assert statistics.json()["student_attendance_days_total"] == 1
     assert invalid_range.status_code == 422
+    assert current.status_code == 200
+    assert current.json()["items"][0] == {
+        "student_id": current.json()["items"][0]["student_id"],
+        "student_name": "통계 제외 입실 학생",
+        "student_email": "inside@example.test",
+        "student_phone": "01012345678",
+        "guardian_phone": "01098765432",
+        "birth_date": "2012-04-03",
+        "checked_in_at": "2026-08-21T03:00:00Z",
+        "source": "QR",
+        "excluded_from_statistics": True,
+    }
+    assert service.current_presence_calls == [
+        (teacher, CurrentPresenceFilters(query="김 학생", page=2, page_size=5))
+    ]
 
 
 async def test_history_response_waits_for_function_scoped_transaction(

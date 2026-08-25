@@ -7,7 +7,7 @@ const SEOUL = "Asia/Seoul";
 const MIN_BACKEND_YEAR = 1;
 const MAX_BACKEND_YEAR = 9999;
 
-type CalendarDate = { year: number; month: number; day: number };
+export type CalendarDate = { year: number; month: number; day: number };
 export type WeekSearchValue = string | string[] | undefined;
 
 function isLeapYear(year: number): boolean {
@@ -18,7 +18,7 @@ function daysInMonth(year: number, month: number): number {
   return [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1] ?? 0;
 }
 
-function parseCalendarDate(value: string): CalendarDate | undefined {
+export function parseCalendarDate(value: string): CalendarDate | undefined {
   const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!matched) return undefined;
   const year = Number(matched[1]);
@@ -28,17 +28,17 @@ function parseCalendarDate(value: string): CalendarDate | undefined {
   return { year, month, day };
 }
 
-function dayOfWeek({ year, month, day }: CalendarDate): number {
+export function dayOfWeek({ year, month, day }: CalendarDate): number {
   const offsets = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
   const adjustedYear = month < 3 ? year - 1 : year;
   return (adjustedYear + Math.floor(adjustedYear / 4) - Math.floor(adjustedYear / 100) + Math.floor(adjustedYear / 400) + offsets[month - 1] + day) % 7;
 }
 
-function formatCalendarDate({ year, month, day }: CalendarDate): string {
+export function formatCalendarDate({ year, month, day }: CalendarDate): string {
   return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function addCalendarDays(date: CalendarDate, amount: number): CalendarDate {
+export function addCalendarDays(date: CalendarDate, amount: number): CalendarDate {
   const result = { ...date };
   for (let remaining = Math.abs(amount); remaining > 0; remaining -= 1) {
     if (amount > 0) {
@@ -72,7 +72,7 @@ function isBackendCompatibleWeek(date: CalendarDate): boolean {
   return exclusiveEnd.year >= MIN_BACKEND_YEAR && exclusiveEnd.year <= MAX_BACKEND_YEAR;
 }
 
-function seoulCalendarDate(now: Date): CalendarDate {
+export function seoulCalendarDate(now: Date): CalendarDate {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: SEOUL,
     year: "numeric",
@@ -118,17 +118,17 @@ export function WeekNavigation({ week, currentWeek = currentSeoulMonday() }: { w
     <nav className="event-week-navigation" aria-label="주간 일정 탐색">
       {previousWeek ? (
         <Button asChild variant="outline">
-          <Link href={`/student/events?week=${previousWeek}`}><ChevronLeftIcon data-icon="inline-start" />이전 주</Link>
+          <Link href={`/student/events?view=week&week=${previousWeek}`}><ChevronLeftIcon data-icon="inline-start" />이전 주</Link>
         </Button>
       ) : (
         <Button type="button" variant="outline" disabled><ChevronLeftIcon data-icon="inline-start" />이전 주</Button>
       )}
       <Button asChild variant="secondary">
-        <Link href={`/student/events?week=${currentWeek}`}><CalendarDaysIcon data-icon="inline-start" />이번 주</Link>
+        <Link href={`/student/events?view=week&week=${currentWeek}`}><CalendarDaysIcon data-icon="inline-start" />이번 주</Link>
       </Button>
       {nextWeek ? (
         <Button asChild variant="outline">
-          <Link href={`/student/events?week=${nextWeek}`}>다음 주<ChevronRightIcon data-icon="inline-end" /></Link>
+          <Link href={`/student/events?view=week&week=${nextWeek}`}>다음 주<ChevronRightIcon data-icon="inline-end" /></Link>
         </Button>
       ) : (
         <Button type="button" variant="outline" disabled>다음 주<ChevronRightIcon data-icon="inline-end" /></Button>

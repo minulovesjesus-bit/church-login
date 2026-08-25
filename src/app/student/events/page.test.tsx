@@ -32,12 +32,21 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-async function renderPage(week: string | string[] | undefined = monday) {
+type EventsSearch = {
+  view?: string | string[];
+  week?: string | string[];
+  month?: string | string[];
+};
+
+async function renderPage(search: EventsSearch | string | string[] | undefined = { week: monday }) {
+  const searchParams = typeof search === "object" && !Array.isArray(search)
+    ? search
+    : { week: search };
   let view: ReturnType<typeof render> | undefined;
   await act(async () => {
     view = render(
       <Suspense fallback={<p>대기 중</p>}>
-        <StudentEventsPage searchParams={Promise.resolve({ week })} />
+        <StudentEventsPage searchParams={Promise.resolve(searchParams)} />
       </Suspense>,
     );
     await Promise.resolve();
@@ -49,6 +58,61 @@ afterEach(() => {
   client.api.get.mockReset();
   navigation.replace.mockReset();
   vi.useRealTimers();
+});
+
+it("switches between weekly and monthly URLs and renders a selectable six-week month calendar", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date("2026-08-19T03:30:00Z"));
+  client.api.get.mockResolvedValue([
+    event({
+      occurrence_id: "sunday:2026-08-23",
+      title: "주일예배",
+      local_start: "2026-08-23T02:00:00+09:00",
+      local_end: "2026-08-23T03:00:00+09:00",
+    }),
+    event({
+      occurrence_id: "september:2026-09-02",
+      title: "9월 첫 모임",
+      local_start: "2026-09-02T10:00:00+09:00",
+      local_end: "2026-09-02T11:00:00+09:00",
+    }),
+  ]);
+
+  await renderPage({ view: "month", month: "2026-08" });
+
+  expect(await screen.findByRole("heading", { name: "2026년 8월" })).toBeInTheDocument();
+  expect(screen.queryByText("서울 시간을 기준으로 교회 일정을 확인하세요.")).not.toBeInTheDocument();
+  expect(client.api.get).toHaveBeenCalledWith("/api/events?from=2026-07-27&to=2026-09-07");
+  expect(screen.getByRole("link", { name: "주간 보기" })).toHaveAttribute(
+    "href",
+    "/student/events?view=week&week=2026-08-17",
+  );
+  expect(screen.getByRole("link", { name: "월간 보기" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "이전 달" })).toHaveAttribute(
+    "href",
+    "/student/events?view=month&month=2026-07",
+  );
+  expect(screen.getByRole("link", { name: "이번 달" })).toHaveAttribute(
+    "href",
+    "/student/events?view=month&month=2026-08",
+  );
+  expect(screen.getByRole("link", { name: "다음 달" })).toHaveAttribute(
+    "href",
+    "/student/events?view=month&month=2026-09",
+  );
+
+  const calendar = screen.getByRole("grid", { name: "2026년 8월 일정 달력" });
+  expect(within(calendar).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual([
+    "월", "화", "수", "목", "금", "토", "일",
+  ]);
+  expect(within(calendar).getAllByRole("gridcell")).toHaveLength(42);
+  expect(within(calendar).getByRole("button", { name: "8월 23일 일요일, 일정 1개" })).toHaveTextContent("주일예배");
+  expect(within(calendar).getByRole("button", { name: "9월 2일 수요일, 일정 1개" })).toHaveTextContent("9월 첫 모임");
+
+  fireEvent.click(within(calendar).getByRole("button", { name: "8월 23일 일요일, 일정 1개" }));
+  const details = screen.getByRole("region", { name: "8월 23일 일요일 일정 상세" });
+  expect(within(details).getByText("주일예배")).toBeInTheDocument();
+  expect(within(details).queryByText("9월 첫 모임")).not.toBeInTheDocument();
 });
 
 it("groups sorted occurrences by Seoul date, including a cross-midnight event", async () => {
@@ -85,9 +149,9 @@ it.each([
 
   await screen.findByText("이번 주 등록된 일정이 없습니다.");
 
-  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", `/student/events?week=${previous}`);
-  expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", "/student/events?week=2026-08-17");
-  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", `/student/events?week=${next}`);
+  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", `/student/events?view=week&week=${previous}`);
+  expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", "/student/events?view=week&week=2026-08-17");
+  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", `/student/events?view=week&week=${next}`);
 });
 
 it.each([undefined, "2026-02-30", "2026-08-18", ["2026-08-17", "2026-08-24"]])(
@@ -131,9 +195,9 @@ it.each([
   await screen.findByText("이번 주 등록된 일정이 없습니다.");
   expect(screen.queryByRole("link", { name: unavailableLabel })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: unavailableLabel })).toBeDisabled();
-  expect(screen.getByRole("link", { name: availableLabel })).toHaveAttribute("href", `/student/events?week=${availableWeek}`);
-  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?week=0000-12-25");
-  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?week=9999-12-27");
+  expect(screen.getByRole("link", { name: availableLabel })).toHaveAttribute("href", `/student/events?view=week&week=${availableWeek}`);
+  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?view=week&week=0000-12-25");
+  expect(screen.getAllByRole("link").map((link) => link.getAttribute("href"))).not.toContain("/student/events?view=week&week=9999-12-27");
 });
 
 it("keeps exact week destinations, Lucide controls, and occurrence time semantics", async () => {
@@ -142,9 +206,9 @@ it("keeps exact week destinations, Lucide controls, and occurrence time semantic
   await renderPage();
   await screen.findByText("새벽 기도회");
 
-  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", "/student/events?week=2026-08-10");
-  expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", expect.stringMatching(/^\/student\/events\?week=\d{4}-\d{2}-\d{2}$/));
-  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", "/student/events?week=2026-08-24");
+  expect(screen.getByRole("link", { name: "이전 주" })).toHaveAttribute("href", "/student/events?view=week&week=2026-08-10");
+  expect(screen.getByRole("link", { name: "이번 주" })).toHaveAttribute("href", expect.stringMatching(/^\/student\/events\?view=week&week=\d{4}-\d{2}-\d{2}$/));
+  expect(screen.getByRole("link", { name: "다음 주" })).toHaveAttribute("href", "/student/events?view=week&week=2026-08-24");
   expect(screen.getByRole("link", { name: "이전 주" }).querySelector('[data-icon="inline-start"]')).not.toBeNull();
   expect(screen.getByRole("link", { name: "다음 주" }).querySelector('[data-icon="inline-end"]')).not.toBeNull();
 

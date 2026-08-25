@@ -1,5 +1,6 @@
 import os
 from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
@@ -56,6 +57,7 @@ class FakeAttendanceRepository:
     def __init__(self) -> None:
         self.statistics_calls = []
         self.recent_calls = 0
+        self.presence_calls = []
 
     async def teacher_statistics(self, filters, **boundaries):
         self.statistics_calls.append((filters, boundaries))
@@ -78,6 +80,10 @@ class FakeAttendanceRepository:
     async def recent_teacher_attendance(self):
         self.recent_calls += 1
         return [_recent(index, excluded=index == 10) for index in range(10, 0, -1)]
+
+    async def current_presence(self, filters, *, as_of_date):
+        self.presence_calls.append((filters, as_of_date))
+        return SimpleNamespace(total=4)
 
 
 class FakeStudentRepository:
@@ -197,7 +203,7 @@ async def test_service_reuses_bounded_attendance_reads_at_seoul_week_boundary() 
     assert result.as_of_date == date(2026, 8, 24)
     assert result.model_dump(exclude={"recent_attendance", "as_of_date", "timezone"}) == {
         "today_attendees": 4,
-        "currently_inside": 3,
+        "currently_inside": 4,
         "week_attendees": 8,
         "statistics_target_students": 23,
     }
@@ -213,6 +219,11 @@ async def test_service_reuses_bounded_attendance_reads_at_seoul_week_boundary() 
         "month_start": date(2026, 8, 1),
     }
     assert attendance.recent_calls == 1
+    presence_filters, presence_date = attendance.presence_calls[0]
+    assert presence_filters.query is None
+    assert presence_filters.page == 1
+    assert presence_filters.page_size == 1
+    assert presence_date == date(2026, 8, 24)
 
 
 class _RowsCursor:

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
@@ -17,7 +16,6 @@ import {
 } from "@/components/ui/card";
 import {
   Empty,
-  EmptyContent,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
@@ -28,9 +26,8 @@ import {
 } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AttendanceTable } from "@/features/attendance/attendance-table";
-import { formatDuration, formatSeoulTime } from "@/features/attendance/format";
 import { HistoryList } from "@/features/attendance/history-list";
-import { SummaryCards } from "@/features/attendance/summary-cards";
+import { StudentMonthSummary } from "@/features/attendance/student-month-summary";
 import type {
   AttendanceHistoryPage,
   AttendanceScan,
@@ -108,38 +105,16 @@ export default function StudentAttendancePage() {
   }
 
   const totalPages = Math.max(1, Math.ceil(history.total / history.page_size));
-  const openDetail = summary.open_stay_started_at
-    ? `${formatSeoulTime(summary.open_stay_started_at)}부터 머물고 있어요`
-    : undefined;
 
   return (
     <main className="attendance-shell">
       <header className="attendance-page-header">
         <div>
-          <p className="eyebrow">학생 출결</p>
           <h1>내 출결 기록</h1>
-          <p>모든 시각은 한국 시간 기준으로 표시됩니다.</p>
         </div>
-        <Button asChild size="lg"><Link href="/student/scan">QR 스캔하기</Link></Button>
       </header>
 
-      <SummaryCards items={[
-        { label: "이번 주", value: `이번 주 ${summary.attendance_days_this_week}일` },
-        { label: "이번 달 출석 일수", value: `이번 달 ${summary.attendance_days_this_month}일` },
-        { label: "누적 입실", value: `총 입실 ${summary.total_entries}회` },
-        {
-          label: "평균 체류",
-          value: summary.average_stay_seconds === null
-            ? "평균 체류 기록 없음"
-            : `평균 체류 ${formatDuration(summary.average_stay_seconds)}`,
-        },
-        {
-          label: "현재 상태",
-          value: summary.currently_inside ? "현재 입실 중" : "현재 퇴실 상태",
-          detail: openDetail,
-          tone: summary.currently_inside ? "active" : "default",
-        },
-      ]} />
+      <StudentMonthSummary statistics={summary} showHeading={false} />
 
       <Card className="attendance-records-card" aria-label="최근 출결" role="region">
         <CardHeader className="attendance-section-heading">
@@ -150,7 +125,6 @@ export default function StudentAttendancePage() {
         {history.items.length === 0 ? (
           <Empty className="attendance-empty-state">
             <EmptyHeader><EmptyTitle>아직 출결 기록이 없어요.</EmptyTitle></EmptyHeader>
-            <EmptyContent><Button asChild variant="outline"><Link href="/student/scan">첫 QR 스캔하기</Link></Button></EmptyContent>
           </Empty>
         ) : (
           <>

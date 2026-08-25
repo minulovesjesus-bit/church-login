@@ -69,6 +69,9 @@ it("loads only the combined dashboard endpoint immediately and renders its summa
   });
   expect(screen.queryByText("Attendance overview")).not.toBeInTheDocument();
   expect(screen.queryByText("Recent attendance")).not.toBeInTheDocument();
+  const currentPresence = screen.getByRole("link", { name: "현재 입실 상태" });
+  expect(currentPresence).toHaveAttribute("href", "/teacher/attendance/current");
+  expect(screen.queryByRole("link", { name: "현재 상태 확인" })).not.toBeInTheDocument();
 });
 
 it("renders equivalent desktop rows and mobile cards without student numbers or add controls", async () => {

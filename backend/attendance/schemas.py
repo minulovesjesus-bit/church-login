@@ -194,6 +194,43 @@ class TeacherAttendancePage(BaseModel):
     timezone: str = "Asia/Seoul"
 
 
+class CurrentPresenceFilters(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str | None = Field(default=None, max_length=80)
+    page: int = Field(default=1, ge=1, le=10_000)
+    page_size: int = Field(default=20, ge=1, le=100)
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def normalize_query(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        normalized = " ".join(value.split())
+        return normalized or None
+
+
+class CurrentPresenceItem(BaseModel):
+    student_id: UUID
+    student_name: str
+    student_email: str
+    student_phone: str
+    guardian_phone: str
+    birth_date: date
+    checked_in_at: datetime
+    source: Source
+    excluded_from_statistics: bool
+
+
+class CurrentPresencePage(BaseModel):
+    items: list[CurrentPresenceItem]
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    page_size: int = Field(ge=1, le=100)
+    as_of_date: date
+    timezone: str = "Asia/Seoul"
+
+
 class StudentStatisticsView(BaseModel):
     attendance_days_this_week: int = Field(ge=0)
     attendance_days_this_month: int = Field(ge=0)

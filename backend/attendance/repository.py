@@ -10,6 +10,9 @@ from backend.attendance.schemas import (
     AttendanceHistoryPage,
     AttendanceScanView,
     CorrectionMode,
+    CurrentPresenceFilters,
+    CurrentPresenceItem,
+    CurrentPresencePage,
     PaginationFilters,
     StudentAttendanceDays,
     StudentStatisticsView,
@@ -229,6 +232,82 @@ class AttendanceRepository:
             {"limit": 10},
         )
         return self._teacher_attendance_items(await cursor.fetchall())
+
+    async def current_presence(
+        self,
+        filters: CurrentPresenceFilters,
+        *,
+        as_of_date: date,
+    ) -> CurrentPresencePage:
+        cursor = await self.connection.execute(
+            """
+            with latest_today as (
+              select distinct on (scan.student_id)
+                     scan.student_id, scan.direction, scan.scanned_at, scan.source
+              from app.attendance_scans scan
+              where scan.attendance_date = %(as_of_date)s
+                and scan.voided_at is null
+              order by scan.student_id, scan.scanned_at desc, scan.id desc
+            ), inside as (
+              select latest.student_id, profile.name, profile.email,
+                     coalesce(profile.phone, '') as phone,
+                     student.guardian_phone, student.birth_date,
+                     latest.scanned_at, latest.source::text,
+                     not student.include_in_statistics as excluded_from_statistics
+              from latest_today latest
+              join app.student_profiles student on student.user_id = latest.student_id
+              join app.user_profiles profile on profile.user_id = latest.student_id
+              where latest.direction = 'IN'
+                and (
+                  %(search)s::text is null
+                  or profile.name ilike %(search)s escape '\\'
+                  or profile.email ilike %(search)s escape '\\'
+                  or coalesce(profile.phone, '') ilike %(search)s escape '\\'
+                  or student.guardian_phone ilike %(search)s escape '\\'
+                )
+            )
+            select page.student_id, page.name, page.email, page.phone,
+                   page.guardian_phone, page.birth_date, page.scanned_at,
+                   page.source, page.excluded_from_statistics, totals.total
+            from (select count(*) as total from inside) totals
+            left join lateral (
+              select *
+              from inside
+              order by lower(name), student_id
+              limit %(limit)s offset %(offset)s
+            ) page on true
+            order by lower(page.name) nulls last, page.student_id nulls last
+            """,
+            {
+                "as_of_date": as_of_date,
+                "search": self._like_pattern(filters.query),
+                "limit": filters.page_size,
+                "offset": (filters.page - 1) * filters.page_size,
+            },
+        )
+        rows = await cursor.fetchall()
+        items = [
+            CurrentPresenceItem(
+                student_id=row[0],
+                student_name=row[1],
+                student_email=row[2],
+                student_phone=row[3],
+                guardian_phone=row[4],
+                birth_date=row[5],
+                checked_in_at=row[6],
+                source=Source(row[7]),
+                excluded_from_statistics=bool(row[8]),
+            )
+            for row in rows
+            if row[0] is not None
+        ]
+        return CurrentPresencePage(
+            items=items,
+            total=int(rows[0][9]) if rows else 0,
+            page=filters.page,
+            page_size=filters.page_size,
+            as_of_date=as_of_date,
+        )
 
     async def teacher_statistics(
         self,

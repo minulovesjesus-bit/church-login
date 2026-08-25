@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { LockKeyhole } from "lucide-react";
 
 import { BrandLockup } from "@/components/brand/brand-mark";
 import { KioskShell } from "@/components/layout/kiosk-shell";
@@ -23,7 +22,6 @@ import {
   type KioskQrChallenge,
   type KioskSession,
 } from "@/lib/api/kiosk-client";
-import { cn } from "@/lib/utils";
 
 import { QrCard } from "./qr-card";
 
@@ -31,7 +29,6 @@ export interface KioskClient {
   login(deviceName: string, password: string): Promise<KioskSession>;
   refresh(): Promise<KioskSession>;
   getQr(): Promise<KioskQrChallenge>;
-  logout(): Promise<void>;
 }
 
 type KioskScreenProps = {
@@ -39,7 +36,6 @@ type KioskScreenProps = {
   onSessionInvalidated?: (destination: "/qr") => void;
 };
 
-type ConnectionState = "connecting" | "connected" | "retrying";
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
 const QR_LIFETIME_MS = 20_000;
 
@@ -79,12 +75,9 @@ export function KioskScreen({
   const [activeDeviceName, setActiveDeviceName] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [resetting, setResetting] = useState(false);
   const [loginError, setLoginError] = useState<string>();
-  const [lockedNotice, setLockedNotice] = useState<string>();
   const [challenge, setChallenge] = useState<KioskQrChallenge>();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [announcement, setAnnouncement] = useState("");
 
   useEffect(() => {
@@ -144,7 +137,6 @@ export function KioskScreen({
           awaitingReplacement = true;
         }
       }
-      setConnection("connecting");
       try {
         const nextChallenge = await fetchQrWithRefresh();
         if (!active) return;
@@ -156,7 +148,6 @@ export function KioskScreen({
         retrying = false;
         awaitingReplacement = false;
         setChallenge(nextChallenge);
-        setConnection("connected");
         setAnnouncement(
           recovered
             ? "QR 연결이 복구되고 새 QR 코드가 준비됐습니다."
@@ -183,7 +174,6 @@ export function KioskScreen({
           setChallenge(undefined);
           setNowMs(Date.now());
         }
-        setConnection("retrying");
         setAnnouncement("QR 연결이 끊어졌습니다. 연결을 다시 시도하고 있어요.");
         const delay = RETRY_DELAYS_MS[Math.min(retryAttempt, RETRY_DELAYS_MS.length - 1)];
         retryAttempt += 1;
@@ -228,14 +218,12 @@ export function KioskScreen({
     if (!normalizedDeviceName || !password || submitting) return;
     setSubmitting(true);
     setLoginError(undefined);
-    setLockedNotice(undefined);
     try {
       const session = await client.login(normalizedDeviceName, password);
       setActiveDeviceName(session.device_name);
       setDeviceName(normalizedDeviceName);
       setPassword("");
       setChallenge(undefined);
-      setConnection("connecting");
       setAnnouncement("");
       setUnlocked(true);
     } catch (error) {
@@ -246,28 +234,6 @@ export function KioskScreen({
       );
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function handleReset() {
-    if (resetting) return;
-    setResetting(true);
-    try {
-      try {
-        await client.logout();
-      } catch (error) {
-        if (!isSessionError(error)) throw error;
-        await client.refresh();
-        await client.logout();
-      }
-      setLockedNotice("기기 세션을 안전하게 초기화했습니다.");
-    } catch {
-      setLockedNotice("기기 화면을 잠갔습니다. 다시 사용하려면 비밀번호를 입력해 주세요.");
-    } finally {
-      setChallenge(undefined);
-      setPassword("");
-      setUnlocked(false);
-      setResetting(false);
     }
   }
 
@@ -283,7 +249,6 @@ export function KioskScreen({
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {lockedNotice ? <p role="status" className="notice">{lockedNotice}</p> : null}
             <form onSubmit={handleLogin} className="kiosk-login-form">
               <FieldGroup>
                 <Field>
@@ -333,30 +298,7 @@ export function KioskScreen({
     <KioskShell
       mode="unlocked"
       toolbar={(
-        <>
-          <span className="kiosk-device-name">{activeDeviceName}</span>
-          <span
-            className={cn("connection-pill", `connection-pill--${connection}`)}
-          >
-            <span aria-hidden="true" className="connection-pill__dot" />
-            {connection === "connected"
-              ? "QR 연결됨"
-              : connection === "retrying"
-                ? "연결을 다시 시도하고 있어요"
-                : "QR을 준비하고 있어요"}
-          </span>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleReset}
-            disabled={resetting}
-          >
-            {resetting ? <Spinner data-icon="inline-start" aria-label="잠그는 중" /> : (
-              <LockKeyhole data-icon="inline-start" />
-            )}
-            {resetting ? "잠그는 중…" : "관리자 화면 잠금"}
-          </Button>
-        </>
+        <span className="kiosk-device-name">{activeDeviceName}</span>
       )}
     >
       <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">

@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { mockApi } from "@/test/mock-api";
 
 const getSession = vi.hoisted(() => vi.fn());
+const refreshSession = vi.hoisted(() => vi.fn());
 const router = vi.hoisted(() => ({ replace: vi.fn() }));
 const TestApiClientError = vi.hoisted(() => class extends Error {
   constructor(public readonly code: string, message: string) { super(message); }
@@ -11,7 +12,7 @@ const TestApiClientError = vi.hoisted(() => class extends Error {
 
 vi.mock("@/lib/api/client", () => ({ api: mockApi, ApiClientError: TestApiClientError }));
 vi.mock("@/lib/supabase/client", () => ({
-  createBrowserSupabaseClient: () => ({ auth: { getSession } }),
+  createBrowserSupabaseClient: () => ({ auth: { getSession, refreshSession } }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
@@ -21,15 +22,21 @@ const validSession = { access_token: "test-access-token" };
 
 beforeEach(() => {
   getSession.mockReset();
+  refreshSession.mockReset();
   router.replace.mockReset();
   getSession.mockResolvedValue({ data: { session: validSession } });
+  refreshSession.mockResolvedValue({ data: { session: null }, error: new Error("refresh failed") });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 it.each([
   [{ onboarding_completed: false, capabilities: { student: false, teacher: false, admin: false } }, "/onboarding"],
   [{ onboarding_completed: true, capabilities: { student: true, teacher: false, admin: false } }, "/student"],
-  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: false } }, "/teacher"],
-  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: true } }, "/teacher"],
+  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: false } }, "/student"],
+  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: true } }, "/student"],
 ])("routes the current identity to %s", async (identity, destination) => {
   mockApi.get.mockResolvedValue(identity);
   render(<AuthContinuePage />);
@@ -50,6 +57,33 @@ it("returns an AUTH_REQUIRED identity request to unified login", async () => {
   render(<AuthContinuePage />);
 
   await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/login"));
+});
+
+it("waits through a short post-OAuth auth outage before routing the student", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(0);
+  mockApi.get.mockImplementation(() => {
+    if (Date.now() < 5_000) {
+      return Promise.reject(new TestApiClientError("AUTH_REQUIRED", "로그인이 필요합니다."));
+    }
+    return Promise.resolve({
+      onboarding_completed: true,
+      capabilities: { student: true, teacher: false, admin: false },
+    });
+  });
+  refreshSession.mockResolvedValue({ data: { session: validSession }, error: null });
+
+  render(<AuthContinuePage />);
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(4_999);
+  });
+  expect(router.replace).not.toHaveBeenCalledWith("/login");
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1_001);
+  });
+  expect(router.replace).toHaveBeenCalledWith("/student");
 });
 
 it("keeps a transient identity failure actionable and retries it", async () => {

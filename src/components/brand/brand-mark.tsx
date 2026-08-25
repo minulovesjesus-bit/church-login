@@ -17,6 +17,8 @@ export function BrandMark({
       alt="갈보리교회"
       width={709}
       height={169}
+      preload
+      loading="eager"
       className={cn(`brand-mark--${tone}`, className)}
     />
   );

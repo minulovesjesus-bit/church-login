@@ -141,7 +141,8 @@ it("shows the student home for a returning student", async () => {
   });
   render(<StudentPage />);
 
-  expect(await screen.findByRole("heading", { name: "반가워요!" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "오늘 출결 상태" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "나의 이번 달" })).toBeInTheDocument();
   expect(await screen.findByText("이번 주 등록된 일정이 없습니다.")).toBeInTheDocument();
   const events = await screen.findByRole("heading", { name: "이번 주 일정" });
   const account = await screen.findByRole("heading", { name: "내 정보" });
@@ -204,7 +205,7 @@ it("retries a temporary API failure", async () => {
 
   fireEvent.click(await screen.findByRole("button", { name: "다시 시도" }));
 
-  expect(await screen.findByRole("heading", { name: "반가워요!" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "오늘 출결 상태" })).toBeInTheDocument();
   expect(await screen.findByText("이번 주 등록된 일정이 없습니다.")).toBeInTheDocument();
 });
 
@@ -252,13 +253,13 @@ it("renders the QR-first student dashboard in the approved information order", a
 
   render(<StudentPage />);
 
-  const heading = await screen.findByRole("heading", { name: "반가워요!" });
-  const today = screen.getByRole("heading", { name: "오늘 출결 상태" });
+  const today = await screen.findByRole("heading", { name: "오늘 출결 상태" });
   const qr = screen.getByRole("link", { name: "QR로 출결하기" });
   const statistics = screen.getByRole("heading", { name: "나의 이번 달" });
   const events = screen.getByRole("heading", { name: "이번 주 일정" });
   const account = await screen.findByRole("heading", { name: "내 정보" });
-  expect(heading.compareDocumentPosition(today) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(document.querySelector(".student-dashboard__header")).toBeNull();
+  expect(screen.queryByRole("img", { name: "갈보리교회" })).not.toBeInTheDocument();
   expect(today.compareDocumentPosition(qr) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(qr.compareDocumentPosition(statistics) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(statistics.compareDocumentPosition(events) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -266,6 +267,8 @@ it("renders the QR-first student dashboard in the approved information order", a
   expect(qr).toHaveAttribute("href", "/student/scan");
   expect(qr).toHaveAttribute("data-slot", "button");
   expect(screen.getAllByRole("link", { name: "QR로 출결하기" })).toHaveLength(1);
+  expect(screen.queryByText("반가워요!")).not.toBeInTheDocument();
+  expect(screen.queryByText("오늘도 편안한 하루 보내세요.")).not.toBeInTheDocument();
   expect(screen.queryByText(/Student home|Today|Monthly attendance|This week/i)).not.toBeInTheDocument();
   expect(screen.getByText("김민준")).toBeInTheDocument();
   expect(screen.getByText("현재 입실 중")).toBeInTheDocument();

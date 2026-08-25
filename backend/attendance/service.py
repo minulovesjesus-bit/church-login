@@ -11,6 +11,8 @@ from backend.attendance.schemas import (
     AttendanceCorrectionInput,
     AttendanceHistoryPage,
     CorrectionMode,
+    CurrentPresenceFilters,
+    CurrentPresencePage,
     PaginationFilters,
     ScanResult,
     StudentStatisticsView,
@@ -179,6 +181,18 @@ class AttendanceService:
             as_of_date=as_of_date,
             week_start=week_start,
             month_start=month_start,
+        )
+
+    async def current_presence(
+        self,
+        actor: AuthenticatedUser,
+        filters: CurrentPresenceFilters,
+    ) -> CurrentPresencePage:
+        await self._require_staff(actor.user_id)
+        as_of_date = self._clock.now().astimezone(self.BUSINESS_TIMEZONE).date()
+        return await self._repository.current_presence(
+            filters,
+            as_of_date=as_of_date,
         )
 
     async def _require_student(self, user_id: UUID) -> None:

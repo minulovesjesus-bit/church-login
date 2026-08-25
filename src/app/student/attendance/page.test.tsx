@@ -74,18 +74,22 @@ afterEach(() => {
   navigation.replace.mockReset();
 });
 
-it("renders personal totals, the open stay, and recent records in Seoul time", async () => {
+it("reuses the home monthly summary above recent records", async () => {
   client.api.get.mockImplementation(resolveStudentApi);
 
   render(<StudentAttendancePage />);
 
   expect(screen.getByRole("status")).toHaveTextContent("출결 기록을 불러오고 있어요");
   expect(await screen.findByRole("heading", { name: "내 출결 기록" })).toBeInTheDocument();
-  expect(screen.getByText("이번 주 2일")).toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "나의 이번 달" })).not.toBeInTheDocument();
   expect(screen.getByText("이번 달 5일")).toBeInTheDocument();
   expect(screen.getByText("총 입실 7회")).toBeInTheDocument();
   expect(screen.getByText("평균 체류 1시간 30분")).toBeInTheDocument();
-  expect(screen.getByText("현재 입실 중")).toBeInTheDocument();
+  expect(screen.queryByText("이번 주 2일")).not.toBeInTheDocument();
+  expect(screen.queryByText("현재 입실 중")).not.toBeInTheDocument();
+  expect(screen.queryByText("학생 출결")).not.toBeInTheDocument();
+  expect(screen.queryByText("모든 시각은 한국 시간 기준으로 표시됩니다.")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "QR 스캔하기" })).not.toBeInTheDocument();
   expect(screen.getAllByText(/오전 9:15/).length).toBeGreaterThan(0);
 
   const recent = screen.getByRole("region", { name: "최근 출결" });
@@ -98,15 +102,16 @@ it("renders personal totals, the open stay, and recent records in Seoul time", a
   expect(client.api.get.mock.calls.flat().join(" ")).not.toContain("student_id");
 });
 
-it("keeps tokenized summary and both responsive record representations in the DOM", async () => {
+it("keeps the home summary rail and both responsive record representations in the DOM", async () => {
   client.api.get.mockImplementation(resolveStudentApi);
 
   render(<StudentAttendancePage />);
 
   await screen.findByRole("heading", { name: "내 출결 기록" });
 
-  const summaryRail = screen.getByRole("group", { name: "출결 요약" });
-  expect(summaryRail.closest('[data-slot="card"]')).not.toBeNull();
+  const summaryRail = screen.getByLabelText("나의 이번 달 출결 통계");
+  expect(summaryRail).toHaveClass("student-month-rail");
+  expect(summaryRail.closest('[data-slot="card"]')).toBeNull();
 
   const mobileList = screen.getByRole("list", { name: "출결 기록 목록" });
   const desktopRegion = document.querySelector(".attendance-desktop-only");
@@ -130,7 +135,8 @@ it("renders an accessible empty state", async () => {
   render(<StudentAttendancePage />);
 
   expect(await screen.findByText("아직 출결 기록이 없어요.")).toBeInTheDocument();
-  expect(screen.getByText("현재 퇴실 상태")).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "첫 QR 스캔하기" })).not.toBeInTheDocument();
+  expect(screen.getByText("이번 달 0일")).toBeInTheDocument();
   expect(screen.getByText("평균 체류 기록 없음")).toBeInTheDocument();
 });
 

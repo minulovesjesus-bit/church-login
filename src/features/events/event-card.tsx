@@ -49,7 +49,7 @@ function asDate(value: string): Date {
   return new Date(value);
 }
 
-function seoulDateKey(value: string): string {
+export function seoulDateKey(value: string): string {
   const parts = datePartsFormatter.formatToParts(asDate(value));
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
@@ -63,7 +63,7 @@ function formatSeoulTime(value: string): string {
   return timeFormatter.format(asDate(value));
 }
 
-function sortOccurrences(events: EventOccurrence[]): EventOccurrence[] {
+export function sortOccurrences(events: EventOccurrence[]): EventOccurrence[] {
   return [...events].sort((left, right) => {
     const timeDifference = asDate(left.local_start).getTime() - asDate(right.local_start).getTime();
     if (Number.isFinite(timeDifference) && timeDifference !== 0) return timeDifference;
@@ -97,34 +97,34 @@ export function EventCard({ event }: { event: EventOccurrence }) {
 }
 
 type EventsState =
-  | { week: string; status: "loading"; events: EventOccurrence[] }
-  | { week: string; status: "ready"; events: EventOccurrence[] }
-  | { week: string; status: "error"; events: EventOccurrence[]; message: string }
-  | { week: string; status: "auth"; events: EventOccurrence[] };
+  | { range: string; status: "loading"; events: EventOccurrence[] }
+  | { range: string; status: "ready"; events: EventOccurrence[] }
+  | { range: string; status: "error"; events: EventOccurrence[]; message: string }
+  | { range: string; status: "auth"; events: EventOccurrence[] };
 
-export function EventOccurrences({ week, limit }: { week: string; limit?: number }) {
+export function useEventOccurrences(from: string, to: string | undefined) {
   const router = useRouter();
+  const range = `${from}:${to ?? ""}`;
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<EventsState>({ week, status: "loading", events: [] });
+  const [state, setState] = useState<EventsState>({ range, status: "loading", events: [] });
 
   useEffect(() => {
     let active = true;
-    const to = exclusiveSeoulWeekEnd(week);
     if (!to) return undefined;
 
-    api.get<EventOccurrence[]>(`/api/events?from=${week}&to=${to}`)
+    api.get<EventOccurrence[]>(`/api/events?from=${from}&to=${to}`)
       .then((events) => {
-        if (active) setState({ week, status: "ready", events });
+        if (active) setState({ range, status: "ready", events });
       })
       .catch((caught: unknown) => {
         if (!active) return;
         if (caught instanceof ApiClientError && caught.code === "AUTH_REQUIRED") {
           router.replace("/login");
-          setState({ week, status: "auth", events: [] });
+          setState({ range, status: "auth", events: [] });
           return;
         }
         setState({
-          week,
+          range,
           status: "error",
           events: [],
           message: caught instanceof ApiClientError ? caught.message : "일정을 불러오지 못했습니다.",
@@ -134,14 +134,27 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
     return () => {
       active = false;
     };
-  }, [attempt, router, week]);
+  }, [attempt, from, range, router, to]);
 
-  const isLoading = state.week !== week || state.status === "loading";
+  const currentState: EventsState = state.range === range
+    ? state
+    : { range, status: "loading", events: [] };
+
+  return {
+    ...currentState,
+    events: currentState.status === "ready" ? sortOccurrences(currentState.events) : [],
+    retry: () => {
+      setState({ range, status: "loading", events: [] });
+      setAttempt((value) => value + 1);
+    },
+  };
+}
+
+export function EventOccurrences({ week, limit }: { week: string; limit?: number }) {
+  const state = useEventOccurrences(week, exclusiveSeoulWeekEnd(week));
   const events = useMemo(() => {
-    if (state.week !== week) return [];
-    const sorted = sortOccurrences(state.events);
-    return limit === undefined ? sorted : upcomingOccurrences(sorted, new Date()).slice(0, limit);
-  }, [limit, state.events, state.week, week]);
+    return limit === undefined ? state.events : upcomingOccurrences(state.events, new Date()).slice(0, limit);
+  }, [limit, state.events]);
   const grouped = useMemo(() => {
     const groups = new Map<string, EventOccurrence[]>();
     events.forEach((event) => {
@@ -151,7 +164,7 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
     return [...groups.entries()];
   }, [events]);
 
-  if (isLoading) {
+  if (state.status === "loading") {
     return (
       <div className="event-loading" role="status">
         <p>일정을 불러오고 있습니다.</p>
@@ -166,7 +179,7 @@ export function EventOccurrences({ week, limit }: { week: string; limit?: number
     return (
       <Alert className="event-error" variant="destructive">
         <AlertDescription>{state.message}</AlertDescription>
-        <Button type="button" variant="outline" onClick={() => { setState({ week, status: "loading", events: [] }); setAttempt((value) => value + 1); }}>다시 시도</Button>
+        <Button type="button" variant="outline" onClick={state.retry}>다시 시도</Button>
       </Alert>
     );
   }

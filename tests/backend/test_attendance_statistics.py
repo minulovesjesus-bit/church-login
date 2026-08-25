@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from backend.attendance.repository import AttendanceRepository
 from backend.attendance.schemas import (
     AttendanceStatusFilter,
+    CurrentPresenceFilters,
     PaginationFilters,
     TeacherAttendanceFilters,
     TeacherStatisticsFilters,
@@ -211,9 +212,15 @@ async def test_history_and_statistics_require_active_role_records() -> None:
                 date_from=date(2026, 8, 1), date_to=date(2026, 8, 21)
             ),
         )
+    with pytest.raises(ApiError) as missing_presence_membership:
+        await service.current_presence(
+            former_teacher,
+            CurrentPresenceFilters(),
+        )
 
     assert missing_profile.value.code == "PROFILE_REQUIRED"
     assert missing_membership.value.code == "FORBIDDEN"
+    assert missing_presence_membership.value.code == "FORBIDDEN"
 
 
 async def test_personal_statistics_pair_only_within_seoul_date_and_ignore_voids() -> None:
@@ -313,6 +320,14 @@ async def test_teacher_aggregate_excludes_flagged_student_but_detail_keeps_them(
                     search="존재하지 않음",
                 ),
             )
+            current_presence = await service.current_presence(
+                teacher,
+                CurrentPresenceFilters(query="제외%학생", page_size=1),
+            )
+            current_presence_beyond_page = await service.current_presence(
+                teacher,
+                CurrentPresenceFilters(query="제외%학생", page=2, page_size=1),
+            )
 
         assert summary.unique_students_today == 1
         assert summary.unique_students_this_week == 1
@@ -341,6 +356,21 @@ async def test_teacher_aggregate_excludes_flagged_student_but_detail_keeps_them(
         assert empty.time_of_day_entries == []
         assert empty.student_attendance_days == []
         assert empty.student_attendance_days_total == 0
+
+        assert current_presence.total == 1
+        assert current_presence.as_of_date == date(2026, 8, 21)
+        assert len(current_presence.items) == 1
+        present = current_presence.items[0]
+        assert present.student_id == excluded_id
+        assert present.student_name == "제외%학생"
+        assert present.student_phone == "01011112222"
+        assert present.guardian_phone == "01077778888"
+        assert present.birth_date == date(2012, 1, 2)
+        assert present.checked_in_at == datetime(2026, 8, 21, 2, tzinfo=UTC)
+        assert present.source.value == "MANUAL"
+        assert present.excluded_from_statistics is True
+        assert current_presence_beyond_page.items == []
+        assert current_presence_beyond_page.total == 1
     finally:
         await _cleanup_statistics_data(
             database_url, [excluded_id, included_id, teacher_id]

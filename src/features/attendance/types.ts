@@ -71,3 +71,24 @@ export type TeacherDashboard = {
   as_of_date: string;
   timezone: "Asia/Seoul";
 };
+
+export type CurrentPresenceItem = {
+  student_id: string;
+  student_name: string;
+  student_email: string;
+  student_phone: string;
+  guardian_phone: string;
+  birth_date: string;
+  checked_in_at: string;
+  source: AttendanceSource;
+  excluded_from_statistics: boolean;
+};
+
+export type CurrentPresencePage = {
+  items: CurrentPresenceItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  as_of_date: string;
+  timezone: "Asia/Seoul";
+};

@@ -65,6 +65,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("keeps the scanner introduction concise", async () => {
+  await readyScanner();
+
+  expect(screen.queryByText("학생 출결")).not.toBeInTheDocument();
+  expect(screen.queryByText("비치된 기기의 QR 코드를 카메라 화면 안에 맞춰 주세요.")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "QR로 출결하기" })).toBeInTheDocument();
+});
+
 it("submits one request for repeated decode callbacks and pauses the camera", async () => {
   let accept: ((value: typeof ACCEPTED_IN) => void) | undefined;
   const client = createScanClient();
