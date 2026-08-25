@@ -134,7 +134,7 @@ function StudentLoginForm() {
             </Button>
           </FieldGroup>
         </form>
-        <Button asChild variant="link" className="w-fit px-0">
+        <Button asChild variant="outline" className="w-full">
           <Link href="/auth/signup">회원가입</Link>
         </Button>
       </FieldGroup>

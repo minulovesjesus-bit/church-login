@@ -76,6 +76,14 @@ it("keeps login fields associated and links back to signup", () => {
   expect(screen.getByRole("link", { name: "회원가입" })).toHaveAttribute("href", "/auth/signup");
 });
 
+it("presents signup as a full-width secondary action", () => {
+  render(<StudentLoginPage />);
+
+  const signup = screen.getByRole("link", { name: "회원가입" });
+  expect(signup).toHaveClass("w-full");
+  expect(signup).toHaveAttribute("data-variant", "outline");
+});
+
 it("identifies the Google action with the Google brand mark", () => {
   render(<StudentLoginPage />);
 
