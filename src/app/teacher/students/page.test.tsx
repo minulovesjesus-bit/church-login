@@ -110,7 +110,7 @@ it("keeps promotion hidden for an ordinary teacher", async () => {
   await screen.findAllByText("김학생");
   fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
 
-  expect(screen.queryByRole("button", { name: "교사로 승격" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "교사 권한 추가" })).not.toBeInTheDocument();
 });
 
 it("confirms an admin promotion, disables the pending action, and updates the editor and both lists in place", async () => {
@@ -121,16 +121,16 @@ it("confirms an admin promotion, disables the pending action, and updates the ed
 
   await screen.findAllByText("김학생");
   fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
-  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
-  expect(await screen.findByRole("alertdialog", { name: "교사로 승격" })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "승격 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "교사 권한 추가" }));
+  expect(await screen.findByRole("alertdialog", { name: "교사 권한 추가" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "권한 추가" }));
 
   await vi.waitFor(() => expect(client.api.post).toHaveBeenCalledWith(
     "/api/admin/students/00000000-0000-4000-8000-000000000401/promote-to-teacher",
     {},
   ));
-  const pendingConfirmation = screen.getByRole("button", { name: "승격 확인 중…" });
-  expect(screen.getByRole("alertdialog", { name: "교사로 승격" })).toBeInTheDocument();
+  const pendingConfirmation = screen.getByRole("button", { name: "권한 추가 중…" });
+  expect(screen.getByRole("alertdialog", { name: "교사 권한 추가" })).toBeInTheDocument();
   expect(pendingConfirmation).toBeDisabled();
   expect(pendingConfirmation.querySelector('[data-slot="spinner"][data-icon="inline-start"]')).not.toBeNull();
   expect(screen.getByRole("button", { name: "취소" })).toBeDisabled();
@@ -140,7 +140,7 @@ it("confirms an admin promotion, disables the pending action, and updates the ed
     await Promise.resolve();
   });
 
-  await vi.waitFor(() => expect(screen.queryByRole("button", { name: /교사로 승격|승격 중/ })).not.toBeInTheDocument());
+  await vi.waitFor(() => expect(screen.queryByRole("button", { name: /교사 권한 추가|권한 추가 중/ })).not.toBeInTheDocument());
   expect(screen.getAllByText("교사")).toHaveLength(3);
   const editor = screen.getByRole("dialog", { name: "김학생 학생 정보 수정" });
   expect(editor).toBeInTheDocument();
@@ -156,8 +156,8 @@ it("preserves unsaved edits and surfaces a promotion error in the open editor", 
   await screen.findAllByText("김학생");
   fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
   fireEvent.change(screen.getByLabelText("이름"), { target: { value: "수정 보존 이름" } });
-  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
-  fireEvent.click(await screen.findByRole("button", { name: "승격 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "교사 권한 추가" }));
+  fireEvent.click(await screen.findByRole("button", { name: "권한 추가" }));
 
   const sheet = await screen.findByRole("dialog", { name: "김학생 학생 정보 수정" });
   expect(await within(sheet).findByRole("alert")).toHaveTextContent("승격하지 못했습니다.");
@@ -175,8 +175,8 @@ it("preserves unsaved edits when promotion reports a staff role conflict", async
   await screen.findAllByText("김학생");
   fireEvent.click(screen.getAllByRole("button", { name: "김학생 수정" })[0]);
   fireEvent.change(screen.getByLabelText("이름"), { target: { value: "충돌 뒤에도 보존" } });
-  fireEvent.click(screen.getByRole("button", { name: "교사로 승격" }));
-  fireEvent.click(await screen.findByRole("button", { name: "승격 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "교사 권한 추가" }));
+  fireEvent.click(await screen.findByRole("button", { name: "권한 추가" }));
 
   const sheet = await screen.findByRole("dialog", { name: "김학생 학생 정보 수정" });
   expect(await within(sheet).findByRole("alert")).toHaveTextContent(

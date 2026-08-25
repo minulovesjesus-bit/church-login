@@ -185,7 +185,7 @@ test("root and authentication surfaces match mobile and desktop baselines", asyn
   const routes = [
     { path: "/", heading: "함께하는 오늘, 안심되는 출결", slug: "root" },
     { path: "/login", heading: "로그인", slug: "student-login" },
-    { path: "/auth/signup", heading: "학생 회원가입", slug: "student-signup" },
+    { path: "/auth/signup", heading: "회원가입", slug: "student-signup" },
   ] as const;
   const sizes = [
     ["student", viewports.student],
@@ -318,7 +318,7 @@ test("student home and attendance group summary content into bordered cards", as
   }
 });
 
-test("student shell stays a narrow bottom-navigation canvas at every breakpoint", async ({ browser }) => {
+test("student shell keeps bottom navigation on touch sizes and adapts to a desktop rail", async ({ browser }) => {
   const identities = [
     { fixture: "completeStudent", items: 4 },
     { fixture: "approvedTeacher", items: 5 },
@@ -367,28 +367,44 @@ test("student shell stays a narrow bottom-navigation canvas at every breakpoint"
               height: navigationBox.height,
             },
             contentPaddingBottom: Number.parseFloat(getComputedStyle(content).paddingBottom),
+            listDisplay: listStyle.display,
+            listFlexDirection: listStyle.flexDirection,
             gridColumns: listStyle.gridTemplateColumns.split(" ").filter(Boolean).map(Number.parseFloat),
             renderedItems: list.querySelectorAll(":scope > li").length,
           };
         });
 
         expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
-        expect(layout.shell.width).toBeLessThanOrEqual(46 * 16);
-        expect(layout.shell.width).toBeCloseTo(Math.min(layout.viewportWidth, 46 * 16), 1);
+        const desktop = viewport.width >= 1024;
+        expect(layout.shell.width).toBeLessThanOrEqual(desktop ? 78 * 16 : 46 * 16);
+        expect(layout.shell.width).toBeCloseTo(
+          Math.min(layout.viewportWidth, (desktop ? 78 : 46) * 16),
+          1,
+        );
         expect(layout.shell.left).toBeCloseTo((layout.viewportWidth - layout.shell.width) / 2, 1);
         expect(layout.shell.height).toBeGreaterThanOrEqual(layout.viewportHeight);
 
-        expect(layout.navigation.position).toBe("fixed");
-        expect(layout.navigation.width).toBeCloseTo(layout.shell.width, 1);
-        expect(layout.navigation.left).toBeCloseTo(layout.shell.left, 1);
-        expect(layout.navigation.bottom).toBeCloseTo(layout.viewportHeight, 1);
-        expect(layout.navigation.height).toBeGreaterThanOrEqual(4 * 16);
-        expect(layout.contentPaddingBottom).toBeGreaterThanOrEqual(layout.navigation.height - 1);
-
         expect(layout.renderedItems).toBe(items);
-        expect(layout.gridColumns).toHaveLength(items);
-        for (const columnWidth of layout.gridColumns) {
-          expect(columnWidth).toBeCloseTo(layout.navigation.width / items, 1);
+        if (desktop) {
+          expect(layout.navigation.position).toBe("sticky");
+          expect(layout.navigation.width).toBeGreaterThanOrEqual(8 * 16);
+          expect(layout.navigation.width).toBeLessThan(layout.shell.width / 4);
+          expect(layout.navigation.left).toBeCloseTo(layout.shell.left, 1);
+          expect(layout.navigation.height).toBeCloseTo(layout.viewportHeight, 1);
+          expect(layout.contentPaddingBottom).toBe(0);
+          expect(layout.listDisplay).toBe("flex");
+          expect(layout.listFlexDirection).toBe("column");
+        } else {
+          expect(layout.navigation.position).toBe("fixed");
+          expect(layout.navigation.width).toBeCloseTo(layout.shell.width, 1);
+          expect(layout.navigation.left).toBeCloseTo(layout.shell.left, 1);
+          expect(layout.navigation.bottom).toBeCloseTo(layout.viewportHeight, 1);
+          expect(layout.navigation.height).toBeGreaterThanOrEqual(4 * 16);
+          expect(layout.contentPaddingBottom).toBeGreaterThanOrEqual(layout.navigation.height - 1);
+          expect(layout.gridColumns).toHaveLength(items);
+          for (const columnWidth of layout.gridColumns) {
+            expect(columnWidth).toBeCloseTo(layout.navigation.width / items, 1);
+          }
         }
       }
     } finally {
@@ -487,9 +503,7 @@ test("teacher routes match tablet and desktop baselines", async ({ browser }) =>
           page.getByRole("heading", { name: route.heading }),
           {
             settled: route.path === "/teacher/attendance"
-              ? page.getByRole("img", { name: "시간대별 입실 차트" }).or(
-                page.getByText("선택한 기간의 입실 시간대 데이터가 없어요."),
-              )
+              ? page.getByText("시간대별 분석 보기")
               : undefined,
           },
         );

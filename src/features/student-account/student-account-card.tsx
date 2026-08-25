@@ -167,12 +167,15 @@ export function StudentAccountCard({ email }: { email: string }) {
   }
 
   return (
-    <Card>
+    <Card className="student-account-card">
       <CardHeader>
         <CardTitle><h2>내 정보</h2></CardTitle>
         <CardDescription>{email}</CardDescription>
       </CardHeader>
       <CardContent>
+        <p className="student-account-card__teacher-help">
+          교사 권한이 필요하면 관리자에게 이 계정 이메일을 알려 주세요. 기존 학생 정보와 출결 기록은 유지됩니다.
+        </p>
         {loadError ? (
           <div className="flex flex-col gap-3">
             <Alert variant="destructive">

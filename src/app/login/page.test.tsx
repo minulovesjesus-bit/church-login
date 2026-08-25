@@ -67,6 +67,28 @@ it("keeps a password authentication error readable without navigating", async ()
   expect(router.push).not.toHaveBeenCalled();
 });
 
+it("replaces a raw provider credential error with a Korean recovery message", async () => {
+  signInWithPassword.mockResolvedValue({
+    error: { code: "invalid_credentials", message: "Invalid login credentials" },
+  });
+  render(<StudentLoginPage />);
+
+  fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "student@example.com" } });
+  fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "wrong-password" } });
+  fireEvent.click(screen.getByRole("button", { name: "로그인" }));
+
+  const alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("이메일 또는 비밀번호를 확인해 주세요.");
+  expect(alert).not.toHaveTextContent("Invalid login credentials");
+});
+
+it("explains how one account receives teacher access", () => {
+  render(<StudentLoginPage />);
+
+  expect(screen.getByText("학생과 교사가 같은 계정으로 로그인합니다.")).toBeVisible();
+  expect(screen.getByText(/관리자가 기존 계정에 교사 권한을 추가/)).toBeVisible();
+});
+
 it("keeps login fields associated and links back to signup", () => {
   render(<StudentLoginPage />);
 

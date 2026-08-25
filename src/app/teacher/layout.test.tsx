@@ -60,7 +60,7 @@ it("shows core links to teachers and never infers administrator authority", asyn
 
   const nav = await screen.findByRole("navigation", { name: "교사 메뉴" });
   expect(within(nav).getAllByRole("link").map((link) => link.getAttribute("href"))).toEqual([
-    "/teacher", "/teacher/attendance", "/teacher/students", "/teacher/events", "/student",
+    "/teacher", "/teacher/attendance", "/teacher/attendance/current", "/teacher/students", "/teacher/events", "/student",
   ]);
   const studentViewLink = within(nav).getByRole("link", { name: "학생 화면으로 보기" });
   expect(studentViewLink).toHaveAttribute("href", "/student");
@@ -68,6 +68,21 @@ it("shows core links to teachers and never infers administrator authority", asyn
   expect(within(nav).queryByRole("link", { name: "교사 신청" })).not.toBeInTheDocument();
   expect(mockApi.get).toHaveBeenCalledTimes(1);
   expect(mockApi.get).toHaveBeenCalledWith("/api/me", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+});
+
+it("exposes current presence below attendance management and marks only that page as current", async () => {
+  navigation.pathname = "/teacher/attendance/current";
+  mockApi.get.mockResolvedValue({ capabilities: { teacher: true, admin: false } });
+  render(<TeacherLayout><h1>현재 입실 화면</h1></TeacherLayout>);
+
+  const nav = await screen.findByRole("navigation", { name: "교사 메뉴" });
+  const attendanceLink = within(nav).getByRole("link", { name: "출결 관리" });
+  const currentPresenceLink = within(nav).getByRole("link", { name: "현재 입실 상태" });
+
+  expect(attendanceLink).toHaveAttribute("data-active", "true");
+  expect(attendanceLink).not.toHaveAttribute("aria-current");
+  expect(currentPresenceLink).toHaveAttribute("href", "/teacher/attendance/current");
+  expect(currentPresenceLink).toHaveAttribute("aria-current", "page");
 });
 
 it("keeps the pending access state while the identity request is unresolved", () => {
@@ -178,6 +193,9 @@ it("closes the drawer on link activation and every pathname change including bro
   const open = await screen.findByRole("button", { name: "교사 메뉴 열기" });
 
   fireEvent.click(open);
+  const currentPresenceLink = screen.getByRole("link", { name: "현재 입실 상태" });
+  expect(currentPresenceLink).toBeVisible();
+  expect(currentPresenceLink).toHaveAttribute("href", "/teacher/attendance/current");
   const attendanceLink = screen.getByRole("link", { name: "출결 관리" });
   attendanceLink.addEventListener("click", (event) => event.preventDefault());
   fireEvent.click(attendanceLink);

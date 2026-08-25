@@ -170,9 +170,9 @@ export async function promoteStudentAndPromoteAdmin(
     response.url().includes(`/api/admin/students/${identityFixtures.fullSystemTeacher.id}/promote-to-teacher`)
     && response.request().method() === "POST"
   ));
-  await adminPage.getByRole("button", { name: "교사로 승격" }).click();
-  const approvalDialog = adminPage.getByRole("alertdialog", { name: "교사로 승격" });
-  await approvalDialog.getByRole("button", { name: "승격 확인" }).click();
+  await adminPage.getByRole("button", { name: "교사 권한 추가" }).click();
+  const approvalDialog = adminPage.getByRole("alertdialog", { name: "교사 권한 추가" });
+  await approvalDialog.getByRole("button", { name: "권한 추가" }).click();
   expect((await approvalResponse).ok()).toBe(true);
   await expect(adminPage.getByRole("dialog").getByText("교사", { exact: true })).toBeVisible();
 

@@ -38,11 +38,10 @@ test("student, teacher, kiosk, attendance, statistics, and events work together"
       const freshStudent = await freshStudentContext.newPage();
       await freshStudent.goto("/student");
       await expect(freshStudent.getByRole("heading", { name: "오늘 출결 상태" })).toBeVisible();
+      await expect(freshStudent.getByText("현재 입실 중", { exact: true })).toBeVisible();
       await freshStudent.goto("/student/attendance");
-      await expect(freshStudent.getByText("이번 주 1일", { exact: true })).toBeVisible();
       await expect(freshStudent.getByText("이번 달 1일", { exact: true })).toBeVisible();
       await expect(freshStudent.getByText("총 입실 1회", { exact: true })).toBeVisible();
-      await expect(freshStudent.getByText("현재 입실 중", { exact: true })).toBeVisible();
       const personalHistory = freshStudent.getByRole("region", { name: "최근 출결" });
       await expect(personalHistory.getByText("총 1건", { exact: true })).toBeVisible();
       const personalHistoryTable = personalHistory.getByRole("table", { name: "출결 상세 기록" });
@@ -57,14 +56,16 @@ test("student, teacher, kiosk, attendance, statistics, and events work together"
 
     await student.goto("/student/attendance");
     await expect(student.getByRole("heading", { name: "내 출결 기록" })).toBeVisible();
-    await expect(student.getByText("이번 달 출석 일수")).toBeVisible();
+    await expect(student.getByText("출석일")).toBeVisible();
 
     await createWeeklyEvent(browser, "주일예배");
     await student.goto("/student/events");
     await expect(student.getByText("주일예배")).toBeVisible();
     const nextWeekLink = student.getByRole("link", { name: "다음 주" });
     const nextWeekHref = await nextWeekLink.getAttribute("href");
-    expect(nextWeekHref).toMatch(/^\/student\/events\?week=\d{4}-\d{2}-\d{2}$/);
+    expect(nextWeekHref).toMatch(
+      /^\/student\/events\?view=week&week=\d{4}-\d{2}-\d{2}$/,
+    );
     const nextWeek = new URL(nextWeekHref!, "http://localhost:3216").searchParams.get("week");
     const nextWeekEvents = student.waitForResponse((response) => (
       response.url().includes(`/api/events?from=${nextWeek}&`)

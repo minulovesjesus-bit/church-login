@@ -32,6 +32,7 @@
   --motion-fast: 140ms;
   --motion-normal: 200ms;
   --content-max-student: 46rem;
+  --content-max-student-wide: 78rem;
   --content-max-staff: 74rem;
   --content-max-admin: 70rem;
   --content-max-kiosk: 76rem;
@@ -135,7 +136,7 @@ a {
   }
 
   .auth-shell--task .auth-shell-image {
-    height: 6rem;
+    height: 5rem;
     margin-top: 0.75rem;
   }
 
@@ -635,6 +636,66 @@ a {
   padding: 1rem;
 }
 
+.attendance-disclosure {
+  overflow: hidden;
+  margin-top: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.attendance-disclosure > summary {
+  display: flex;
+  min-height: 3.5rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  color: var(--primary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.attendance-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.attendance-disclosure > summary::after {
+  width: 0.65rem;
+  height: 0.65rem;
+  flex: 0 0 auto;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  content: "";
+  transform: rotate(45deg) translateY(-0.15rem);
+  transition: transform var(--motion-fast);
+}
+
+.attendance-disclosure[open] > summary::after {
+  transform: rotate(225deg) translate(-0.1rem, -0.1rem);
+}
+
+.attendance-disclosure > summary > span {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 0.82rem;
+}
+
+.attendance-disclosure > summary:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: -3px;
+}
+
+.attendance-filter-disclosure .attendance-filter-card {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.attendance-analysis-disclosure .attendance-chart-card {
+  border-top: 1px solid var(--border);
+}
+
 .attendance-filter-card [data-slot="field-group"] {
   display: grid;
   grid-template-columns: repeat(3, minmax(8.5rem, 0.8fr)) minmax(13rem, 1.4fr) auto;
@@ -903,6 +964,12 @@ a {
 
 .attendance-correction-sheet__content > p {
   margin: 0;
+}
+
+.attendance-correction-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .attendance-manual-form {
@@ -2178,6 +2245,15 @@ a {
   color: var(--muted-foreground);
 }
 
+.student-account-card__teacher-help {
+  margin: 0 0 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+  color: var(--muted-foreground);
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
 .staff-shell {
   display: grid;
   width: 100%;
@@ -2706,8 +2782,105 @@ a {
 }
 
 @media (min-width: 64rem) {
-  .student-home-shell {
+  .student-shell {
+    display: grid;
+    width: min(100%, var(--content-max-student-wide));
+    grid-template-columns: 9rem minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--background);
+  }
+
+  .student-navigation {
+    position: sticky;
+    inset: 0 auto auto 0;
+    width: 9rem;
+    height: 100dvh;
+    grid-column: 1;
+    grid-row: 1 / -1;
+    margin: 0;
+    border-top: 0;
+    border-right: 1px solid var(--border);
+    padding: 1rem 0;
+    background: var(--background);
+    box-shadow: 0.8rem 0 2rem color-mix(in srgb, var(--primary) 7%, transparent);
+    backdrop-filter: none;
+  }
+
+  .student-navigation ul,
+  .student-navigation[data-items="4"] ul,
+  .student-navigation[data-items="5"] ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .student-navigation a {
+    min-height: 3.5rem;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: row;
+    gap: 0.65rem;
+    margin-inline: 0.65rem;
+    border-radius: var(--radius-lg);
+    padding: 0.65rem 0.75rem;
+    text-align: left;
+  }
+
+  .student-brand-header {
+    grid-column: 2;
+    grid-row: 1;
+    border-bottom: 1px solid var(--border);
     padding-inline: var(--page-gutter-student);
+  }
+
+  .student-shell-content {
+    min-width: 0;
+    grid-column: 2;
+    grid-row: 2;
+    padding-bottom: 0;
+  }
+
+  .student-home-shell {
+    width: 100%;
+    padding-inline: var(--page-gutter-student);
+  }
+
+  .student-dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  .student-dashboard .student-today {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .student-dashboard .student-qr-action {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .student-dashboard .student-month {
+    align-self: stretch;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .student-dashboard .student-home-events {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .student-dashboard .student-account-card {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .student-scan-shell {
+    width: min(100%, var(--content-max-student));
+    margin-inline: auto;
   }
 
   .attendance-shell,

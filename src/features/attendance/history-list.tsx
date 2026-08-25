@@ -61,10 +61,10 @@ export function HistoryList({
             <Button
               type="button"
               variant="outline"
-              aria-label={`${scan.student_name} 상세 및 보정`}
+              aria-label={`${scan.student_name} 출결 상세 보기`}
               onClick={(event) => onSelect(scan, event.currentTarget)}
             >
-              상세 및 보정
+              상세 보기
             </Button>
           ) : null}
         </li>

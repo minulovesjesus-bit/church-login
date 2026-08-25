@@ -21,6 +21,7 @@ type CurrentIdentity = {
 
 function destination(identity: CurrentIdentity): string {
   if (!identity.onboarding_completed) return "/onboarding";
+  if (identity.capabilities.teacher || identity.capabilities.admin) return "/teacher";
   return "/student";
 }
 

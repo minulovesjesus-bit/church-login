@@ -319,7 +319,7 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
           },
         };
       });
-      setNotice(`${promoted.name} 학생을 교사로 승격했습니다.`);
+      setNotice(`${promoted.name} 학생 계정에 교사 권한을 추가했습니다.`);
       return true;
     } catch (caught: unknown) {
       if (
@@ -336,7 +336,7 @@ export function TeacherStudentsManager({ initialSearch = "" }: { initialSearch?:
         redirectAuthorization("FORBIDDEN");
         return false;
       }
-      setMutationError(caught instanceof ApiClientError ? caught.message : "학생을 교사로 승격하지 못했습니다.");
+      setMutationError(caught instanceof ApiClientError ? caught.message : "교사 권한을 추가하지 못했습니다.");
       return false;
     } finally {
       if (mountedRef.current && !terminalAuthRef.current) {

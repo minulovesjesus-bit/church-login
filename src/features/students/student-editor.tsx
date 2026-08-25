@@ -286,7 +286,10 @@ export default function StudentEditor({
             {canPromote && student.staff_role === null ? (
               <FieldSet>
                 <FieldLegend>교사 권한</FieldLegend>
-                <FieldDescription>교사로 승격하면 출결과 학생 관리 기능을 사용할 수 있습니다.</FieldDescription>
+                <FieldDescription>
+                  교사 권한을 추가하면 출결과 학생 관리 기능을 사용할 수 있습니다. 학생 정보, 출결 기록,
+                  통계, 학생 화면 이용은 그대로 유지됩니다. 권한은 교사 권한 관리에서 나중에 변경할 수 있습니다.
+                </FieldDescription>
                 <AlertDialog
                   open={promotionDialogOpen}
                   onOpenChange={(open) => {
@@ -295,14 +298,15 @@ export default function StudentEditor({
                 >
                   <AlertDialogTrigger asChild>
                     <Button type="button" variant="outline" disabled={saving || promoting}>
-                      교사로 승격
+                      교사 권한 추가
                     </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>교사로 승격</AlertDialogTitle>
+                      <AlertDialogTitle>교사 권한 추가</AlertDialogTitle>
                       <AlertDialogDescription>
-                        {student.name} 학생에게 교사 권한을 부여할까요? 이 작업은 관리자만 수행할 수 있습니다.
+                        {student.name} 학생의 기존 계정에 교사 권한을 추가할까요? 학생 정보와 출결 기록은
+                        변경되지 않으며, 이 작업은 관리자만 수행할 수 있습니다.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -313,7 +317,7 @@ export default function StudentEditor({
                         onClick={confirmPromotion}
                       >
                         {promoting ? <Spinner aria-hidden="true" data-icon="inline-start" /> : null}
-                        {promoting ? "승격 확인 중…" : "승격 확인"}
+                        {promoting ? "권한 추가 중…" : "권한 추가"}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>

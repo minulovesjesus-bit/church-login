@@ -74,11 +74,16 @@ export default function OnboardingPage() {
   }
 
   return (
-    <AuthShell title="학생 정보 등록">
+    <AuthShell
+      title="기본 정보 등록"
+      description="모든 계정은 출결에 필요한 기본 정보를 먼저 등록합니다."
+    >
       <Card className="w-full">
         <CardHeader>
           <CardTitle>학생 정보</CardTitle>
-          <CardDescription>나이는 생년월일을 기준으로 화면에서만 계산됩니다.</CardDescription>
+          <CardDescription>
+            교사 권한이 추가되어도 이 정보와 출결 기록은 그대로 유지됩니다. 나이는 생년월일을 기준으로 계산합니다.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit}>

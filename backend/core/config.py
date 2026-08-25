@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     database_connect_timeout_seconds: int = Field(default=2, ge=1, le=5)
     database_statement_timeout_ms: int = Field(default=5000, ge=1, lt=8000)
     initial_admin_email: str | None = None
+    initial_admin_emails: Annotated[list[str], NoDecode] = Field(default_factory=list)
     kiosk_password_hash: SecretStr | None = None
     kiosk_cookie_secret: SecretStr | None = Field(default=None, min_length=32)
     qr_signing_secret: SecretStr | None = Field(default=None, min_length=32)
@@ -41,6 +42,38 @@ class Settings(BaseSettings):
         ]
     )
     app_timezone: Literal["Asia/Seoul"] = "Asia/Seoul"
+
+    @field_validator("initial_admin_email", mode="before")
+    @classmethod
+    def normalize_legacy_initial_admin_email(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        return normalized or None
+
+    @field_validator("initial_admin_emails", mode="before")
+    @classmethod
+    def normalize_initial_admin_emails(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            candidates = value.split(",")
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            candidates = list(value)
+        else:
+            raise TypeError("INITIAL_ADMIN_EMAILS must be a comma-separated list")
+
+        normalized: list[str] = []
+        for candidate in candidates:
+            email = str(candidate).strip().lower()
+            if email and email not in normalized:
+                normalized.append(email)
+        return normalized
+
+    @property
+    def configured_initial_admin_emails(self) -> frozenset[str]:
+        emails = set(self.initial_admin_emails)
+        if self.initial_admin_email:
+            emails.add(self.initial_admin_email)
+        return frozenset(emails)
 
     @field_validator("allowed_frontend_origins", mode="before")
     @classmethod

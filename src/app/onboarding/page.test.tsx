@@ -13,6 +13,14 @@ vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import OnboardingPage from "./page";
 
+it("explains that basic student information is preserved when teacher access is added", () => {
+  render(<OnboardingPage />);
+
+  expect(screen.getByRole("heading", { name: "기본 정보 등록" })).toBeInTheDocument();
+  expect(screen.getByText(/모든 계정은 출결에 필요한 기본 정보를 먼저 등록/)).toBeVisible();
+  expect(screen.getByText(/교사 권한이 추가되어도 이 정보와 출결 기록은 그대로 유지/)).toBeVisible();
+});
+
 it("submits normalized student profile fields", async () => {
   mockApi.post.mockResolvedValue({});
   render(<OnboardingPage />);

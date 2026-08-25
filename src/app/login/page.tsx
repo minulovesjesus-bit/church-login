@@ -11,9 +11,12 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel, FieldSeparator } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { authIssue, type AuthIssue } from "@/lib/auth/error-message";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
-const OAUTH_CALLBACK_ERROR_MESSAGE = "로그인을 완료하지 못했습니다. 다시 시도해 주세요.";
+const OAUTH_CALLBACK_ERROR: AuthIssue = {
+  message: "로그인을 완료하지 못했습니다. 다시 시도해 주세요.",
+};
 
 export default function StudentLoginPage() {
   return (
@@ -27,9 +30,9 @@ function StudentLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackError = searchParams.get("error") === "oauth_callback"
-    ? OAUTH_CALLBACK_ERROR_MESSAGE
+    ? OAUTH_CALLBACK_ERROR
     : undefined;
-  const [actionError, setActionError] = useState<string | null>();
+  const [actionError, setActionError] = useState<AuthIssue | null>();
   const error = actionError === undefined ? callbackError : actionError ?? undefined;
   const [submitting, setSubmitting] = useState<"google" | "password">();
 
@@ -44,8 +47,10 @@ function StudentLoginForm() {
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
       });
-      setActionError(authError?.message ?? null);
+      setActionError(authIssue(authError, "login") ?? null);
       if (!authError) router.push("/auth/continue");
+    } catch {
+      setActionError(authIssue({ message: "network" }, "login") ?? null);
     } finally {
       setSubmitting(undefined);
     }
@@ -67,14 +72,16 @@ function StudentLoginForm() {
         provider: "google",
         options: { redirectTo: callbackUrl.toString() },
       });
-      setActionError(authError?.message ?? null);
+      setActionError(authIssue(authError, "oauth") ?? null);
+    } catch {
+      setActionError(authIssue({ message: "network" }, "oauth") ?? null);
     } finally {
       setSubmitting(undefined);
     }
   }
 
   return (
-    <AuthShell title="로그인">
+    <AuthShell title="로그인" description="학생과 교사가 같은 계정으로 로그인합니다.">
       <FieldGroup>
         <Button
           type="button"
@@ -93,35 +100,35 @@ function StudentLoginForm() {
         <FieldSeparator>또는</FieldSeparator>
         <form onSubmit={loginWithPassword}>
           <FieldGroup>
-            <Field data-invalid={Boolean(error)}>
+            <Field data-invalid={Boolean(error && (!error.field || error.field === "email"))}>
               <FieldLabel htmlFor="student-login-email">이메일</FieldLabel>
               <Input
                 id="student-login-email"
                 name="email"
                 type="email"
                 autoComplete="email"
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "student-login-error" : undefined}
+                aria-invalid={Boolean(error && (!error.field || error.field === "email"))}
+                aria-describedby={error && (!error.field || error.field === "email") ? "student-login-error" : undefined}
                 disabled={Boolean(submitting)}
                 required
               />
             </Field>
-            <Field data-invalid={Boolean(error)}>
+            <Field data-invalid={Boolean(error && (!error.field || error.field === "password"))}>
               <FieldLabel htmlFor="student-login-password">비밀번호</FieldLabel>
               <Input
                 id="student-login-password"
                 name="password"
                 type="password"
                 autoComplete="current-password"
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "student-login-error" : undefined}
+                aria-invalid={Boolean(error && (!error.field || error.field === "password"))}
+                aria-describedby={error && (!error.field || error.field === "password") ? "student-login-error" : undefined}
                 disabled={Boolean(submitting)}
                 required
               />
             </Field>
             {error ? (
               <Alert id="student-login-error" variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+                <AlertDescription>{error.message}</AlertDescription>
               </Alert>
             ) : null}
             <Button type="submit" className="w-full" disabled={Boolean(submitting)}>
@@ -137,6 +144,9 @@ function StudentLoginForm() {
         <Button asChild variant="outline" className="w-full">
           <Link href="/auth/signup">회원가입</Link>
         </Button>
+        <p className="m-0 text-sm leading-relaxed text-muted-foreground">
+          교사이신가요? 먼저 같은 계정으로 가입해 주세요. 관리자가 기존 계정에 교사 권한을 추가합니다.
+        </p>
       </FieldGroup>
     </AuthShell>
   );

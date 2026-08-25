@@ -35,8 +35,8 @@ afterEach(() => {
 it.each([
   [{ onboarding_completed: false, capabilities: { student: false, teacher: false, admin: false } }, "/onboarding"],
   [{ onboarding_completed: true, capabilities: { student: true, teacher: false, admin: false } }, "/student"],
-  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: false } }, "/student"],
-  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: true } }, "/student"],
+  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: false } }, "/teacher"],
+  [{ onboarding_completed: true, capabilities: { student: true, teacher: true, admin: true } }, "/teacher"],
 ])("routes the current identity to %s", async (identity, destination) => {
   mockApi.get.mockResolvedValue(identity);
   render(<AuthContinuePage />);

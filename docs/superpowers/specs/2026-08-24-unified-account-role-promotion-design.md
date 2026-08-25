@@ -18,7 +18,7 @@ The replacement model has one account lifecycle. Every person first creates or s
 - A promoted teacher or administrator is sent to the teacher dashboard after login.
 - A non-promoted account is sent to the student dashboard after login.
 - Authentication provider does not grant staff access. A promoted email/password account and a promoted Google account have the same teacher authorization.
-- The initial administrator bootstrap remains restricted to the configured, verified Google account so a password-only account cannot claim the first administrator role.
+- Initial administrator bootstrap remains restricted to the configured, verified Google accounts so a password-only account cannot claim an administrator role.
 
 ## Routes and Navigation
 
@@ -55,7 +55,7 @@ Teacher and administrator API guards require:
 - a valid Supabase user; and
 - the appropriate database membership.
 
-They do not require a particular authentication provider. The existing last-admin protection remains unchanged. Initial-admin bootstrap is the only provider-sensitive operation and continues to require a verified Google identity matching `INITIAL_ADMIN_EMAIL`.
+They do not require a particular authentication provider. The existing last-admin protection remains unchanged. Initial-admin bootstrap is the only provider-sensitive operation and continues to require a verified Google identity listed in `INITIAL_ADMIN_EMAILS`. Each listed identity can bootstrap once; the legacy `INITIAL_ADMIN_EMAIL` setting remains supported for one account.
 
 The application must not use `user_metadata` for roles. Role changes take effect through database lookup on each protected request, so demotion or promotion does not wait for JWT refresh.
 
@@ -133,7 +133,7 @@ Teacher applications are retired from user-facing flows:
 
 - Password and Google users with teacher membership pass teacher guards.
 - Users without staff membership fail staff-only endpoints regardless of provider.
-- Initial-admin bootstrap still requires the configured verified Google identity.
+- Initial-admin bootstrap still requires one of the configured verified Google identities.
 - Admin promotion succeeds, is idempotent, preserves student data, and writes one effective audit transition.
 - Teacher/non-admin promotion returns `403`; non-student target returns `404`; admin target conflict preserves role.
 - Concurrent promotion attempts leave one membership.

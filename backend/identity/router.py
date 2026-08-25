@@ -49,7 +49,10 @@ async def get_identity_service(
 async def get_staff_service(
     repository: IdentityRepositoryDependency,
 ) -> StaffService:
-    return StaffService(repository, initial_admin_email=settings.initial_admin_email)
+    return StaffService(
+        repository,
+        initial_admin_emails=settings.configured_initial_admin_emails,
+    )
 
 
 IdentityServiceDependency = Annotated[

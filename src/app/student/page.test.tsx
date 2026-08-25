@@ -148,6 +148,7 @@ it("shows the student home for a returning student", async () => {
   const account = await screen.findByRole("heading", { name: "내 정보" });
   expect(events.compareDocumentPosition(account) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText("student@example.com")).toBeInTheDocument();
+  expect(screen.getByText(/교사 권한이 필요하면 관리자에게 이 계정 이메일을 알려 주세요/)).toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "교사 화면 보기" })).not.toBeInTheDocument();
   expect(router.replace).not.toHaveBeenCalled();
 });

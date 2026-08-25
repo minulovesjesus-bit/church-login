@@ -157,6 +157,24 @@ def test_allowed_frontend_origins_are_explicit_and_normalized() -> None:
     ]
 
 
+def test_initial_admin_emails_are_normalized_deduplicated_and_merged_with_legacy() -> None:
+    loaded = Settings(
+        _env_file=None,
+        initial_admin_emails=(
+            " CodeYoma@gmail.com, second-admin@example.com,codeyoma@gmail.com "
+        ),
+        initial_admin_email=" Legacy-Admin@example.com ",
+    )
+
+    assert loaded.configured_initial_admin_emails == frozenset(
+        {
+            "codeyoma@gmail.com",
+            "second-admin@example.com",
+            "legacy-admin@example.com",
+        }
+    )
+
+
 @pytest.mark.parametrize(
     "origins",
     [

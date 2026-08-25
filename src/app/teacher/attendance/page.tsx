@@ -153,6 +153,7 @@ function TeacherAttendanceContent() {
   const [statistics, setStatistics] = useState<TeacherStatistics>();
   const [error, setError] = useState<{ key: string; message: string }>();
   const [selected, setSelected] = useState<TeacherAttendanceItem>();
+  const [correctionMode, setCorrectionMode] = useState(false);
   const [reason, setReason] = useState("");
   const [manualDirection, setManualDirection] = useState<AttendanceDirection>("IN");
   const [manualTime, setManualTime] = useState("");
@@ -211,6 +212,7 @@ function TeacherAttendanceContent() {
   function selectRecord(scan: TeacherAttendanceItem, opener: HTMLButtonElement) {
     correctionOpenerRef.current = opener;
     setSelected(scan);
+    setCorrectionMode(false);
     setReason("");
     setManualDirection(scan.direction === "IN" ? "OUT" : "IN");
     setManualTime("");
@@ -295,40 +297,49 @@ function TeacherAttendanceContent() {
         <div><h1>전체 출결 관리</h1><p>조회·통계·보정 시각은 모두 한국 시간 기준입니다.</p></div>
       </header>
 
-      <form key={searchKey} className="attendance-filter-card" aria-label="출결 필터" onSubmit={applyFilters}>
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="attendance-date-from">시작일</FieldLabel>
-            <Input id="attendance-date-from" name="date_from" type="date" defaultValue={filters.dateFrom} />
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="attendance-date-to">종료일</FieldLabel>
-            <Input id="attendance-date-to" name="date_to" type="date" defaultValue={filters.dateTo} />
-          </Field>
-          <Field>
-            <FieldLabel id="attendance-status-label" htmlFor="attendance-status">출결 상태</FieldLabel>
-            <Select name="status" defaultValue={filters.status}>
-              <SelectTrigger id="attendance-status" aria-labelledby="attendance-status-label">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>출결 상태</SelectLabel>
-                  <SelectItem value="ALL">전체</SelectItem>
-                  <SelectItem value="IN">입실</SelectItem>
-                  <SelectItem value="OUT">퇴실</SelectItem>
-                  <SelectItem value="VOIDED">취소 기록</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field className="attendance-filter-card__search">
-            <FieldLabel htmlFor="attendance-search">학생 검색</FieldLabel>
-            <Input id="attendance-search" name="search" type="search" maxLength={80} placeholder="이름·이메일·연락처" defaultValue={filters.search} />
-          </Field>
-          <Button type="submit">필터 적용</Button>
-        </FieldGroup>
-      </form>
+      <details
+        className="attendance-disclosure attendance-filter-disclosure"
+        open={filters.status !== "ALL" || Boolean(filters.search) ? true : undefined}
+      >
+        <summary>
+          <strong>상세 필터</strong>
+          <span>{filters.dateFrom} – {filters.dateTo}</span>
+        </summary>
+        <form key={searchKey} className="attendance-filter-card" aria-label="출결 필터" onSubmit={applyFilters}>
+          <FieldGroup>
+            <Field>
+              <FieldLabel htmlFor="attendance-date-from">시작일</FieldLabel>
+              <Input id="attendance-date-from" name="date_from" type="date" defaultValue={filters.dateFrom} />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="attendance-date-to">종료일</FieldLabel>
+              <Input id="attendance-date-to" name="date_to" type="date" defaultValue={filters.dateTo} />
+            </Field>
+            <Field>
+              <FieldLabel id="attendance-status-label" htmlFor="attendance-status">출결 상태</FieldLabel>
+              <Select name="status" defaultValue={filters.status}>
+                <SelectTrigger id="attendance-status" aria-labelledby="attendance-status-label">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectLabel>출결 상태</SelectLabel>
+                    <SelectItem value="ALL">전체</SelectItem>
+                    <SelectItem value="IN">입실</SelectItem>
+                    <SelectItem value="OUT">퇴실</SelectItem>
+                    <SelectItem value="VOIDED">취소 기록</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field className="attendance-filter-card__search">
+              <FieldLabel htmlFor="attendance-search">학생 검색</FieldLabel>
+              <Input id="attendance-search" name="search" type="search" maxLength={80} placeholder="이름·이메일·연락처" defaultValue={filters.search} />
+            </Field>
+            <Button type="submit">필터 적용</Button>
+          </FieldGroup>
+        </form>
+      </details>
 
       <SummaryCards items={[
         { label: "오늘 출석", value: `오늘 ${statistics.unique_students_today}명` },
@@ -338,31 +349,42 @@ function TeacherAttendanceContent() {
         { label: "평균 체류", value: `평균 ${formatDuration(statistics.average_stay_seconds)}` },
       ]} />
 
-      <section className="attendance-records-card attendance-chart-card" aria-labelledby="entry-chart-title">
-        <div className="attendance-section-heading"><h2 id="entry-chart-title">시간대별 입실</h2></div>
-        <StayChart entries={statistics.time_of_day_entries} />
-        <Table className="attendance-data-table" aria-label="시간대별 입실 데이터">
-          <TableHeader><TableRow><TableHead scope="col">시간대</TableHead><TableHead scope="col">입실 횟수</TableHead></TableRow></TableHeader>
-          <TableBody>{statistics.time_of_day_entries.map((entry) => <TableRow key={entry.hour}><TableCell>{entry.hour}시</TableCell><TableCell>{entry.entries}회</TableCell></TableRow>)}</TableBody>
-        </Table>
-      </section>
+      <details className="attendance-disclosure attendance-analysis-disclosure">
+        <summary>
+          <strong>시간대별 분석 보기</strong>
+          <span>입실이 몰리는 시간을 확인합니다.</span>
+        </summary>
+        <section className="attendance-chart-card" aria-labelledby="entry-chart-title">
+          <div className="attendance-section-heading"><h2 id="entry-chart-title">시간대별 입실</h2></div>
+          <StayChart entries={statistics.time_of_day_entries} />
+          <Table className="attendance-data-table" aria-label="시간대별 입실 데이터">
+            <TableHeader><TableRow><TableHead scope="col">시간대</TableHead><TableHead scope="col">입실 횟수</TableHead></TableRow></TableHeader>
+            <TableBody>{statistics.time_of_day_entries.map((entry) => <TableRow key={entry.hour}><TableCell>{entry.hour}시</TableCell><TableCell>{entry.entries}회</TableCell></TableRow>)}</TableBody>
+          </Table>
+        </section>
+      </details>
 
       <section className="attendance-records-card" aria-label="전체 출결 목록">
         <div className="attendance-section-heading"><h2>학생별 입실·퇴실</h2><span>총 {history.total}건</span></div>
         {history.items.length === 0 ? <div className="attendance-empty-state">조건에 맞는 출결 기록이 없어요.</div> : (
           <><div className="attendance-mobile-only"><HistoryList scans={history.items} onSelect={selectRecord} /></div><div className="attendance-desktop-only"><AttendanceTable scans={history.items} onSelect={selectRecord} /></div></>
         )}
-        <Pagination className="attendance-pagination" aria-label="전체 출결 페이지">
-          <PaginationContent>
-            <PaginationItem><Button type="button" variant="outline" disabled={history.page <= 1} onClick={() => router.replace(filterUrl({ ...filters, page: Math.max(1, filters.page - 1) }))}>이전 페이지</Button></PaginationItem>
-            <PaginationItem><span>{history.page} / {totalPages} 페이지 · 총 {history.total}건</span></PaginationItem>
-            <PaginationItem><Button type="button" variant="outline" disabled={history.page >= totalPages} onClick={() => router.replace(filterUrl({ ...filters, page: Math.min(totalPages, filters.page + 1) }))}>다음 페이지</Button></PaginationItem>
-          </PaginationContent>
-        </Pagination>
+        {totalPages > 1 ? (
+          <Pagination className="attendance-pagination" aria-label="전체 출결 페이지">
+            <PaginationContent>
+              <PaginationItem><Button type="button" variant="outline" disabled={history.page <= 1} onClick={() => router.replace(filterUrl({ ...filters, page: Math.max(1, filters.page - 1) }))}>이전 페이지</Button></PaginationItem>
+              <PaginationItem><span>{history.page} / {totalPages} 페이지 · 총 {history.total}건</span></PaginationItem>
+              <PaginationItem><Button type="button" variant="outline" disabled={history.page >= totalPages} onClick={() => router.replace(filterUrl({ ...filters, page: Math.min(totalPages, filters.page + 1) }))}>다음 페이지</Button></PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        ) : null}
       </section>
 
       <Sheet open={Boolean(selected)} onOpenChange={(open) => {
-        if (!open) setSelected(undefined);
+        if (!open) {
+          setSelected(undefined);
+          setCorrectionMode(false);
+        }
       }}>
         {selected ? (
           <SheetContent
@@ -379,7 +401,7 @@ function TeacherAttendanceContent() {
           >
             <SheetHeader className="attendance-correction-sheet__header">
               <div>
-                <SheetTitle>{selected.student_name} 출결 상세 및 보정</SheetTitle>
+                <SheetTitle>{selected.student_name} 출결 상세</SheetTitle>
                 <SheetDescription>{selected.student_email}</SheetDescription>
               </div>
               <SheetClose asChild>
@@ -390,38 +412,46 @@ function TeacherAttendanceContent() {
               <p><strong>{selected.direction === "IN" ? "입실" : "퇴실"}</strong> · {formatSeoulDateTime(selected.scanned_at)}</p>
               <RecordBadges scan={selected} />
               {selected.void_reason ? <p className="attendance-void-reason">취소 사유: {selected.void_reason}</p> : null}
-              <Separator />
-              <Field data-invalid={Boolean(correctionError && !reason.trim())}>
-                <FieldLabel htmlFor="attendance-correction-reason">보정 사유</FieldLabel>
-                <Textarea id="attendance-correction-reason" value={reason} maxLength={500} required aria-invalid={Boolean(correctionError && !reason.trim())} onChange={(event) => setReason(event.target.value)} placeholder="변경 이유를 구체적으로 입력해 주세요." />
-              </Field>
-              {correctionError ? <Alert variant="destructive"><AlertDescription>{correctionError}</AlertDescription></Alert> : null}
-              {correctionNotice ? <Alert role="status"><AlertDescription>{correctionNotice}</AlertDescription></Alert> : null}
-              <Button type="button" variant="outline" disabled={saving || Boolean(selected.voided_at)} onClick={() => void submitCorrection("VOID")}>{saving ? "저장 중…" : "원본 기록 취소"}</Button>
-              <Separator />
-              <section className="attendance-manual-form" aria-labelledby="attendance-manual-title">
-                <h3 id="attendance-manual-title">수동 기록 추가</h3>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel id="attendance-manual-direction-label" htmlFor="attendance-manual-direction">수동 출결 방향</FieldLabel>
-                    <Select value={manualDirection} onValueChange={(value) => setManualDirection(value as AttendanceDirection)}>
-                      <SelectTrigger id="attendance-manual-direction" aria-labelledby="attendance-manual-direction-label"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectLabel>수동 출결 방향</SelectLabel>
-                          <SelectItem value="IN">입실</SelectItem>
-                          <SelectItem value="OUT">퇴실</SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+              {!correctionMode ? (
+                <Button type="button" variant="outline" onClick={() => setCorrectionMode(true)}>
+                  기록 보정하기
+                </Button>
+              ) : (
+                <div className="attendance-correction-controls">
+                  <Separator />
+                  <Field data-invalid={Boolean(correctionError && !reason.trim())}>
+                    <FieldLabel htmlFor="attendance-correction-reason">보정 사유</FieldLabel>
+                    <Textarea id="attendance-correction-reason" value={reason} maxLength={500} required aria-invalid={Boolean(correctionError && !reason.trim())} onChange={(event) => setReason(event.target.value)} placeholder="변경 이유를 구체적으로 입력해 주세요." />
                   </Field>
-                  <Field>
-                    <FieldLabel htmlFor="attendance-manual-time">수동 출결 시각</FieldLabel>
-                    <Input id="attendance-manual-time" type="datetime-local" value={manualTime} onChange={(event) => setManualTime(event.target.value)} />
-                  </Field>
-                  <Button type="button" disabled={saving} onClick={() => void submitCorrection("MANUAL")}>{saving ? "저장 중…" : "수동 기록 추가"}</Button>
-                </FieldGroup>
-              </section>
+                  {correctionError ? <Alert variant="destructive"><AlertDescription>{correctionError}</AlertDescription></Alert> : null}
+                  {correctionNotice ? <Alert role="status"><AlertDescription>{correctionNotice}</AlertDescription></Alert> : null}
+                  <Button type="button" variant="outline" disabled={saving || Boolean(selected.voided_at)} onClick={() => void submitCorrection("VOID")}>{saving ? "저장 중…" : "원본 기록 취소"}</Button>
+                  <Separator />
+                  <section className="attendance-manual-form" aria-labelledby="attendance-manual-title">
+                    <h3 id="attendance-manual-title">수동 기록 추가</h3>
+                    <FieldGroup>
+                      <Field>
+                        <FieldLabel id="attendance-manual-direction-label" htmlFor="attendance-manual-direction">수동 출결 방향</FieldLabel>
+                        <Select value={manualDirection} onValueChange={(value) => setManualDirection(value as AttendanceDirection)}>
+                          <SelectTrigger id="attendance-manual-direction" aria-labelledby="attendance-manual-direction-label"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectLabel>수동 출결 방향</SelectLabel>
+                              <SelectItem value="IN">입실</SelectItem>
+                              <SelectItem value="OUT">퇴실</SelectItem>
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="attendance-manual-time">수동 출결 시각</FieldLabel>
+                        <Input id="attendance-manual-time" type="datetime-local" value={manualTime} onChange={(event) => setManualTime(event.target.value)} />
+                      </Field>
+                      <Button type="button" disabled={saving} onClick={() => void submitCorrection("MANUAL")}>{saving ? "저장 중…" : "수동 기록 추가"}</Button>
+                    </FieldGroup>
+                  </section>
+                </div>
+              )}
             </div>
           </SheetContent>
         ) : null}

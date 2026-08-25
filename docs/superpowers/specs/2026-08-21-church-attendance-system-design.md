@@ -134,7 +134,7 @@ Application states are `pending`, `approved`, and `rejected`. A pending or rejec
 
 Staff membership is stored in application tables, not user-editable Supabase metadata. FastAPI loads current membership from the database for each protected request so role removal takes effect without waiting for a JWT refresh.
 
-The initial administrator is bootstrapped once through `INITIAL_ADMIN_EMAIL`. The matching user must authenticate with Google. Subsequent staff changes occur only through the administrator dashboard. The system must reject any operation that would leave zero administrators.
+Initial administrators are configured through the comma-separated `INITIAL_ADMIN_EMAILS` setting. Every matching user must authenticate with Google and can bootstrap exactly once. The legacy `INITIAL_ADMIN_EMAIL` setting remains supported for one account. Subsequent staff changes occur through the administrator dashboard. The system must reject any operation that would leave zero administrators.
 
 ### Kiosk identity
 
@@ -497,7 +497,7 @@ The implementation will document, at minimum:
 - Supabase JWT/JWKS configuration
 - backend database connection URL suitable for local development and Vercel/Supavisor later
 - Google OAuth client ID and secret in Supabase configuration
-- `INITIAL_ADMIN_EMAIL`
+- `INITIAL_ADMIN_EMAILS` (comma-separated; `INITIAL_ADMIN_EMAIL` remains supported for compatibility)
 - Argon2 kiosk-password hash
 - QR signing secret
 - allowed frontend origins

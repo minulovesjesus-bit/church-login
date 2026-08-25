@@ -102,7 +102,7 @@ Supply the Google client ID and secret to the local Supabase provider configurat
 
 ### First administrator
 
-Set `INITIAL_ADMIN_EMAIL` to the exact lower-case email of a verified Google user before that user signs in. The first matching `/api/me` request creates the durable bootstrap marker. Later administrators are promoted from the staff page; changing the environment value does not bootstrap a second account.
+Set `INITIAL_ADMIN_EMAILS` to a comma-separated list of verified Google accounts before those users sign in. Values are trimmed, lower-cased, and deduplicated. Each matching account creates its own durable bootstrap marker on its first `/api/me` request, so every listed account can become an administrator exactly once. `INITIAL_ADMIN_EMAIL` remains available only for backward compatibility with a single account. Later role changes still use the staff page, and a demoted bootstrap account is not promoted again automatically.
 
 ## Kiosk and camera checks
 

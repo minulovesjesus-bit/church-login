@@ -163,7 +163,7 @@ Vercel Dashboard의 Project → Settings → Environment Variables에서 등록�
 
 ### 관리자 및 키오스크 서버 전용 설정
 
-- [ ] `INITIAL_ADMIN_EMAIL=codeyoma@gmail.com`
+- [ ] `INITIAL_ADMIN_EMAILS=codeyoma@gmail.com`: 여러 명이면 쉼표로 구분
 - [ ] `KIOSK_PASSWORD_HASH`: 현재 운영에 사용할 고정 비밀번호의 Argon2id hash
 - [ ] `KIOSK_COOKIE_SECRET`: 최소 32바이트의 독립적인 랜덤 값
 - [ ] `QR_SIGNING_SECRET`: `KIOSK_COOKIE_SECRET`과 다른 최소 32바이트 랜덤 값

@@ -567,7 +567,7 @@ git commit -m "feat: add student self registration"
 - Test: `src/app/teacher/apply/page.test.tsx`
 
 **Interfaces:**
-- Consumes: `AuthenticatedUser`, identity repositories, `INITIAL_ADMIN_EMAIL`.
+- Consumes: `AuthenticatedUser`, identity repositories, `INITIAL_ADMIN_EMAILS` (plus legacy `INITIAL_ADMIN_EMAIL`).
 - Produces: `POST/GET /api/teacher-applications`, administrator application decisions, staff role changes, and `require_teacher`/`require_admin` dependencies.
 
 - [ ] **Step 1: Write failing staff workflow tests**
@@ -601,7 +601,7 @@ async def require_admin(
     return user
 ```
 
-Implement idempotent initial-admin bootstrap when the verified Google email exactly matches `INITIAL_ADMIN_EMAIL`; teacher application/reapplication; approve/reject; teacher-to-admin promotion; admin-to-teacher demotion; and a transaction that locks staff memberships before enforcing at least one remaining admin. Every decision and role change writes an audit entry.
+Implement idempotent per-user initial-admin bootstrap when the verified Google email is listed in `INITIAL_ADMIN_EMAILS` (or matches legacy `INITIAL_ADMIN_EMAIL`); teacher application/reapplication; approve/reject; teacher-to-admin promotion; admin-to-teacher demotion; and a transaction that locks staff memberships before enforcing at least one remaining admin. Every decision and role change writes an audit entry.
 
 - [ ] **Step 4: Implement teacher and administrator pages**
 

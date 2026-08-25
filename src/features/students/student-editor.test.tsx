@@ -30,10 +30,18 @@ function editorProps(overrides: Record<string, unknown> = {}) {
 it("shows staff accounts as read-only role badges instead of a promotion action", () => {
   const teacherView = render(<StudentEditor {...editorProps({ student: student("teacher") })} />);
   expect(screen.getByText("교사")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "교사로 승격" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "교사 권한 추가" })).not.toBeInTheDocument();
   teacherView.unmount();
 
   render(<StudentEditor {...editorProps({ student: student("admin") })} />);
   expect(screen.getByText("관리자")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "교사로 승격" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "교사 권한 추가" })).not.toBeInTheDocument();
+});
+
+it("describes teacher access as an added permission that preserves the student identity", () => {
+  render(<StudentEditor {...editorProps({ canPromote: true })} />);
+
+  expect(screen.getByRole("button", { name: "교사 권한 추가" })).toBeInTheDocument();
+  expect(screen.getByText(/학생 정보, 출결 기록, 통계, 학생 화면 이용은 그대로 유지/)).toBeVisible();
+  expect(screen.getByText(/권한은 교사 권한 관리에서 나중에 변경/)).toBeVisible();
 });

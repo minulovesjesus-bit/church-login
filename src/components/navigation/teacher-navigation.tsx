@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   CalendarDaysIcon,
   ClipboardCheckIcon,
+  DoorOpenIcon,
   LayoutDashboardIcon,
   MenuIcon,
   MonitorSmartphoneIcon,
@@ -35,6 +36,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -44,11 +48,19 @@ type NavigationLink = {
   href: string;
   label: string;
   icon: ComponentType;
+  children?: NavigationLink[];
 };
 
 const CORE_LINKS: NavigationLink[] = [
   { href: "/teacher", label: "대시보드", icon: LayoutDashboardIcon },
-  { href: "/teacher/attendance", label: "출결 관리", icon: ClipboardCheckIcon },
+  {
+    href: "/teacher/attendance",
+    label: "출결 관리",
+    icon: ClipboardCheckIcon,
+    children: [
+      { href: "/teacher/attendance/current", label: "현재 입실 상태", icon: DoorOpenIcon },
+    ],
+  },
   { href: "/teacher/students", label: "학생 관리", icon: UsersRoundIcon },
   { href: "/teacher/events", label: "일정 관리", icon: CalendarDaysIcon },
 ];
@@ -75,18 +87,42 @@ function NavigationItems({ links, pathname, onNavigate }: {
     <SidebarMenu>
       {links.map((link) => {
         const Icon = link.icon;
+        const activeChild = link.children?.some((child) => isCurrent(pathname, child.href)) ?? false;
+        const active = isCurrent(pathname, link.href);
         return (
           <SidebarMenuItem key={link.href}>
-            <SidebarMenuButton asChild isActive={isCurrent(pathname, link.href)}>
+            <SidebarMenuButton asChild isActive={active}>
               <Link
                 href={link.href}
-                aria-current={isCurrent(pathname, link.href) ? "page" : undefined}
+                aria-current={active && !activeChild ? "page" : undefined}
                 onClick={onNavigate}
               >
                 <Icon />
                 <span>{link.label}</span>
               </Link>
             </SidebarMenuButton>
+            {link.children ? (
+              <SidebarMenuSub>
+                {link.children.map((child) => {
+                  const ChildIcon = child.icon;
+                  const childActive = isCurrent(pathname, child.href);
+                  return (
+                    <SidebarMenuSubItem key={child.href}>
+                      <SidebarMenuSubButton asChild isActive={childActive}>
+                        <Link
+                          href={child.href}
+                          aria-current={childActive ? "page" : undefined}
+                          onClick={onNavigate}
+                        >
+                          <ChildIcon />
+                          <span>{child.label}</span>
+                        </Link>
+                      </SidebarMenuSubButton>
+                    </SidebarMenuSubItem>
+                  );
+                })}
+              </SidebarMenuSub>
+            ) : null}
           </SidebarMenuItem>
         );
       })}

@@ -59,3 +59,43 @@ it("locks signup while the request is pending", async () => {
   finish({ error: null });
   expect(await screen.findByRole("status")).toBeVisible();
 });
+
+it("shows the password rule and unified account path before submission", () => {
+  render(<StudentSignupPage />);
+
+  expect(screen.getByRole("heading", { name: "회원가입" })).toBeInTheDocument();
+  expect(screen.getByText("학생과 교사가 하나의 계정을 사용합니다.")).toBeVisible();
+  expect(screen.getByText(/관리자가 기존 계정에 교사 권한을 추가/)).toBeVisible();
+  expect(screen.getByText("비밀번호는 8자 이상 입력해 주세요.")).toBeVisible();
+});
+
+it("associates duplicate-email and weak-password errors with the relevant field in Korean", async () => {
+  signUp
+    .mockResolvedValueOnce({
+      error: { code: "user_already_exists", message: "User already registered" },
+    })
+    .mockResolvedValueOnce({
+      error: { code: "weak_password", message: "Password should be at least 8 characters" },
+    });
+  const view = render(<StudentSignupPage />);
+
+  fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "student@example.com" } });
+  fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "password123" } });
+  fireEvent.click(screen.getByRole("button", { name: "회원가입" }));
+
+  let alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("이미 가입된 이메일입니다. 로그인해 주세요.");
+  expect(screen.getByLabelText("이메일")).toHaveAttribute("aria-describedby", alert.id);
+  expect(screen.getByLabelText("비밀번호")).not.toHaveAttribute("aria-describedby", alert.id);
+
+  view.unmount();
+  render(<StudentSignupPage />);
+  fireEvent.change(screen.getByLabelText("이메일"), { target: { value: "new@example.com" } });
+  fireEvent.change(screen.getByLabelText("비밀번호"), { target: { value: "password123" } });
+  fireEvent.click(screen.getByRole("button", { name: "회원가입" }));
+
+  alert = await screen.findByRole("alert");
+  expect(alert).toHaveTextContent("비밀번호는 8자 이상 입력해 주세요.");
+  expect(screen.getByLabelText("비밀번호")).toHaveAttribute("aria-describedby", alert.id);
+  expect(screen.getByLabelText("이메일")).not.toHaveAttribute("aria-describedby", alert.id);
+});

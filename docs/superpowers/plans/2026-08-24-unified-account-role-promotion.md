@@ -16,7 +16,7 @@
 - Every new account starts as a student and completes student onboarding.
 - Preserve existing users, student profiles, attendance history, staff memberships, and audit logs.
 - Promoted password and Google accounts have the same teacher authorization.
-- Initial-admin bootstrap still requires the configured verified Google identity.
+- Initial-admin bootstrap still requires a configured verified Google identity.
 - Keep historic teacher-application tables and backend endpoints; remove first-party frontend callers only.
 - Keep FastAPI stateless and compatible with Vercel Python functions.
 - Use tests first and observe the expected failure before production edits.

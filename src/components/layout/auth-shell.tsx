@@ -38,6 +38,7 @@ export function AuthShell({
           fill
           sizes="(min-width: 1024px) 50vw, 100vw"
           priority={imagePriority}
+          loading={imagePriority ? undefined : "eager"}
           className="object-cover"
         />
       </div>

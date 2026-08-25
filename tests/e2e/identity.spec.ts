@@ -47,7 +47,9 @@ test("student confirms a real local signup email before password login", async (
     await page.getByLabel("비밀번호").fill(confirmationFixture.password);
     await page.getByRole("button", { name: "로그인", exact: true }).click();
     await expect(
-      page.getByRole("alert").filter({ hasText: /Email not confirmed/i }),
+      page
+        .getByRole("alert")
+        .filter({ hasText: "이메일 인증을 완료한 뒤 다시 로그인해 주세요." }),
     ).toBeVisible();
     await expect(page).toHaveURL(/\/login$/);
 
@@ -95,7 +97,7 @@ test("protected student request refreshes cookies before onboarding redirect", a
 
   await page.goto("/student");
   await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByRole("heading", { name: "학생 정보 등록" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "기본 정보 등록" })).toBeVisible();
 });
 
 test("pending teacher is denied the teacher dashboard and sent to onboarding", async ({ page }) => {
@@ -136,7 +138,7 @@ test("logout cannot restore protected student history through Back", async ({ br
     await page.getByRole("link", { name: "QR 출결" }).click();
     await expect(page.getByRole("heading", { name: "QR로 출결하기" })).toBeVisible();
     await page.getByRole("link", { name: "홈" }).press("Enter");
-    await expect(page.getByRole("heading", { name: "반가워요!" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "오늘 출결 상태" })).toBeVisible();
     await page.getByRole("button", { name: "로그아웃" }).click();
     await page.getByRole("button", { name: "로그아웃 확인" }).click();
     await expect(page).toHaveURL(/\/login$/);
@@ -144,7 +146,7 @@ test("logout cannot restore protected student history through Back", async ({ br
     await page.goBack();
 
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: "반가워요!" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "오늘 출결 상태" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "QR로 출결하기" })).toHaveCount(0);
   } finally {
     await context.close();
@@ -189,14 +191,14 @@ test("admin promotion updates the student badge and promoted password account co
 
     const editor = admin.getByRole("dialog", { name: "교사 승격 대상 학생 정보 수정" });
     await expect(editor).toBeVisible();
-    await editor.getByRole("button", { name: "교사로 승격" }).click();
-    const confirmation = admin.getByRole("alertdialog", { name: "교사로 승격" });
+    await editor.getByRole("button", { name: "교사 권한 추가" }).click();
+    const confirmation = admin.getByRole("alertdialog", { name: "교사 권한 추가" });
     await expect(confirmation).toBeVisible();
     const promotionResponse = admin.waitForResponse((response) => (
       response.url().includes(`/api/admin/students/${promotionTarget.id}/promote-to-teacher`)
       && response.request().method() === "POST"
     ));
-    await confirmation.getByRole("button", { name: "승격 확인" }).click();
+    await confirmation.getByRole("button", { name: "권한 추가" }).click();
     expect((await promotionResponse).status()).toBe(200);
     await expect(editor.getByText("교사", { exact: true })).toBeVisible();
     await editor.getByRole("button", { name: "닫기" }).click();

@@ -38,7 +38,7 @@ class InMemoryStaffRepository:
         self.applications: list[TeacherApplicationRecord] = []
         self.staff: dict[UUID, StaffMemberRecord] = {}
         self.audit_actions: list[tuple[str, UUID, UUID]] = []
-        self.bootstrap_completed = False
+        self.bootstrap_completed_for: set[UUID] = set()
         self.locked_role_changes = 0
 
     async def create_or_get_teacher_application(
@@ -99,9 +99,9 @@ class InMemoryStaffRepository:
         return member.role if member else None
 
     async def bootstrap_initial_admin(self, user: AuthenticatedUser) -> bool:
-        if self.bootstrap_completed:
+        if user.user_id in self.bootstrap_completed_for:
             return False
-        self.bootstrap_completed = True
+        self.bootstrap_completed_for.add(user.user_id)
         current = self.staff.get(user.user_id)
         self.staff[user.user_id] = StaffMemberRecord(
             user_id=user.user_id,
@@ -354,6 +354,39 @@ async def test_initial_admin_bootstrap_requires_exact_verified_google_email(
     ]
 
 
+async def test_each_configured_initial_admin_can_bootstrap_once(
+    staff_repository: InMemoryStaffRepository,
+) -> None:
+    first_admin = AuthenticatedUser(
+        user_id=uuid4(),
+        email="first-admin@example.com",
+        provider="google",
+        email_verified=True,
+    )
+    second_admin = AuthenticatedUser(
+        user_id=uuid4(),
+        email="second-admin@example.com",
+        provider="google",
+        email_verified=True,
+    )
+    service = StaffService(
+        staff_repository,
+        initial_admin_emails={first_admin.email, second_admin.email},
+    )
+
+    assert await service.bootstrap_initial_admin(first_admin) is True
+    assert await service.bootstrap_initial_admin(second_admin) is True
+    assert await service.bootstrap_initial_admin(first_admin) is False
+    assert await service.bootstrap_initial_admin(second_admin) is False
+    assert await staff_repository.staff_role(first_admin.user_id) == StaffRole.ADMIN
+    assert await staff_repository.staff_role(second_admin.user_id) == StaffRole.ADMIN
+    assert [
+        action
+        for action, _, _ in staff_repository.audit_actions
+        if action == "staff.bootstrap_admin"
+    ] == ["staff.bootstrap_admin", "staff.bootstrap_admin"]
+
+
 async def test_initial_admin_bootstrap_does_not_undo_later_admin_demotion(
     staff_repository: InMemoryStaffRepository,
 ) -> None:
@@ -387,7 +420,7 @@ async def test_initial_admin_bootstrap_does_not_undo_later_admin_demotion(
     ] == ["staff.bootstrap_admin"]
 
 
-async def test_initial_admin_bootstrap_marker_is_global_when_configured_email_changes(
+async def test_legacy_initial_admin_setting_can_bootstrap_each_newly_configured_user(
     staff_repository: InMemoryStaffRepository,
 ) -> None:
     first_user = AuthenticatedUser(
@@ -408,15 +441,15 @@ async def test_initial_admin_bootstrap_marker_is_global_when_configured_email_ch
     ).bootstrap_initial_admin(first_user) is True
     assert await StaffService(
         staff_repository, initial_admin_email=later_user.email
-    ).bootstrap_initial_admin(later_user) is False
+    ).bootstrap_initial_admin(later_user) is True
 
     assert await staff_repository.staff_role(first_user.user_id) == StaffRole.ADMIN
-    assert await staff_repository.staff_role(later_user.user_id) is None
+    assert await staff_repository.staff_role(later_user.user_id) == StaffRole.ADMIN
     assert [
         action
         for action, _, _ in staff_repository.audit_actions
         if action == "staff.bootstrap_admin"
-    ] == ["staff.bootstrap_admin"]
+    ] == ["staff.bootstrap_admin", "staff.bootstrap_admin"]
 
 
 async def test_admin_can_promote_teacher_without_removing_other_admins(
@@ -680,6 +713,30 @@ class RecordingLockConnection:
         return LockCursor()
 
 
+class BootstrapCursor:
+    def __init__(self, row: tuple[bool] | None = None) -> None:
+        self._row = row
+
+    async def fetchone(self) -> tuple[bool] | None:
+        return self._row
+
+
+class RecordingBootstrapConnection:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, object]] = []
+
+    async def execute(
+        self, statement: str, parameters: object = None
+    ) -> BootstrapCursor:
+        normalized = " ".join(statement.split()).lower()
+        self.calls.append((normalized, parameters))
+        if "select exists(" in normalized:
+            return BootstrapCursor((False,))
+        if "with saved_user as" in normalized:
+            return BootstrapCursor((True,))
+        return BootstrapCursor()
+
+
 async def test_staff_role_guard_serializes_then_locks_memberships() -> None:
     connection = RecordingLockConnection()
 
@@ -689,6 +746,23 @@ async def test_staff_role_guard_serializes_then_locks_memberships() -> None:
     assert "pg_advisory_xact_lock" in connection.statements[0]
     assert "from app.staff_memberships" in connection.statements[1]
     assert connection.statements[1].endswith("for update")
+
+
+async def test_bootstrap_marker_is_scoped_to_the_configured_user() -> None:
+    connection = RecordingBootstrapConnection()
+    user = AuthenticatedUser(
+        user_id=uuid4(),
+        email="configured-admin@example.com",
+        provider="google",
+        email_verified=True,
+    )
+
+    bootstrapped = await IdentityRepository(connection).bootstrap_initial_admin(user)
+
+    marker_statement, marker_parameters = connection.calls[1]
+    assert bootstrapped is True
+    assert "target_id = %s" in marker_statement
+    assert marker_parameters == (str(user.user_id),)
 
 
 async def test_live_staff_workflow_is_audited_and_never_loses_last_admin() -> None:
@@ -725,16 +799,17 @@ async def test_live_staff_workflow_is_audited_and_never_loses_last_admin() -> No
     try:
         async with application_transaction(database_url=database_url) as connection:
             service = StaffService(
-                IdentityRepository(connection), initial_admin_email=first_admin.email
+                IdentityRepository(connection),
+                initial_admin_emails={first_admin.email, second_admin.email},
             )
             assert await service.bootstrap_initial_admin(first_admin) is True
             assert await service.bootstrap_initial_admin(first_admin) is False
-            changed_configuration = StaffService(
-                IdentityRepository(connection),
-                initial_admin_email=second_admin.email,
+            assert await service.bootstrap_initial_admin(second_admin) is True
+            assert await service.bootstrap_initial_admin(second_admin) is False
+            assert await service.has_teacher_access(second_admin.user_id) is True
+            await service.set_role(
+                first_admin.user_id, second_admin.user_id, StaffRole.TEACHER.value
             )
-            assert await changed_configuration.bootstrap_initial_admin(second_admin) is False
-            assert await changed_configuration.has_teacher_access(second_admin.user_id) is False
 
             application = await service.apply(
                 applicant, name="김교사", phone="01011112222"
@@ -777,9 +852,9 @@ async def test_live_staff_workflow_is_audited_and_never_loses_last_admin() -> No
         assert "changed" in outcomes
         assert ({"protected", "forbidden"} & set(outcomes))
         assert sum(row[0] == "admin" for row in roles) == 1
-        assert [row[0] for row in audits].count("staff.bootstrap_admin") == 1
+        assert [row[0] for row in audits].count("staff.bootstrap_admin") == 2
         assert [row[0] for row in audits].count("teacher_application.approved") == 1
-        assert [row[0] for row in audits].count("staff.role_changed") == 2
+        assert [row[0] for row in audits].count("staff.role_changed") == 3
     finally:
         with psycopg.connect(database_url) as owner:
             owner.execute(

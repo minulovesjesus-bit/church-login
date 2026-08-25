@@ -1,3 +1,4 @@
+from collections.abc import Collection
 from datetime import date
 from uuid import UUID
 
@@ -109,10 +110,20 @@ class IdentityService:
 
 class StaffService:
     def __init__(
-        self, repository: IdentityRepository, *, initial_admin_email: str | None = None
+        self,
+        repository: IdentityRepository,
+        *,
+        initial_admin_emails: Collection[str] = (),
+        initial_admin_email: str | None = None,
     ) -> None:
         self._repository = repository
-        self._initial_admin_email = initial_admin_email
+        self._initial_admin_emails = {
+            email.strip().lower()
+            for email in initial_admin_emails
+            if email.strip()
+        }
+        if initial_admin_email:
+            self._initial_admin_emails.add(initial_admin_email.strip().lower())
 
     async def apply(
         self,
@@ -158,10 +169,9 @@ class StaffService:
 
     async def bootstrap_initial_admin(self, user: AuthenticatedUser) -> bool:
         if (
-            not self._initial_admin_email
+            user.email not in self._initial_admin_emails
             or user.provider != "google"
             or not user.email_verified
-            or user.email != self._initial_admin_email
         ):
             return False
         return await self._repository.bootstrap_initial_admin(user)
